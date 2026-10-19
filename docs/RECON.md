@@ -4,7 +4,7 @@
 
 Source: aaron27white-source/kyra at edeb61ae8ff0602f31d106c77fe54d913b066c47. Working branch: lmc/v1. A local clone exists; a hosted GitHub fork has not been created. No product code has been changed.
 
-Frozen-lockfile installation started using the available pnpm runtime. Tests, lint, typecheck, build and audit are pending installation; no passing baseline is claimed. Docker is not on PATH, so database-backed verification needs a local PostgreSQL provision or another available runtime.
+Frozen-lockfile installation passed with pinned pnpm 10.30.3. Initial tests failed on an unresolved unbuilt workspace package. Lint passed with 17 warnings. Typecheck and build are running. Dependency audit reported 72 vulnerabilities; no passing overall baseline is claimed. Docker is not on PATH, so database-backed verification needs a local PostgreSQL provision or another available runtime.
 
 ## License findings
 
@@ -33,97 +33,97 @@ The existing tenant key is business_id, with businesses.id representing the tena
 
 ## Outstanding
 
-Complete table inventory, environment inventory, dependency audit, installation outcome and all baseline checks. No Phase 1–6 acceptance claim is made.
+Finish typecheck/build and rerun tests after workspace compilation; verify database policies in a real PostgreSQL catalog. Static table and environment inventories and dependency audit are recorded below. No Phase 1–6 acceptance claim is made.
 
 ## Schema table inventory (static; live RLS verification pending)
 
 | Table | Tenant/ownership column in declaration | RLS evidence |
 | --- | --- | --- |
-| users | no direct business_id in declaration | Candidate migrations: 0002_rls.sql, 0008_dispatcher_business_listing.sql, 0013_billing_checkout.sql, 0014_worker_affiliate_user_access.sql, 0017_prospect_demo_isolation.sql, 0022_operator_notification_preferences.sql, 0023_operator_notification_deliveries.sql, 0024_phone_onboarding.sql, 0031_feedback_submissions.sql, 0066_public_api.sql, 0069_mcp_oauth.sql, 0070_key20_assistant.sql; not catalog verified |
-| accounts | user_id; no direct business_id | Candidate migrations: 0002_rls.sql, 0030_billing_usage_caps.sql, 0049_finance_usage_metadata.sql; not catalog verified |
-| sessions | user_id; no direct business_id | Candidate migrations: 0002_rls.sql, 0069_mcp_oauth.sql; not catalog verified |
-| verifications | no direct business_id in declaration | Candidate migrations: 0002_rls.sql, 0024_phone_onboarding.sql; not catalog verified |
-| businesses | id (tenant root) | Candidate migrations: 0002_rls.sql, 0008_dispatcher_business_listing.sql, 0011_billing_affiliate_ledger.sql, 0013_billing_checkout.sql, 0015_actor_role_enforcement.sql, 0017_prospect_demo_isolation.sql, 0022_operator_notification_preferences.sql, 0023_operator_notification_deliveries.sql, 0024_phone_onboarding.sql, 0029_sms_consent.sql, 0030_billing_usage_caps.sql, 0031_feedback_submissions.sql, 0032_unit_economics.sql, 0038_website_chat_widget.sql, 0041_ui_functional_parity.sql, 0049_finance_usage_metadata.sql, 0066_public_api.sql, 0069_mcp_oauth.sql, 0070_key20_assistant.sql; not catalog verified |
-| business_memberships | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0023_operator_notification_deliveries.sql, 0069_mcp_oauth.sql; not catalog verified |
-| business_invitations | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| prospect_demos | business_id NOT NULL | Candidate migrations: 0017_prospect_demo_isolation.sql; not catalog verified |
-| staff | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| services | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| staff_service_assignments | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| business_hours | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| closures | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| phone_numbers | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0024_phone_onboarding.sql; not catalog verified |
-| onboarding_phone_verifications | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0024_phone_onboarding.sql; not catalog verified |
-| onboarding_number_claim_events | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0024_phone_onboarding.sql; not catalog verified |
-| receptionist_profiles | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| contacts | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0029_sms_consent.sql, 0038_website_chat_widget.sql, 0069_mcp_oauth.sql, 0070_key20_assistant.sql; not catalog verified |
-| widget_keys | business_id NOT NULL | Candidate migrations: 0038_website_chat_widget.sql; not catalog verified |
-| widget_visitors | business_id NOT NULL | Candidate migrations: 0038_website_chat_widget.sql; not catalog verified |
-| sms_consent_events | business_id NOT NULL | Candidate migrations: 0029_sms_consent.sql; not catalog verified |
-| conversations | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0032_unit_economics.sql, 0070_key20_assistant.sql; not catalog verified |
-| conversation_sessions | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| messages | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0032_unit_economics.sql, 0066_public_api.sql, 0070_key20_assistant.sql; not catalog verified |
-| calls | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0032_unit_economics.sql, 0041_ui_functional_parity.sql, 0049_finance_usage_metadata.sql, 0065_finance_billed_voice_seconds.sql, 0070_key20_assistant.sql; not catalog verified |
-| inbox_items | business_id NOT NULL | Candidate migrations: 0041_ui_functional_parity.sql, 0066_public_api.sql; not catalog verified |
-| transcripts | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| appointments | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0049_finance_usage_metadata.sql, 0070_key20_assistant.sql; not catalog verified |
-| appointment_change_verifications | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| knowledge_documents | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| knowledge_chunks | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| knowledge_snippets | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| agent_rules | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| website_ingestion_jobs | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0017_prospect_demo_isolation.sql; not catalog verified |
-| business_context_snapshots | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| storage_objects | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| calendar_connections | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| calendar_busy_blocks | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| notifications | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0032_unit_economics.sql; not catalog verified |
-| operator_notification_preferences | business_id NOT NULL | Candidate migrations: 0022_operator_notification_preferences.sql, 0023_operator_notification_deliveries.sql; not catalog verified |
-| operator_notification_deliveries | business_id NOT NULL | Candidate migrations: 0023_operator_notification_deliveries.sql, 0032_unit_economics.sql; not catalog verified |
-| billing_accounts | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0030_billing_usage_caps.sql, 0049_finance_usage_metadata.sql; not catalog verified |
-| billing_checkout_requests | business_id NOT NULL | Candidate migrations: 0013_billing_checkout.sql; not catalog verified |
-| billing_transactions | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0011_billing_affiliate_ledger.sql, 0054_finance_billing_transactions.sql; not catalog verified |
-| billing_usage_events | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0030_billing_usage_caps.sql, 0065_finance_billed_voice_seconds.sql; not catalog verified |
-| billing_usage_months | business_id NOT NULL | Candidate migrations: 0030_billing_usage_caps.sql; not catalog verified |
-| compliance_records | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| feedback_submissions | business_id nullable | Candidate migrations: 0031_feedback_submissions.sql; not catalog verified |
-| affiliate_profiles | user_id; no direct business_id | Candidate migrations: 0002_rls.sql, 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_attributions | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_profile_stats | no direct business_id in declaration | Candidate migrations: 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_clicks | no direct business_id in declaration | Candidate migrations: 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_voided_sources | business_id NOT NULL | Candidate migrations: 0002_rls.sql, 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_payout_runs | no direct business_id in declaration | Candidate migrations: 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_payout_items | no direct business_id in declaration | Candidate migrations: 0011_billing_affiliate_ledger.sql; not catalog verified |
-| affiliate_commissions | no direct business_id in declaration | Candidate migrations: 0011_billing_affiliate_ledger.sql; not catalog verified |
-| audit_logs | business_id NOT NULL | Candidate migrations: 0002_rls.sql; not catalog verified |
-| idempotency_keys | business_id nullable | Candidate migrations: 0002_rls.sql, 0066_public_api.sql; not catalog verified |
-| provider_events | business_id nullable | Candidate migrations: 0002_rls.sql; not catalog verified |
-| outbox_messages | business_id nullable | Candidate migrations: 0002_rls.sql; not catalog verified |
-| product_events | business_id nullable | Candidate migrations: 0002_rls.sql; not catalog verified |
-| unit_economics_events | business_id NOT NULL | Candidate migrations: 0032_unit_economics.sql, 0049_finance_usage_metadata.sql; not catalog verified |
-| unit_economics_rollups | business_id NOT NULL | Candidate migrations: 0032_unit_economics.sql; not catalog verified |
-| api_keys | business_id NOT NULL | Candidate migrations: 0066_public_api.sql; not catalog verified |
-| webhook_endpoints | business_id NOT NULL | Candidate migrations: 0066_public_api.sql; not catalog verified |
-| webhook_events | business_id NOT NULL | Candidate migrations: 0066_public_api.sql; not catalog verified |
-| webhook_deliveries | business_id NOT NULL | Candidate migrations: 0066_public_api.sql; not catalog verified |
-| webhook_delivery_attempts | business_id NOT NULL | Candidate migrations: 0066_public_api.sql; not catalog verified |
-| oauth_clients | reference_id; inspect OAuth grant semantics | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| oauth_resources | no direct business_id in declaration | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| oauth_client_resources | no direct business_id in declaration | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| oauth_refresh_tokens | reference_id; inspect OAuth grant semantics | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| oauth_access_tokens | reference_id; inspect OAuth grant semantics | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| oauth_consents | reference_id; inspect OAuth grant semantics | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| oauth_client_assertions | no direct business_id in declaration | Candidate migrations: 0069_mcp_oauth.sql; not catalog verified |
-| assistant_settings | business_id NOT NULL | Candidate migrations: 0070_key20_assistant.sql; not catalog verified |
-| missed_calls | business_id NOT NULL | Candidate migrations: 0070_key20_assistant.sql; not catalog verified |
-| outreach_automations | business_id NOT NULL | Candidate migrations: 0070_key20_assistant.sql; not catalog verified |
-| outreach_sends | business_id NOT NULL | Candidate migrations: 0070_key20_assistant.sql; not catalog verified |
-| quotes | business_id NOT NULL | Candidate migrations: 0070_key20_assistant.sql; not catalog verified |
-| invoices | business_id NOT NULL | Candidate migrations: 0070_key20_assistant.sql; not catalog verified |
+| users | no direct business_id in declaration | 0002_rls.sql (named RLS loop); live catalog unverified |
+| accounts | user_id; no direct business_id | 0002_rls.sql (named RLS loop); live catalog unverified |
+| sessions | user_id; no direct business_id | 0002_rls.sql (named RLS loop); live catalog unverified |
+| verifications | no direct business_id in declaration | 0002_rls.sql (named RLS loop); live catalog unverified |
+| businesses | id (tenant root) | 0002_rls.sql (named RLS loop); live catalog unverified |
+| business_memberships | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| business_invitations | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| prospect_demos | business_id NOT NULL | 0017_prospect_demo_isolation.sql (explicit FORCE/ENABLE); live catalog unverified |
+| staff | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| services | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| staff_service_assignments | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| business_hours | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| closures | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| phone_numbers | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| onboarding_phone_verifications | business_id NOT NULL | 0024_phone_onboarding.sql (explicit array RLS loop); live catalog unverified |
+| onboarding_number_claim_events | business_id NOT NULL | 0024_phone_onboarding.sql (explicit array RLS loop); live catalog unverified |
+| receptionist_profiles | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| contacts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| widget_keys | business_id NOT NULL | 0038_website_chat_widget.sql (explicit FORCE/ENABLE); live catalog unverified |
+| widget_visitors | business_id NOT NULL | 0038_website_chat_widget.sql (explicit FORCE/ENABLE); live catalog unverified |
+| sms_consent_events | business_id NOT NULL | 0029_sms_consent.sql (explicit FORCE/ENABLE); live catalog unverified |
+| conversations | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| conversation_sessions | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| messages | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| calls | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| inbox_items | business_id NOT NULL | 0041_ui_functional_parity.sql (explicit FORCE/ENABLE); live catalog unverified |
+| transcripts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| appointments | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| appointment_change_verifications | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| knowledge_documents | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| knowledge_chunks | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| knowledge_snippets | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| agent_rules | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| website_ingestion_jobs | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| business_context_snapshots | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| storage_objects | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| calendar_connections | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| calendar_busy_blocks | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| notifications | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| operator_notification_preferences | business_id NOT NULL | 0022_operator_notification_preferences.sql (explicit FORCE/ENABLE); live catalog unverified |
+| operator_notification_deliveries | business_id NOT NULL | 0023_operator_notification_deliveries.sql (explicit FORCE/ENABLE); live catalog unverified |
+| billing_accounts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| billing_checkout_requests | business_id NOT NULL | 0013_billing_checkout.sql (explicit FORCE/ENABLE); live catalog unverified |
+| billing_transactions | business_id NOT NULL | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| billing_usage_events | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| billing_usage_months | business_id NOT NULL | 0030_billing_usage_caps.sql (explicit FORCE/ENABLE); live catalog unverified |
+| compliance_records | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| feedback_submissions | business_id nullable | 0031_feedback_submissions.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_profiles | user_id; no direct business_id | 0002_rls.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_attributions | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| affiliate_profile_stats | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_clicks | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_voided_sources | business_id NOT NULL | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_payout_runs | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_payout_items | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| affiliate_commissions | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
+| audit_logs | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
+| idempotency_keys | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
+| provider_events | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
+| outbox_messages | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
+| product_events | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
+| unit_economics_events | business_id NOT NULL | 0032_unit_economics.sql (explicit array RLS loop); live catalog unverified |
+| unit_economics_rollups | business_id NOT NULL | 0032_unit_economics.sql (explicit array RLS loop); live catalog unverified |
+| api_keys | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
+| webhook_endpoints | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
+| webhook_events | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
+| webhook_deliveries | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
+| webhook_delivery_attempts | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
+| oauth_clients | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| oauth_resources | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| oauth_client_resources | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| oauth_refresh_tokens | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| oauth_access_tokens | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| oauth_consents | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| oauth_client_assertions | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
+| assistant_settings | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
+| missed_calls | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
+| outreach_automations | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
+| outreach_sends | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
+| quotes | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
+| invoices | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
 
 Inventory includes 
 81
- Drizzle declarations, including historical/deprecated declarations. Candidate files reference the table and contain RLS SQL; this does not assert that each table has a policy. Reconcile dropped tables and dynamically generated policies with an installed catalog before claiming completeness.
+ Drizzle declarations, including historical/deprecated declarations. RLS evidence names the migration with an explicit FORCE declaration or a loop containing that table; effective policy behavior remains unverified. Reconcile dropped tables and dynamically generated policies with an installed catalog before claiming completeness.
 
 ## Environment variable names in .env.example
 
@@ -349,3 +349,146 @@ packages/db/src/rls/context.ts sets app.user_id, app.business_id and app.actor_t
 Migration reconciliation: recursively including migrations/generated yields 81 unique CREATE TABLE names, matching the 81 Drizzle table declarations. This establishes inventory coverage of the checked-in declarations, not live catalog state.
 
 Installation attempts: pnpm 11.25.0 downloaded the dependencies but exited 1 with ERR_PNPM_IGNORED_BUILDS for msgpackr-extract. Its automatically inserted workspace placeholder was removed. Switched to the pinned pnpm 10.30.3 via npx. The first pinned attempt aborted because no TTY was available to recreate node_modules; retried with CI=true. No dependency versions or existing tests were modified.
+
+## Additional direct environment references
+
+Static process.env.NAME references outside test files, beyond .env.example. Dynamic role-based names and object-based config parsing are not exhaustively represented by this lexical inventory.
+
+- `ADMIN_BASE_URL`
+- `ALLOW_QUERY_PLAN_CHECK`
+- `AUTH_TRUSTED_ORIGINS`
+- `BETTER_AUTH_USE_SECURE_COOKIES`
+- `CI`
+- `DASHBOARD_CHECK_BASE_URL`
+- `DATABASE_URL`
+- `DEMO_OPERATOR_E2E`
+- `GIT_SHA`
+- `GITHUB_SHA`
+- `INDEXNOW_KEY`
+- `INVITATION_PARITY_ARTIFACTS`
+- `INVITATION_PARITY_BASE_URL`
+- `INVITATION_PARITY_SIDE`
+- `LIVE_PROTOTYPE_TEST_BUSINESS_ID`
+- `LOADING_PARITY_ARTIFACTS`
+- `LOADING_PARITY_BASE_URL`
+- `LOADING_PARITY_SIDE`
+- `LOBBYSTACK_APP_DATABASE_URL`
+- `LOBBYSTACK_AUTH_DATABASE_URL`
+- `LOBBYSTACK_DISPATCHER_DATABASE_URL`
+- `LOBBYSTACK_FINANCE_EXPORT_PASSWORD`
+- `LOBBYSTACK_MIGRATOR_DATABASE_URL`
+- `LOBBYSTACK_SKIP_ENV_FILES`
+- `LOBBYSTACK_WORKER_DATABASE_URL`
+- `NEXT_PHASE`
+- `NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED`
+- `NEXT_PUBLIC_ASSET_VERSION`
+- `NEXT_PUBLIC_DEPLOYMENT_ENVIRONMENT`
+- `NEXT_PUBLIC_DEPLOYMENT_MODE`
+- `NEXT_PUBLIC_LANDING_SITE_URL`
+- `NEXT_PUBLIC_SERVICE_VERSION`
+- `NEXT_PUBLIC_SITE_URL`
+- `NEXT_RUNTIME`
+- `NODE_ENV`
+- `OPERATOR_BASELINE_ARTIFACTS`
+- `OPERATOR_BASELINE_BASE_URL`
+- `OTEL_CERTIFICATION_ENDPOINT`
+- `OTEL_SERVICE_NAME`
+- `PARITY_ARTIFACT_DIR`
+- `PARITY_BASE_URL`
+- `PARITY_CALL_ID`
+- `PARITY_CONTACT_ID`
+- `PARITY_DEMO_TOKEN`
+- `PARITY_GREP`
+- `PARITY_INCLUDE_PORT_BASELINES`
+- `PARITY_OPERATOR_USER_ID`
+- `PARITY_OUTPUT_DIR`
+- `PARITY_PARALLEL`
+- `PARITY_PORT_OPERATOR_STORAGE_STATE_EN`
+- `PARITY_PORT_OPERATOR_STORAGE_STATE_FR`
+- `PARITY_REQUIRE_FULL`
+- `PARITY_RESET_TOKEN`
+- `PARITY_SETUP_GUIDE_EXPECTED`
+- `PARITY_SIDE`
+- `PARITY_SKIP_REFERENCE`
+- `PARITY_SNAPSHOT_DIR`
+- `PARITY_WORKERS`
+- `PASSWORD_RECOVERY_CERTIFICATION`
+- `PASSWORD_RECOVERY_E2E`
+- `PERFORMANCE_BASELINE_MODULE`
+- `PERFORMANCE_CONCURRENCY`
+- `PERFORMANCE_DEPLOYMENT_ID`
+- `PERFORMANCE_OUTPUT`
+- `PLAYWRIGHT_BASE_URL`
+- `POLAR_PRO_PRODUCT_ID`
+- `PORT`
+- `POSTHOG_KEY`
+- `POSTHOG_PROJECT_ID`
+- `POSTHOG_SOURCEMAP_API_KEY`
+- `PRODUCTION_IMPORT_APPROVED`
+- `PRODUCTION_IMPORT_DATABASE_URL`
+- `PRODUCTION_IMPORT_TARGET_NONCE`
+- `PRODUCTION_REBUILD_DATABASE_URL`
+- `PRODUCTION_REBUILD_TARGET_NONCE`
+- `PRODUCTION_REBUILD_WORKER_DATABASE_URL`
+- `PROSPECT_DEMO_TOKEN`
+- `RAILWAY_DEPLOYMENT_ID`
+- `RAILWAY_ENVIRONMENT_NAME`
+- `RECONCILIATION_DATABASE_URL`
+- `RECOVERY_CHECK_WORKER`
+- `RECOVERY_COMPOSE_FILE`
+- `RECOVERY_COMPOSE_PROJECT`
+- `RECOVERY_WORKER_BASE_URL`
+- `RECOVERY_WORKER_REDIS_PREFIX`
+- `REDIS_PREFIX`
+- `REDIS_URL`
+- `REHEARSAL_DATABASE_URL`
+- `REHEARSAL_TARGET_NONCE`
+- `REHEARSAL_WORKER_DATABASE_URL`
+- `RELEASE_E2E_EN_EMAIL`
+- `RELEASE_E2E_FR_EMAIL`
+- `RELEASE_E2E_SERVER_VERSION`
+- `RELEASE_E2E_WORKER_PAUSED`
+- `RELEASE_FIXTURE_DIRECTORY`
+- `REPLACEMENT_APP_DATABASE_URL`
+- `REPLACEMENT_E2E_DATABASE_URL`
+- `REPLACEMENT_MIGRATOR_DATABASE_URL`
+- `REPLACEMENT_REDIS_HOST`
+- `REPLACEMENT_S3_ENDPOINT`
+- `REPLACEMENT_WORKER_DATABASE_URL`
+- `SESSION_ENCRYPTION_KEY`
+- `SITE_URL`
+- `SMS_HELP_REPLY`
+- `TELEMETRY_CERTIFICATION_MARKER`
+- `TWILIO_CALLBACK_STATUS_URL`
+- `TWILIO_VOICE_WEBHOOK_URL`
+- `VERIFY_RLS_BEHAVIOR`
+- `WEB_CALL_MAX_DURATION_MS`
+- `WEBSITE_IMPORT_E2E`
+- `WIDGET_E2E`
+- `WORKER_BASE_URL`
+
+## Baseline observations before main checks
+
+The dependency-free image projection test (`node --test .github/build/*.test.mjs`) failed: prepare-image-workspace.mjs rejects the CRLF checkout of pnpm-lock.yaml because its version header check requires LF. Git reports core.autocrlf=true; .editorconfig requests LF. The test also invokes pnpm using execFileSync, which needs platform-specific verification on Windows. Log: work/baseline-build-config.log. Existing assertions have not been changed.
+
+All 81 schema tables have static FORCE RLS evidence in explicit ALTER TABLE statements or named/explicit-array loops. No DISABLE ROW LEVEL SECURITY or NO FORCE ROW LEVEL SECURITY statements were found in migrations. This is not an effective-policy audit. The inventory now identifies the actual FORCE declaration source for each table, replacing the earlier candidate-file list.
+
+AgentToolContext currently supports voice, web_voice, web_chat and sms, but not email. It carries callerPhone, callId and optional transfer/hangup controls. Existing Google Calendar and appointment-verification domain functions are exposed as agent tools. SMTP currently sends transactional templates; a Resend webhook signature verifier already exists. Neither legacy-lmc in the chat workspace nor in the Kyra checkout is present.
+
+Pinned installation completed successfully (exit 0), using pnpm 10.30.3 in CI mode. msgpackr-extract remains an ignored optional build under the existing policy. The four principal baseline commands are now executing sequentially with separate logs.
+
+## Isolation gaps to investigate in Phase 5
+
+- Tenant-owned tables use business_id, not the required tenant_id. Some infrastructure/affiliate ownership is indirect or nullable; the table inventory flags these declarations.
+- client.ts falls back to DATABASE_URL when an explicit role URL or role password is absent. Runtime connection-role enforcement must be verified; naming a DatabaseClient role is not proof of the actual PostgreSQL login role.
+- 0000_roles.sql sets NOBYPASSRLS for app/worker/dispatcher/readonly roles, but the effective rolsuper and rolbypassrls values have not been queried.
+- db:verify-rls already introspects ENABLE/FORCE and missing policies. Its optional behavioral check probes businesses/services and actor spoofing; that is not coverage of all 81 tables or all HTTP routes.
+- Auth and OAuth policies allow the auth role broad access. Provider-event/outbox policies and dispatcher functions have special cross-business behavior. These need explicit classification and constrained access tests.
+
+## Baseline command results and first repair
+
+- pnpm test: exit 1, jobs suite cannot resolve the unbuilt contracts package; dependent suites did not complete.
+- pnpm lint: exit 0, 17 ESLint warnings in admin.
+- pnpm typecheck: exit 0, including scripts and Astro diagnostics.
+- pnpm build: exit 1, embed entry uses URL.pathname and yields an invalid Windows drive path.
+- Regression test added before the repair: packages/embed/src/build-config.test.ts failed because the configured path did not exist. Replacing pathname with fileURLToPath made the test and the actual widget build pass. Voice code was not modified. Full build retry is in progress; overall baseline remains unverified.
