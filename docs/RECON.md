@@ -494,3 +494,13 @@ Pinned installation completed successfully (exit 0), using pnpm 10.30.3 in CI mo
 - Regression test added before the repair: packages/embed/src/build-config.test.ts failed because the configured path did not exist. Replacing pathname with fileURLToPath made the test and the actual widget build pass. Voice code was not modified. Full build retry is in progress; overall baseline remains unverified.
 
 Build retry progressed through landing, domain and agent-core, then admin failed because Windows cmd cannot execute NODE_ENV=production as a command. A targeted admin build with npm_config_shell_emulator=true is now running and has entered Next.js production compilation. The main suite rerun after compiling shared packages has passed providers, jobs, domain, agent-core (76 tests) and worker (93 tests); admin and script results remain pending.
+
+## Current baseline gate
+
+Admin production build PASSED using pnpm shell emulator. The sole admin test failure was a Windows path comparison: normalize node:path.sep to slash before comparing the existing allowed file. Its original assertion is unchanged, and the targeted test now passes. The prior admin run reported 878 passed, 1 failed, 26 skipped; the targeted repair addresses that failure, not the skipped database suites.
+
+Script suite reported 138 passed and 14 failed tests, plus a generate-env import error. Normalizing generate-env.mjs from CRLF to LF made all 3 generator tests pass without semantic source changes. The remaining failures assert POSIX owner-only modes (0600; Windows reports 0666) and symlink behavior (EPERM in this environment). Those security assertions have not been removed, skipped or relaxed. Full baseline is therefore NOT green on this host.
+
+A Linux execution environment is needed to run the unchanged POSIX security tests. PostgreSQL with pgvector and Redis are also required for database-backed verification. Docker/PostgreSQL are not available on PATH; WSL reports not installed. Under the user's baseline gate, the explicit stop condition applies while these security tests cannot pass on the current host.
+
+Final additional checks: worker build exit 0; admin:prerender-check exit 0 (16 routes); widget copy exit 0. All running verification processes have completed. Baseline remains blocked by the 14 POSIX/security test failures, not by a license issue.
