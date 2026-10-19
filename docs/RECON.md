@@ -492,3 +492,5 @@ Pinned installation completed successfully (exit 0), using pnpm 10.30.3 in CI mo
 - pnpm typecheck: exit 0, including scripts and Astro diagnostics.
 - pnpm build: exit 1, embed entry uses URL.pathname and yields an invalid Windows drive path.
 - Regression test added before the repair: packages/embed/src/build-config.test.ts failed because the configured path did not exist. Replacing pathname with fileURLToPath made the test and the actual widget build pass. Voice code was not modified. Full build retry is in progress; overall baseline remains unverified.
+
+Build retry progressed through landing, domain and agent-core, then admin failed because Windows cmd cannot execute NODE_ENV=production as a command. A targeted admin build with npm_config_shell_emulator=true is now running and has entered Next.js production compilation. The main suite rerun after compiling shared packages has passed providers, jobs, domain, agent-core (76 tests) and worker (93 tests); admin and script results remain pending.
