@@ -1,11 +1,12 @@
+import { brand } from "@lobbystack/shared/brand";
 import { Providers } from "@/app/providers";
 import { resourcesForRoute } from "@/lib/i18n-resources";
 import type { SupportedLocale } from "@/lib/locale";
 import type { LocaleSource } from "@/lib/locale-request";
 
 export const appMetadata = {
-  title: "Kyra",
-  description: "AI receptionist dashboard",
+  title: brand.name,
+  description: brand.tagline,
 };
 
 export function RootDocument({

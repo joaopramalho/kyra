@@ -134,10 +134,10 @@ async function enqueueAuthEmail(input: {
 }): Promise<void> {
   const urlHash = createHash("sha256").update(input.url).digest("hex");
   const subject = input.purpose === "verification"
-    ? "Verify your Kyra email"
+    ? "Verify your Lead My Company email"
     : input.purpose === "password_reset"
-      ? "Reset your Kyra password"
-      : "Confirm your Kyra email change";
+      ? "Reset your Lead My Company password"
+      : "Confirm your Lead My Company email change";
   await withBusinessTransaction(getEmailDatabase().db, { actorType: "system" }, async (tx) => {
     await enqueueOutbox(tx, {
       topic: "email.send",
@@ -164,7 +164,7 @@ async function enqueueEmailVerificationCode(input: { userId: string; email: stri
       payload: {
         template: "verify_email",
         to: input.email,
-        subject: "Your Kyra verification code",
+        subject: "Your Lead My Company verification code",
         variables: { code: input.otp },
       },
     });
@@ -271,7 +271,7 @@ function createAuth(adapterDatabase?: Parameters<typeof drizzleAdapter>[0]) {
             aggregateType: "auth_email",
             aggregateId: user.id,
             dedupeKey: `auth-reset-code:${user.id}:${randomUUID()}`,
-            payload: { template: "password_reset", to: email, subject: "Reset your Kyra password", variables: { code: otp } },
+            payload: { template: "password_reset", to: email, subject: "Reset your Lead My Company password", variables: { code: otp } },
           });
         });
       },
@@ -297,7 +297,7 @@ function createAuth(adapterDatabase?: Parameters<typeof drizzleAdapter>[0]) {
               topic: "email.send", aggregateType: "auth_email", aggregateId: user.id,
               dedupeKey: `auth-existing-account:${user.id}:${randomUUID()}`,
               payload: { template: "existing_account", to: user.email,
-                subject: locale === "fr" ? "Votre compte Kyra existe déjà" : "You already have a Kyra account",
+                subject: locale === "fr" ? "Votre compte Lead My Company existe déjà" : "You already have a Lead My Company account",
                 variables: { locale, signInUrl: new URL(`/${locale}/login`, base).href, resetUrl: new URL(`/${locale}/forgot-password`, base).href } },
             });
           });
