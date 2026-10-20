@@ -1,3 +1,4 @@
+import { brand } from "@lobbystack/shared/brand"
 import { buttonVariants } from "@/components/ui/button"
 import { APP_SIGNUP_URL } from "@/lib/app-links"
 import { cn } from "@/lib/utils"
@@ -12,19 +13,19 @@ type HeroSectionProps = {
 
 const heroCopy = {
   en: {
-    h1Start: "LobbyStack turns",
-    h1Emphasis: "missed calls",
-    h1End: "into booked work.",
-    body: "LobbyStack is an AI receptionist for small businesses. It answers your phone, books appointments into your calendar, and sends urgent calls to your team. Use it for every call, or only when you're busy.",
-    pricing: "Free plan with 30 minutes a month. Paid plans from $30.",
+    h1Start: "Turn",
+    h1Emphasis: "new leads",
+    h1End: "into booked jobs.",
+    body: brand.tagline,
+    pricing: "Built for service businesses. Email first, with your team in control.",
   },
   fr: {
-    h1Start: "LobbyStack transforme",
-    h1Emphasis: "appels manqués",
+    h1Start: "Lead My Company transforme",
+    h1Emphasis: "nouveaux prospects",
     h1End: "en rendez‑vous.",
-    body: "LobbyStack est un réceptionniste IA pour les petites entreprises. Il répond au téléphone, planifie les rendez‑vous dans votre calendrier et transfère les appels urgents à votre équipe. Activez-le pour tous vos appels ou seulement quand vous êtes occupé.",
+    body: "Lead My Company aide les entreprises de services à répondre aux prospects par e-mail, à qualifier leurs demandes et à réserver des visites, 24 h/24.",
     pricing:
-      "Forfait gratuit avec 30 minutes par mois. Forfaits payants à partir de 30 $.",
+      "Pour les entreprises de services. Votre équipe garde le contrôle.",
   },
 } satisfies Record<Locale, Record<string, string>>
 

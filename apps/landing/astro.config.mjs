@@ -9,7 +9,7 @@ import { translatedBasePaths } from "./src/i18n/translated-base-paths.ts"
 import { indexNowChangedPages } from "./src/lib/indexnow.ts"
 import { stableLastmodForUrl } from "./src/lib/sitemap.ts"
 
-const SITE_URL = "https://lobbystack.com"
+const SITE_URL = "https://leadmycompany.com"
 const INDEXNOW_KEY = process.env.INDEXNOW_KEY
 const DEFAULT_LOCALE = "en"
 const translatedPathSet = new Set(translatedBasePaths)
@@ -135,7 +135,7 @@ export default defineConfig({
       },
       directives: [
         "default-src 'self'",
-        "connect-src 'self' https://app.cal.com https://app.lobbystack.com http://localhost:3000 http://127.0.0.1:3000 https://cloudflareinsights.com https://ts.lobbystack.com https://us.i.posthog.com",
+        "connect-src 'self' https://app.cal.com https://app.leadmycompany.com http://localhost:3000 http://127.0.0.1:3000 https://cloudflareinsights.com https://ts.lobbystack.com https://us.i.posthog.com",
         "frame-src 'self' https://app.cal.com",
         "img-src 'self' data: https://app.cal.com https://images.unsplash.com https://i.pravatar.cc https://ts.lobbystack.com https://us.i.posthog.com",
       ],
@@ -187,7 +187,7 @@ export default defineConfig({
     }),
     indexNowChangedPages({
       key: INDEXNOW_KEY,
-      host: "lobbystack.com",
+      host: "leadmycompany.com",
       siteUrl: SITE_URL,
       include: (url) => {
         const pathname = new URL(url).pathname
