@@ -13,6 +13,10 @@
     "./product-capabilities": {
       "types": "./dist/product-capabilities.d.ts",
       "default": "./dist/product-capabilities.js"
+    },
+    "./brand": {
+      "types": "./dist/brand.d.ts",
+      "default": "./dist/brand.js"
     }
   },
   "dependencies": {
