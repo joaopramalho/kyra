@@ -1,4 +1,14 @@
-# LMC reconnaissance — in progress
+# LMC reconnaissance
+
+## Verified Linux baseline — 2026-10-20
+
+Ubuntu 26.04.1 WSL2, Node 22.22.1, pnpm 10.30.3, PostgreSQL 18/pgvector 0.8.1 and Redis 8. Frozen installation, full tests, lint (17 existing warnings), typecheck, production build and build-config tests passed. The build verified 16 localized public routes. All 155 script tests passed unchanged, resolving the historical Windows POSIX blocker below.
+
+Migrations and role bootstrap passed twice, followed by schema and RLS checks. Live catalog: all 81 application tables have ENABLE/FORCE RLS and policies; the migration journal is the 82nd public table. All seven lobbystack roles have rolsuper=false and rolbypassrls=false. Reliability/MCP/OAuth/auth/voice integration runs passed 84 tests; additional assistant/tenancy tests passed 12 and Redis rate-limit tests passed 5. This does not replace Phase 5 exhaustive table/API isolation probes.
+
+Fresh audit: 76 vulnerabilities (3 critical, 33 high, 30 moderate, 10 low), exit 1. Detailed findings supersede the earlier 72-count audit. Remediation remains Phase 6 work. Test secrets are outside the repository. Linux logs: /opt/lmc/logs. Current checkout: /opt/lmc/kyra, lmc/v1.
+
+The sections below retain historical reconnaissance and Windows attempts. Any statements that WSL, database verification or a green test/build baseline are pending are superseded by this section. Product phases 1–6 remain incomplete.
 
 ## Scope and baseline
 
@@ -35,91 +45,91 @@ The existing tenant key is business_id, with businesses.id representing the tena
 
 Finish typecheck/build and rerun tests after workspace compilation; verify database policies in a real PostgreSQL catalog. Static table and environment inventories and dependency audit are recorded below. No Phase 1–6 acceptance claim is made.
 
-## Schema table inventory (static; live RLS verification pending)
+## Schema table inventory (live catalog verified)
 
 | Table | Tenant/ownership column in declaration | RLS evidence |
 | --- | --- | --- |
-| users | no direct business_id in declaration | 0002_rls.sql (named RLS loop); live catalog unverified |
-| accounts | user_id; no direct business_id | 0002_rls.sql (named RLS loop); live catalog unverified |
-| sessions | user_id; no direct business_id | 0002_rls.sql (named RLS loop); live catalog unverified |
-| verifications | no direct business_id in declaration | 0002_rls.sql (named RLS loop); live catalog unverified |
-| businesses | id (tenant root) | 0002_rls.sql (named RLS loop); live catalog unverified |
-| business_memberships | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| business_invitations | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| prospect_demos | business_id NOT NULL | 0017_prospect_demo_isolation.sql (explicit FORCE/ENABLE); live catalog unverified |
-| staff | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| services | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| staff_service_assignments | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| business_hours | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| closures | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| phone_numbers | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| onboarding_phone_verifications | business_id NOT NULL | 0024_phone_onboarding.sql (explicit array RLS loop); live catalog unverified |
-| onboarding_number_claim_events | business_id NOT NULL | 0024_phone_onboarding.sql (explicit array RLS loop); live catalog unverified |
-| receptionist_profiles | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| contacts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| widget_keys | business_id NOT NULL | 0038_website_chat_widget.sql (explicit FORCE/ENABLE); live catalog unverified |
-| widget_visitors | business_id NOT NULL | 0038_website_chat_widget.sql (explicit FORCE/ENABLE); live catalog unverified |
-| sms_consent_events | business_id NOT NULL | 0029_sms_consent.sql (explicit FORCE/ENABLE); live catalog unverified |
-| conversations | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| conversation_sessions | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| messages | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| calls | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| inbox_items | business_id NOT NULL | 0041_ui_functional_parity.sql (explicit FORCE/ENABLE); live catalog unverified |
-| transcripts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| appointments | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| appointment_change_verifications | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| knowledge_documents | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| knowledge_chunks | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| knowledge_snippets | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| agent_rules | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| website_ingestion_jobs | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| business_context_snapshots | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| storage_objects | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| calendar_connections | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| calendar_busy_blocks | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| notifications | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| operator_notification_preferences | business_id NOT NULL | 0022_operator_notification_preferences.sql (explicit FORCE/ENABLE); live catalog unverified |
-| operator_notification_deliveries | business_id NOT NULL | 0023_operator_notification_deliveries.sql (explicit FORCE/ENABLE); live catalog unverified |
-| billing_accounts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| billing_checkout_requests | business_id NOT NULL | 0013_billing_checkout.sql (explicit FORCE/ENABLE); live catalog unverified |
-| billing_transactions | business_id NOT NULL | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| billing_usage_events | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| billing_usage_months | business_id NOT NULL | 0030_billing_usage_caps.sql (explicit FORCE/ENABLE); live catalog unverified |
-| compliance_records | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| feedback_submissions | business_id nullable | 0031_feedback_submissions.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_profiles | user_id; no direct business_id | 0002_rls.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_attributions | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| affiliate_profile_stats | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_clicks | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_voided_sources | business_id NOT NULL | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_payout_runs | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_payout_items | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| affiliate_commissions | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog unverified |
-| audit_logs | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog unverified |
-| idempotency_keys | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
-| provider_events | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
-| outbox_messages | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
-| product_events | business_id nullable | 0002_rls.sql (named RLS loop); live catalog unverified |
-| unit_economics_events | business_id NOT NULL | 0032_unit_economics.sql (explicit array RLS loop); live catalog unverified |
-| unit_economics_rollups | business_id NOT NULL | 0032_unit_economics.sql (explicit array RLS loop); live catalog unverified |
-| api_keys | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
-| webhook_endpoints | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
-| webhook_events | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
-| webhook_deliveries | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
-| webhook_delivery_attempts | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog unverified |
-| oauth_clients | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| oauth_resources | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| oauth_client_resources | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| oauth_refresh_tokens | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| oauth_access_tokens | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| oauth_consents | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| oauth_client_assertions | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog unverified |
-| assistant_settings | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
-| missed_calls | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
-| outreach_automations | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
-| outreach_sends | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
-| quotes | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
-| invoices | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog unverified |
+| users | no direct business_id in declaration | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| accounts | user_id; no direct business_id | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| sessions | user_id; no direct business_id | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| verifications | no direct business_id in declaration | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| businesses | id (tenant root) | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| business_memberships | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| business_invitations | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| prospect_demos | business_id NOT NULL | 0017_prospect_demo_isolation.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| staff | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| services | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| staff_service_assignments | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| business_hours | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| closures | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| phone_numbers | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| onboarding_phone_verifications | business_id NOT NULL | 0024_phone_onboarding.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| onboarding_number_claim_events | business_id NOT NULL | 0024_phone_onboarding.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| receptionist_profiles | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| contacts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| widget_keys | business_id NOT NULL | 0038_website_chat_widget.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| widget_visitors | business_id NOT NULL | 0038_website_chat_widget.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| sms_consent_events | business_id NOT NULL | 0029_sms_consent.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| conversations | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| conversation_sessions | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| messages | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| calls | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| inbox_items | business_id NOT NULL | 0041_ui_functional_parity.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| transcripts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| appointments | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| appointment_change_verifications | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| knowledge_documents | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| knowledge_chunks | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| knowledge_snippets | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| agent_rules | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| website_ingestion_jobs | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| business_context_snapshots | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| storage_objects | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| calendar_connections | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| calendar_busy_blocks | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| notifications | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| operator_notification_preferences | business_id NOT NULL | 0022_operator_notification_preferences.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| operator_notification_deliveries | business_id NOT NULL | 0023_operator_notification_deliveries.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| billing_accounts | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| billing_checkout_requests | business_id NOT NULL | 0013_billing_checkout.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| billing_transactions | business_id NOT NULL | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| billing_usage_events | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| billing_usage_months | business_id NOT NULL | 0030_billing_usage_caps.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| compliance_records | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| feedback_submissions | business_id nullable | 0031_feedback_submissions.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_profiles | user_id; no direct business_id | 0002_rls.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_attributions | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_profile_stats | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_clicks | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_voided_sources | business_id NOT NULL | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_payout_runs | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_payout_items | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| affiliate_commissions | no direct business_id in declaration | 0011_billing_affiliate_ledger.sql (explicit FORCE/ENABLE); live catalog: ENABLE/FORCE and policy verified |
+| audit_logs | business_id NOT NULL | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| idempotency_keys | business_id nullable | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| provider_events | business_id nullable | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| outbox_messages | business_id nullable | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| product_events | business_id nullable | 0002_rls.sql (named RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| unit_economics_events | business_id NOT NULL | 0032_unit_economics.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| unit_economics_rollups | business_id NOT NULL | 0032_unit_economics.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| api_keys | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| webhook_endpoints | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| webhook_events | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| webhook_deliveries | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| webhook_delivery_attempts | business_id NOT NULL | 0066_public_api.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_clients | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_resources | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_client_resources | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_refresh_tokens | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_access_tokens | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_consents | reference_id; inspect OAuth grant semantics | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| oauth_client_assertions | no direct business_id in declaration | 0069_mcp_oauth.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| assistant_settings | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| missed_calls | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| outreach_automations | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| outreach_sends | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| quotes | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
+| invoices | business_id NOT NULL | 0070_key20_assistant.sql (explicit array RLS loop); live catalog: ENABLE/FORCE and policy verified |
 
 Inventory includes 
 81
