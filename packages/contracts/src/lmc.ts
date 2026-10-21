@@ -1,0 +1,77 @@
+import { z } from "zod";
+
+export const lmcEmailAddressSchema = z.string().trim().email().max(320);
+export const lmcAuthenticationSchema = z.object({
+  spf: z.enum(["pass", "fail", "softfail", "neutral", "none", "temperror", "permerror"]),
+  dkim: z.enum(["pass", "fail", "none", "temperror", "permerror"]),
+  dmarc: z.enum(["pass", "fail", "none", "temperror", "permerror"]),
+  aligned: z.boolean(),
+}).strict();
+
+// Authentication is populated only by a verified inbound provider adapter.
+// A message's own Authentication-Results header is never an authentication source.
+export const lmcRawEmailSchema = z.object({
+  from: z.string().min(3).max(512),
+  to: z.string().min(3).max(512),
+  subject: z.string().max(998).default(""),
+  text: z.string().optional(),
+  html: z.string().optional(),
+  headers: z.record(z.string(), z.string()).default({}),
+  authentication: lmcAuthenticationSchema.optional(),
+  attachments: z.array(z.unknown()).max(100).default([]),
+});
+export type LmcRawEmail = z.infer<typeof lmcRawEmailSchema>;
+
+export const lmcQualificationSchema = z.object({
+  serviceType: z.string().max(120).optional(),
+  zip: z.string().regex(/^\d{5}$/).optional(),
+  city: z.string().max(120).optional(),
+  urgency: z.enum(["normal", "urgent", "emergency"]).optional(),
+  propertyType: z.enum(["residential", "commercial", "other"]).optional(),
+  name: z.string().max(160).optional(),
+  phone: z.string().max(32).optional(),
+}).strict();
+export type LmcQualification = z.infer<typeof lmcQualificationSchema>;
+
+export const lmcEmailDecisionSchema = z.object({
+  intent: z.enum(["qualification", "price", "availability", "book", "reschedule", "cancel", "complaint", "complex", "wait", "unknown"]),
+  confidence: z.number().min(0).max(1),
+  qualification: lmcQualificationSchema,
+  requestedSlot: z.string().datetime().optional(),
+}).strict();
+export type LmcEmailDecision = z.infer<typeof lmcEmailDecisionSchema>;
+
+export const lmcBusinessSettingsSchema = z.object({
+  ownerEmail: lmcEmailAddressSchema,
+  fromEmail: lmcEmailAddressSchema,
+  physicalAddress: z.string().trim().min(10).max(500),
+  serviceAreaZips: z.array(z.string().regex(/^\d{5}$/)).min(1).max(5_000),
+  serviceAreaCities: z.array(z.string().max(120)).max(500).default([]),
+  services: z.array(z.object({ id: z.string().uuid(), name: z.string().min(1).max(120), aliases: z.array(z.string().max(120)).max(20).default([]) }).strict()).min(1).max(100),
+  emergencyKeywords: z.array(z.string().min(3).max(100)).min(1).max(50),
+  emergencyText: z.string().min(20).max(2_000),
+  priceInformation: z.string().max(2_000).default(""),
+  tone: z.enum(["professional", "friendly", "concise"]).default("professional"),
+  confidenceThreshold: z.number().min(0.5).max(1).default(0.8),
+  tools: z.array(z.enum(["availability", "book", "reschedule", "cancel", "handoff"])).max(5),
+  followups: z.object({ enabled: z.boolean(), maxTouches: z.number().int().min(0).max(3), delaysHours: z.array(z.number().int().min(1).max(720)).max(3), dailyCap: z.number().int().min(0).max(1_000) }).strict(),
+}).strict();
+export type LmcBusinessSettings = z.infer<typeof lmcBusinessSettingsSchema>;
+
+export type LmcChannelRequest = {
+  channel: "email" | "voice";
+  tenant: { id: string; settings: LmcBusinessSettings };
+  contact: { id: string; email?: string; phone?: string };
+  message: { id: string; subject: string; text: string };
+  history: Array<{ role: "lead" | "assistant" | "human"; text: string }>;
+};
+
+export type LmcStructuredAction =
+  | { type: "qualify"; fields: LmcQualification; confidence: number }
+  | { type: "intent"; intent: LmcEmailDecision["intent"]; requestedSlot?: string }
+  | { type: "handoff"; reason: string };
+
+export interface LmcChannel {
+  readonly kind: "email" | "voice";
+  run(request: LmcChannelRequest): Promise<{ actions: LmcStructuredAction[] }>;
+}
