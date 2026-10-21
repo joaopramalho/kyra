@@ -1,5 +1,20 @@
 # LMC status
 
+## Current checkpoint — 2026-10-21
+
+Earlier dated sections below are historical checkpoints and are superseded by this section.
+
+Implemented and verified: durable lead capture, authenticated inbound replies, qualification, real-calendar-backed offers, verified email booking/reschedule/cancel, owner summaries and same-thread human replies, bounded consented follow-ups, suppression, signed inbound Resend adaptation and network-free provider doubles. Email changes reuse canonical availability/staff locks and calendar outbox behavior; no synthetic phone or SMS work is created. Calendar event IDs let a reschedule ignore only its own mirrored event; other conflicts remain blocked. Uncertain sends stop before Resend's idempotency window expires and alert the owner for reconciliation.
+
+The full LMC command currently reports 77 passing tests across 11 suites, including all 19 email a–l scenarios through HTTP, the real application worker and PostgreSQL. It still exits nonzero because the exhaustive table/API isolation audit helper for scenario m has not been implemented. No complete tenant-isolation acceptance or phase-completion claim is made. The focused seven-table storage probe is not a substitute for scenario m.
+
+Added a tenant-scoped CRM/configuration service with read roles, scheduler-only conversation actions, administrator-only configuration and capture-token rotation, service ownership checks, a fixed platform sending identity and cursor-based history. Conversation/action capabilities are removed from model history and CRM read responses. Four real-PostgreSQL workspace tests pass.
+
+Next API integration now includes lead list/history, human reply, pause/resume, email settings, capture-token rotation, public capture, unsubscribe and the email webhook. Fifteen focused route/environment/CSRF tests pass. Operator operations retain origin-based CSRF protection; only capability-protected public intake and unsubscribe receive narrow exceptions. Local live HTTP checks verify unauthenticated CRM 401, invalid capture token 404 and cross-origin capture preflight 204. Next Devtools compiled lead/capture routes without issues; browser error inspection had no connected browser session.
+
+Remaining required work: CRM/configuration screens and navigation; production email-worker bootstrap and real-model wiring; consistent fake defaults across legacy runtime entry points; embedded-form UI/snippet; initial-email/forwarded-notification ingestion; FAQs/escalation/booking settings completion; exhaustive existing-table/API tenant probes and tenant_id requirements; dependency/security remediation, CI, startup/health gates, architecture/runbook documents and the one-command full demo. Remaining Phase 1 legal/marketing/voice-demo review also remains open. No real provider email or production deployment has been made.
+
+
 ## Phase 0
 
 Completed on Linux/WSL2. Tests, lint, typecheck, build, build-config, PostgreSQL migrations, role bootstrap, RLS checks and opted-in integration tests passed. Lint retains 17 existing warnings. The baseline dependency audit reports 76 vulnerabilities (3 critical, 33 high, 30 moderate, 10 low); remediation remains required. See RECON.md and dependency-audit-baseline.json.
