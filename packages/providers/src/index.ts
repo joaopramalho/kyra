@@ -94,3 +94,5 @@ export * from "./storage/s3";
 export * from "./storage/local";
 export * from "./storage/provider";
 export * from "./twilio/twilioProvider";
+
+export * from "./lmc-fakes";
