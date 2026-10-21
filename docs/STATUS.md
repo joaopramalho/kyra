@@ -10,6 +10,21 @@ pairs, totaling **85/735**. All 88 catalog tables have constrained A/B CRUD prob
 The combined CLI reports 650 unprobed pairs (426 admin, 224 landing), zero observed
 probe failures, and exit 1. Original exhaustive assertions and bound are unchanged.
 
+The public deployment middleware now derives its canonical/www/preview alias
+from the shared brand module, and `/api/status` names Lead My Company. Three new
+branding regressions were red before the fix and pass now. All eight existing
+middleware cases retain their assertions/branches with LMC fixture URLs/text.
+Landing 81 tests, lint, Astro check (222 files, zero diagnostics), and the static
+build pass. An independent browser-target ESM bundle of the middleware succeeds;
+its canonical redirect was executed from that bundle. Real Astro preview HTTP
+returns the generated LMC status body, GET/HEAD 200 and OPTIONS 204; its static
+server serves that same readonly body for POST/PUT/PATCH/DELETE. These smoke checks
+do not count as complete landing A/B isolation coverage. No visible layout changed
+and no Cloudflare deployment or live indexing submission was performed; IndexNow
+key was absent during build. One existing 68-character SEO title still warns
+against the 65-character recommendation. The derived preview hostname remains a
+provisional default to verify against the actual Pages project before deployment.
+
 Source discovery is not a static/public exemption or a behavioral proof. New Astro
 endpoints/functions are detected; unknown exports and duplicate paths fail closed.
 Two new inventory tests plus the four worker inventory cases and strict audit

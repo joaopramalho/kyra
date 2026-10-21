@@ -65,3 +65,10 @@
   potential methods until actual deployment behavior is probed. Replace the generic
   landing scope gap only with its concrete 224 unprobed pairs; readonly static output
   is not automatically a passed tenant-isolation proof.
+
+- 2026-10-21: Reuse the shared brand module for public canonical/www/preview host
+  redirects and operational discovery identity. Update only fixture branding in
+  the existing eight middleware cases, retaining all branch/assertion coverage;
+  add three regressions against the configured LMC identity. The preview Pages
+  project hostname is a provisional domain-derived default, not an asserted live
+  deployment. Keep static preview smoke checks separate from full A/B API coverage.

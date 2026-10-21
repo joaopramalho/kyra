@@ -1,3 +1,4 @@
+import { brand } from "@lobbystack/shared/brand"
 import { createHash } from "node:crypto"
 import {
   DEFAULT_DESCRIPTION,
@@ -425,7 +426,7 @@ export const openApiDocument = {
 
 export const publicStatus = {
   status: "ok",
-  service: "lobbystack.com public discovery",
+  service: `${brand.name} public discovery`,
   documentation: absoluteUrl("/docs/api/"),
 }
 
