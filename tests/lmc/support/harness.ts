@@ -45,8 +45,9 @@ export async function createLmcHarness(input:{now:string}){
   const scoped=<T>(fn:Parameters<typeof withBusinessTransaction<T>>[2])=>withBusinessTransaction(db.worker.db,{businessId:tenantId,actorType:"worker"},fn);
   const server=createServer(async(req,res)=>{
     try{
-      const init:RequestInit&{duplex?:"half"}={method:req.method,headers:new Headers(Object.entries(req.headers).flatMap(([key,value])=>value===undefined?[]:[[key,Array.isArray(value)?value.join(", "):value]]))};
-      if(req.method!=="GET"&&req.method!=="HEAD"){init.body=Readable.toWeb(req) as ReadableStream<Uint8Array>;init.duplex="half";}
+      const method=req.method ?? "GET";
+      const init:RequestInit&{duplex?:"half"}={method,headers:new Headers(Object.entries(req.headers).flatMap<[string,string]>(([key,value])=>value===undefined?[]:[[key,Array.isArray(value)?value.join(", "):value]]))};
+      if(method!=="GET"&&method!=="HEAD"){init.body=Readable.toWeb(req) as ReadableStream<Uint8Array>;init.duplex="half";}
       const request=new Request(`http://127.0.0.1${req.url}`,init),url=new URL(request.url);
       let response:Response;
       if(url.pathname===`/api/lmc/capture/${captureToken.value}`)response=await handleLmcCapture(request,captureToken.value,captureService);
@@ -60,7 +61,7 @@ export async function createLmcHarness(input:{now:string}){
   const address=server.address();if(!address||typeof address==="string")throw new Error("TEST_HTTP_START_FAILED");
   const base=`http://127.0.0.1:${address.port}`;
   const allowedSlots=Array.from({length:7},(_,day)=>candidateStartTimes({date:new Date(clock+day*86_400_000).toISOString().slice(0,10),timezone:"America/New_York",hours,durationMinutes:60,now:now()})).flat();
-  const h={tenantId,ownerId,ownerEmail,now,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,scoped,
+  const h={captureUrl:`${base}/api/lmc/capture/${captureToken.value}`,tenantId,ownerId,ownerEmail,now,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,scoped,
     async addViewer(){const id=randomUUID();await db.admin.db.insert(users).values({id,email:`${id}@example.invalid`,normalizedEmail:`${id}@example.invalid`});await db.admin.db.insert(businessMemberships).values({businessId:tenantId,userId:id,role:"viewer"});extraUsers.push(id);return id;},
     async setDailyCap(cap:number){await withBusinessTransaction(db.app.db,{businessId:tenantId,userId:ownerId,actorType:"operator"},async tx=>{
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId));if(!settings)throw new Error("SETTINGS_NOT_FOUND");

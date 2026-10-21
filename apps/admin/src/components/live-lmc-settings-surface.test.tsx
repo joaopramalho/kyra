@@ -105,11 +105,33 @@ it("renders read-only configuration for viewers without save or rotate actions",
 
 it("requires acknowledging invalidation before replacing the capture token", async () => {
   const { fetchMock } = setup();
-  const rotate = await screen.findByRole("button", { name: "emailSettings.rotate" });
+  const rotate = await screen.findByRole("button", {
+    name: "emailSettings.rotate",
+  });
   expect((rotate as HTMLButtonElement).disabled).toBe(true);
-  fetchMock.mockImplementation(async () => Response.json({ captureToken: "new-capture-token" }));
+  fetchMock.mockImplementation(async () =>
+    Response.json({
+      captureToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    }),
+  );
   await userEvent.click(screen.getByLabelText("emailSettings.rotateWarning"));
   await userEvent.click(rotate);
-  await waitFor(() => expect((screen.getByLabelText("emailSettings.token") as HTMLInputElement).value).toBe("new-capture-token"));
-  expect(fetchMock.mock.calls.some(([url, init]) => url === "/api/lmc/settings/capture-token?businessId=business" && init?.method === "POST")).toBe(true);
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("emailSettings.token") as HTMLInputElement).value,
+    ).toBe("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+  );
+  expect(
+    fetchMock.mock.calls.some(
+      ([url, init]) =>
+        url === "/api/lmc/settings/capture-token?businessId=business" &&
+        init?.method === "POST",
+    ),
+  ).toBe(true);
+  expect(
+    (screen.getByLabelText("emailSettings.snippet") as HTMLTextAreaElement)
+      .value,
+  ).toContain(
+    'data-capture-token="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"',
+  );
 });
