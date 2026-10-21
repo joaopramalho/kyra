@@ -14,7 +14,7 @@ function received(id:string,authentication:unknown={spf:"pass",dkim:"pass",dmarc
 }
 describe("Resend LMC adapter",()=>{
   it("verifies exact signed bytes before fetching the received email from a fixed API origin",async()=>{
-    const id=randomUUID(),fetcher=vi.fn(async()=>Response.json(received(id)));
+    const id=randomUUID(),fetcher=vi.fn<typeof fetch>(async()=>Response.json(received(id)));
     const provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:fetcher});
     const input=signed({type:"email.received",data:{email_id:id}});
     expect(await provider.verifyAndLoad(input)).toMatchObject({kind:"message",id:`resend:${id}`,email:{to:"reply+AbCd@inbound.example.invalid",authentication:{spf:"pass",dkim:"pass",dmarc:"pass",aligned:true}}});
@@ -23,12 +23,12 @@ describe("Resend LMC adapter",()=>{
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it.each([null,{spf:"pass",dkim:"gray",dmarc:"pass"},{spf:"unknown",dkim:"pass",dmarc:"pass"}])("does not promote missing or nonpassing trusted authentication: %j",async authentication=>{
-    const id=randomUUID(),provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:vi.fn(async()=>Response.json(received(id,authentication)))});
+    const id=randomUUID(),provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:vi.fn<typeof fetch>(async()=>Response.json(received(id,authentication)))});
     const event=await provider.verifyAndLoad(signed({type:"email.received",data:{email_id:id}}));
     expect(event).toMatchObject({kind:"message",email:{authentication:{aligned:false}}});
   });
   it("rejects unsupported signature versions, stale attempts and recipient ambiguity without fetching",async()=>{
-    const fetcher=vi.fn(async()=>Response.json({})),provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:fetcher});
+    const fetcher=vi.fn<typeof fetch>(async()=>Response.json({})),provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:fetcher});
     const event=signed({type:"email.received",data:{email_id:randomUUID()}});
     for(const signature of [event.headers.get("svix-signature")!.replace("v1,","v2,"),event.headers.get("svix-signature")!.slice(3)]){
       await expect(provider.verifyAndLoad({...event,headers:new Headers({...Object.fromEntries(event.headers),"svix-signature":signature})})).rejects.toThrow("INVALID_WEBHOOK_SIGNATURE");
@@ -43,7 +43,7 @@ describe("Resend LMC adapter",()=>{
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("sends only the stored recipient with an idempotency key, tenant tag and same-thread headers",async()=>{
-    const id=randomUUID(),fetcher=vi.fn(async()=>Response.json({id})),provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:fetcher});
+    const id=randomUUID(),fetcher=vi.fn<typeof fetch>(async()=>Response.json({id})),provider=new ResendLmcProvider({apiKey,webhookSecret:secret,fetch:fetcher});
     const tenantId=randomUUID();
     const mail={tenantId,leadId:randomUUID(),idempotencyKey:"lmc:message-1",kind:"reply" as const,from:"team@example.invalid",to:"ana@example.invalid",replyTo:"reply+AbCd@inbound.example.invalid",subject:"Re: Roof",text:"What is your ZIP?",headers:{"Message-ID":"<outgoing@example.invalid>","In-Reply-To":"<incoming@example.invalid>"}};
     expect(await provider.send(mail)).toEqual({providerMessageId:id});
