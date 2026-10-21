@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 import ts from "typescript";
 import type { openLmcTestDatabase } from "./database";
+import { discoverWorkerHttpRoutes } from "./isolation-worker-inventory";
 
 export type AuditColumn = {
   name: string;
@@ -55,7 +56,12 @@ const runtimeRoles = [
   "lobbystack_readonly",
   "lobbystack_finance_export",
 ];
-export type AuditRoute = { path: string; file: string; methods: string[] };
+export type AuditRoute = {
+  path: string;
+  file: string;
+  methods: string[];
+  surface?: "admin" | "worker";
+};
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const methods = new Set([
   "GET",
@@ -161,6 +167,10 @@ export function checkCatalogProtection(catalog: IsolationCatalog): string[] {
   return failures;
 }
 
+export function auditRouteId(route: AuditRoute, method: string): string {
+  return `${route.surface === "worker" ? "worker:" : ""}${method} ${route.path}`;
+}
+
 /** Enumerates route files and exported HTTP methods via TypeScript AST, including destructured auth exports. */
 export function discoverApiRoutes(root = projectRoot): AuditRoute[] {
   const app = join(root, "apps/admin/app");
@@ -223,18 +233,21 @@ export function discoverApiRoutes(root = projectRoot): AuditRoute[] {
         .split(/[\\/]/)
         .filter((segment) => !/^\(.*\)$/.test(segment));
       const path = `/${segments.join("/")}`;
-      if (!path.startsWith("/api/")) continue;
       if (exported.has("GET")) exported.add("HEAD");
       exported.add("OPTIONS");
       result.push({
         path,
+        surface: "admin",
         file: relative(root, file).replace(/\\/g, "/"),
         methods: [...exported].sort(),
       });
     }
   }
-  visit(join(app, "api"));
+  visit(app);
   if (new Set(result.map((route) => route.path)).size !== result.length)
     throw new Error("DUPLICATE_API_ROUTE");
-  return result.sort((a, b) => a.path.localeCompare(b.path));
+  return [
+    ...result.sort((a, b) => a.path.localeCompare(b.path)),
+    ...discoverWorkerHttpRoutes(root),
+  ];
 }

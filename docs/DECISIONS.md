@@ -51,3 +51,11 @@
   stored cross-business conversation associations, and deny ended/blocked calls. Use
   real controller/domain/HTTP/PG acceptance with only external SDK/Redis transports
   faked; an authenticated 202 mismatch is not evidence of an anonymous exploit.
+
+- 2026-10-21: Inventory all Next route handlers, including paths outside `/api`,
+  and independently walk the worker's reachable local runtime modules for Node HTTP
+  routing. Namespace worker coverage; fail on unresolved dynamic imports/routes or
+  unknown listeners. Require fresh real HTTP/PG/controller admission proof in an
+  isolated process so external SDK/Redis mocks cannot replace the admin runtime.
+  Failed/missing/timed-out proof gives no coverage. Keep Astro/Cloudflare landing
+  endpoint scope explicitly pending until independently classified and probed.

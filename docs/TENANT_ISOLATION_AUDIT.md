@@ -1,5 +1,32 @@
 # Tenant isolation audit
 
+## Latest checkpoint (supersedes older counts below)
+
+The independent inventory now covers every Next route handler (490 method/path
+pairs) and the reachable worker HTTP source graph (21 pairs), totaling 511 pairs
+across 137 paths. Worker IDs have a `worker:` prefix so another server cannot
+accidentally satisfy an admin probe. Seven nested OAuth/discovery/embed paths
+outside the admin `/api` directory are now included.
+
+The combined report executes real behavioral proofs for 88/88 catalog tables,
+64 admin pairs and all 21 worker pairs. Worker health uses the production Node
+server, all methods, forged tenant headers/query fields and each readiness
+dependency. The live attach proof uses real HTTP, controller/agent/domain/PG and
+only fake external SDK/Redis transports in an isolated Vitest process. Coverage
+requires the exact fresh test file to finish successfully with its one assertion
+suite; failed/partial/missing output, process failure or a 45-second timeout
+records no coverage. No prior success artifact is reused. The runner has positive
+and missing-database negative acceptance controls.
+
+Current result: 85/511 pairs, 426 unprobed pairs, one pending landing HTTP surface,
+427 skipped entries and zero observed failures; exit 1. The Astro endpoints and
+Cloudflare deployment middleware must still be independently inventoried and
+classified/probed. They are not silently treated as tenant-free exceptions.
+Original exhaustive assertions and timeout are unchanged. Read/CRUD protection
+does not complete all mixed ownership/association reviews. Older sections below
+are historical checkpoints, not the current completion status.
+
+
 The database audit discovers its inventory from `pg_catalog`, not ORM table lists.
 Next admin API inventory is independently discovered from exported route methods using the
 TypeScript AST, including implicit HEAD and OPTIONS. At this checkpoint there are

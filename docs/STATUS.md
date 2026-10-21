@@ -1,6 +1,53 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21
+## Current checkpoint — 2026-10-21 (worker HTTP admission and audit)
+
+The full LMC goal remains active. Email capture/replies/qualification/booking,
+handoff, suppression, bounded follow-ups and operator CRM/settings are implemented;
+the remaining original product/security/demo requirements below are not complete.
+
+Current combined isolation report: **88/88 tables; 85/511 method/path pairs;
+426 unprobed pairs; one explicit pending landing HTTP surface; zero observed probe
+failures**. The command exits 1 on the 427 skipped entries. Admin discovery now
+includes all Next route handlers, including seven OAuth/discovery/embed handlers
+outside `/api` (490 pairs); the worker's independent source graph adds 21 pairs.
+All 21 worker pairs and 64 admin pairs have behavioral proofs. The original
+exhaustive acceptance assertions and 120-second bound remain unchanged and red.
+Astro endpoint/deployment-middleware discovery/classification remains explicit
+pending work, rather than an inferred exemption for the marketing application.
+
+An authenticated mixed-business/session/call attach first returned 202 and now
+returns 404 before deduplication. New domain admission checks bind canonical
+business/call/provider/session/channel/conversation and unfinished/unblocked state.
+The production worker wraps the unchanged voice handler/controller. Real HTTP,
+agent, snapshots, worker-role PG and durable completion are exercised with only
+external OpenAI/Redis transports fake. See VOICE_ADMISSION.md.
+
+Validation this checkpoint: worker 97 tests, domain 497 tests, agent-core 103
+reported tests (includes compiled/source duplicates), worker/domain/audit strict
+typechecks and packaged worker build pass. The full LMC run before the isolated
+attach-proof bridge reported 99 passed and one failed solely on 78 versus 511
+coverage. The new bridge's success/fail-closed tests both pass; inventory mutation
+tests pass, including unknown listeners, unresolved routes/imports and local
+require traversal. The final combined CLI executes that bridge and records all
+21 worker pairs only after a fresh successful real-HTTP/PG acceptance process.
+Health probes exercise all seven methods, anonymous/forged business contexts and
+each unavailable dependency; these endpoints expose global operational metadata.
+
+Tenant identity is still 66/88 non-null tenant keys (59 generated legacy keys,
+seven native email tables). Five mixed-scope tables and 17 global/user/OAuth/
+affiliate candidates still require ownership review; all-table CRUD probes do
+not settle this design or every association/reassignment requirement.
+
+Remaining: all 426 unprobed discovered admin pairs and landing HTTP scope;
+mixed/global ownership and association/reassignment audits; initial/forwarded
+email ingestion; full business-hours/FAQ/escalation/booking settings; remaining
+branding and legacy fake-provider defaults; dependency/security remediation,
+complete CI gates, production startup/headers/health requirements, architecture/
+runbook and one-command offline demo. No complete phase/goal claim, hosted fork
+or production deployment is made. Real domain/provider setup remains manual.
+
+## Earlier checkpoint — 2026-10-21 (historical)
 
 Earlier dated sections below are historical checkpoints and are superseded by this section.
 

@@ -1,7 +1,10 @@
+import { probeWorkerAttach } from "./isolation-worker-attach-audit";
+import { probeWorkerHealth } from "./isolation-worker-health";
 import { probePublicApiContext } from "./isolation-public-api";
 import { openLmcTestDatabase } from "./database";
 import {
   checkCatalogProtection,
+  auditRouteId,
   discoverApiRoutes,
   readIsolationCatalog,
 } from "./isolation-inventory";
@@ -53,18 +56,30 @@ export async function runTenantIsolationAudit() {
         await probePublicApiContext(context);
       },
     );
-    failures.push(...http.failures);
+    const workerHealth = await probeWorkerHealth();
+    const workerAttach = await probeWorkerAttach();
+    failures.push(
+      ...http.failures,
+      ...workerHealth.failures,
+      ...workerAttach.failures,
+    );
     const tableInventory = catalog.tables.map((table) => table.name);
     const routeInventory = routes.flatMap((route) =>
-      route.methods.map((method) => `${method} ${route.path}`),
+      route.methods.map((method) => auditRouteId(route, method)),
     );
     const probedTables = stored.probed.filter((table) =>
       inserts.probed.includes(table),
     );
-    const probedRoutes = [...new Set(http.probed)];
-    // Admin route discovery does not yet inventory the worker's separate HTTP server.
-    // Keep this explicit so admin coverage alone cannot make the all-API gate green.
-    const pendingHttpSurfaces = ["worker"];
+    const probedRoutes = [
+      ...new Set([
+        ...http.probed,
+        ...workerHealth.probed,
+        ...workerAttach.probed,
+      ]),
+    ];
+    // Next route handlers and worker HTTP are inventoried. Astro endpoints and its
+    // deployment middleware still need independent inventory/classification/probes.
+    const pendingHttpSurfaces = ["landing"];
     const skipped = [
       ...pendingHttpSurfaces.map(
         (surface) => `UNINVENTORIED_HTTP_SURFACE:${surface}`,
