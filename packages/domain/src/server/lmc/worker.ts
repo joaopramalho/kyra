@@ -212,8 +212,10 @@ export class LmcEmailWorker {
       text+=`\n\n${settings.physicalAddress}\nReply STOP or unsubscribe: ${unsubscribe}`;
       headers["List-Unsubscribe"]=`<${unsubscribe}>`;
       headers["List-Unsubscribe-Post"]="List-Unsubscribe=One-Click";
-      headers["In-Reply-To"]=incoming.messageId;
-      headers.References=incoming.messageId;
+      if (incoming.headers["X-LMC-Ingestion-Source"] !== "forward") {
+        headers["In-Reply-To"]=incoming.messageId;
+        headers.References=incoming.messageId;
+      }
     }
     const outbound:LmcOutboundEmail={tenantId:lead.tenantId,leadId:lead.id,idempotencyKey:`lmc:${id}`,kind,from:settings.fromEmail,to:kind==="owner_alert" ? settings.ownerEmail : lead.email,
       replyTo:kind==="owner_alert" ? settings.fromEmail : `reply+${replyToken}@${this.input.receivingDomain}`,subject:kind==="owner_alert" ? "Lead requires your attention" : `Re: ${lead.subject || "Your request"}`,text,headers};

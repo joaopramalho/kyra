@@ -1,6 +1,54 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21 (Astro HTTP inventory)
+## Current checkpoint — 2026-10-21 (initial email ingestion)
+
+Initial direct emails and owner-forwarded lead notifications now enter the same
+signed provider boundary, tenant-scoped capture transaction and real email worker.
+`lead+TOKEN` captures new senders; `forward+TOKEN` accepts explicit Email/Message
+notification fields from the authenticated configured owner. Existing capture-token
+rotation governs these addresses. All initial contacts remain unverified for booking
+and default to no follow-up consent. Subsequent replies keep the established
+sender/token/thread verification. See EMAIL_INGESTION.md for supported format,
+setup, limits and manual DNS/provider work; an inbox-address setup panel is pending.
+
+Both provider-event and RFC Message-ID claims are atomic and tenant scoped;
+rekeyed duplicate deliveries cannot create another lead/reply, and changed IDs or
+content cannot reuse a claimed event. The first direct reply keeps its actual
+thread; forwarded notifications do not leak the owner's Message-ID into the lead's
+reply. HTML notification blockquotes can be parsed without executing scripts or
+reading attachments. Tokens are redacted from CRM/model context. Authenticated
+direct STOP suppresses existing conversations before later queued/future sends.
+The normal reply/loop/opt-out path and all voice sources remain unchanged.
+
+Tests first observed absent intake, a changed-ID conflict/503, ignored direct STOP,
+and a leaked intake capability in a CRM read. Those regressions now pass. Ten new
+real HTTP/PG/worker acceptance cases cover direct email through booking/owner
+summary, forwarding, idempotency, STOP, HTML/attachments, injection logging, redaction,
+A/B controls and a real signed Resend adapter path with only its API transport fake.
+The provider's computed authentication fields were checked against its official
+receiving API documentation; message headers are not promoted to authentication.
+
+Final serial LMC run: **114 passed, one failed solely on unchanged exhaustive
+isolation coverage (85 versus 735)**. It includes all original 19 email scenarios,
+the ten new intake cases and a fixture outbox-cleanup regression. An overlapping
+earlier test run interfered through the real shared queue/fake transport ownership;
+it was discarded as final evidence and the full suite rerun without overlap.
+Domain 497 tests, worker 97 tests, admin/domain/worker typechecks, new test-source
+typecheck and both production admin/worker builds pass. The generated admin chunks
+contain the intake guard; the worker bundle contains the updated redaction/forward
+thread handling. Post-build WSL HTTP smoke: login 200, anonymous leads 401.
+
+Latest combined audit is still 88/88 catalog tables and 85/735 method/path pairs,
+650 unprobed pairs, zero observed failures; exit 1. Initial webhook scenarios through
+the production handler are not counted as complete Next route isolation coverage.
+The full goal remains active: complete all discovered admin/landing route probes,
+mixed/global table ownership and association/reassignment reviews, full business
+hours/FAQ/escalation/booking settings, inbox-address UX, remaining branding and
+legacy fake-provider defaults, dependency/security/CI gates, startup/headers/health,
+architecture/runbook and the one-command offline demo. No phase/goal completion,
+live provider send or deployment is claimed. Earlier sections are historical.
+
+## Earlier checkpoint — 2026-10-21 (Astro HTTP inventory; historical)
 
 The complete LMC goal remains active. The latest independently discovered scope is
 169 source route patterns / 735 method-path pairs: 134 admin patterns / 490 pairs,

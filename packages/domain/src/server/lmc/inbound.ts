@@ -18,6 +18,8 @@ export type NormalizedInboundEmail = {
 };
 export type InboundEmailResult = NormalizedInboundEmail | { kind: "reject" | "ignore"; reason: string };
 
+export function normalizeInboundRecipient(value:string):string|null {return address(value,true);}
+
 function address(value: string, preserveLocalPart = false): string | null {
   if (/[\r\n\0]/.test(value)) return null;
   const match = value.trim().match(/^(?:[^<>\r\n]*<([^<>\r\n]+)>|([^<>\s]+))$/);
@@ -36,14 +38,14 @@ function messageIds(value: string | undefined): string[] {
 
 const hiddenElements = new Set(["script", "style", "head", "template", "blockquote", "svg", "noscript"]);
 const blockElements = new Set(["p", "div", "br", "li", "tr", "section", "h1", "h2", "h3", "hr"]);
-function htmlText(node: DefaultTreeAdapterMap["node"]): string {
+function htmlText(node: DefaultTreeAdapterMap["node"], preserveForwarded=false): string {
   if (node.nodeName === "#text" && "value" in node) return node.value;
   if (!("childNodes" in node)) return "";
   if ("tagName" in node) {
-    if (hiddenElements.has(node.tagName)) return "";
+    if (hiddenElements.has(node.tagName) && !(preserveForwarded&&node.tagName==="blockquote")) return "";
     if (node.attrs.some((attr) => attr.name === "hidden" || (attr.name === "aria-hidden" && attr.value === "true"))) return "";
   }
-  const text = node.childNodes.map(htmlText).join("");
+  const text = node.childNodes.map(child=>htmlText(child,preserveForwarded)).join("");
   return "tagName" in node && blockElements.has(node.tagName) ? `\n${text}\n` : text;
 }
 
@@ -61,7 +63,7 @@ export function stripEmailHistory(text: string): string {
     .split("\n").map((line) => line.trimEnd()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-export function normalizeInboundEmail(input: unknown): InboundEmailResult {
+export function normalizeInboundEmail(input: unknown,options:{preserveForwardedNotification?:boolean}={}): InboundEmailResult {
   let encoded: string;
   try { encoded = JSON.stringify(input); } catch { return { kind: "reject", reason: "invalid_envelope" }; }
   if (typeof encoded !== "string") return { kind: "reject", reason: "invalid_envelope" };
@@ -88,8 +90,8 @@ export function normalizeInboundEmail(input: unknown): InboundEmailResult {
     || /^(?:automatic reply|auto(?:matic)?[- ]?response|out of office|undeliverable|delivery (?:status|failure))/i.test(email.subject)) {
     return { kind: "ignore", reason: "automatic_email" };
   }
-  const body = email.text?.trim() ? email.text : htmlText(parseFragment(email.html ?? ""));
-  const text = stripEmailHistory(body);
+  const body = email.text?.trim() ? email.text : htmlText(parseFragment(email.html ?? ""),options.preserveForwardedNotification);
+  const text = options.preserveForwardedNotification ? body.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, "").trim() : stripEmailHistory(body);
   if (!text) return { kind: "ignore", reason: "empty_message" };
   const untrustedFields = `${email.from}\n${email.subject}\n${text}`;
   return {

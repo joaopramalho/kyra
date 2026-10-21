@@ -4,6 +4,12 @@ import { lmcBusinessSettingsSchema, lmcCaptureSchema } from "@lobbystack/contrac
 import { contacts, lmcEvents, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { createReplyToken, routeReplyToken, verifyReplyToken } from "./capabilities";
 import { enqueueLmcJob } from "./queue";
+import { emailIdentityKeys, loadEmailIdentity, storeEmailIdentities, LmcEmailIdentityConflict } from "./intakeIdentity";
+
+export type LmcEmailCaptureSource = {
+  kind:"direct"|"forward";from:string;recipient:string;messageId:string|null;providerId:string;
+  injectionDetected:boolean;attachmentsIgnored:number;
+};
 
 export const MAX_LMC_CAPTURE_BYTES = 32_768;
 export class LmcCaptureError extends Error {
@@ -24,6 +30,15 @@ export class LmcLeadCapture {
   constructor(private readonly input: { database: Database; now: () => Date }) {}
 
   async capture(token: string, body: unknown): Promise<{ id: string }> {
+    return this.captureLead(token,body);
+  }
+
+  /** Server-only provenance; the public form schema never accepts these fields. */
+  async captureEmail(token:string,body:unknown,source:LmcEmailCaptureSource):Promise<{id:string}> {
+    return this.captureLead(token,body,source);
+  }
+
+  private async captureLead(token:string,body:unknown,source?:LmcEmailCaptureSource):Promise<{id:string}> {
     let serialized: string;
     try { serialized = JSON.stringify(body); } catch { throw new LmcCaptureError(400,"INVALID_CAPTURE"); }
     if (typeof serialized !== "string") throw new LmcCaptureError(400,"INVALID_CAPTURE");
@@ -37,13 +52,24 @@ export class LmcLeadCapture {
     const tenantId = routeReplyToken(token);
     if (!tenantId) throw new LmcCaptureError(404,"CAPTURE_NOT_FOUND");
     const now = this.input.now();
-    const fingerprint = hash(JSON.stringify({ email,message,subject,name,consentToFollowUp:value.consentToFollowUp }));
+    const fingerprint = hash(JSON.stringify({ email,message,subject,name,consentToFollowUp:value.consentToFollowUp, ...(source?{source:{kind:source.kind,from:source.from,recipient:source.recipient,messageId:source.messageId,injectionDetected:source.injectionDetected,attachmentsIgnored:source.attachmentsIgnored}}:{}) }));
     return withBusinessTransaction(this.input.database, { businessId:tenantId, actorType:"worker" }, async tx => {
       const [settings] = await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId)).limit(1);
       if (!settings?.enabled || !verifyReplyToken(token,tenantId,settings.captureTokenHash)) throw new LmcCaptureError(404,"CAPTURE_NOT_FOUND");
       lmcBusinessSettingsSchema.parse(settings.config);
-      const externalId = `capture:${value.requestId}`;
-      const [event] = await tx.insert(lmcEvents).values({ tenantId,type:"lead_captured",externalId,metadata:{fingerprint},createdAt:now })
+      if(source?.kind==="forward"&&source.from!==settings.config.ownerEmail.toLowerCase())throw new LmcCaptureError(403,"FORWARDER_NOT_AUTHORIZED");
+      if(source?.kind==="direct"&&source.from!==email)throw new LmcCaptureError(403,"SENDER_NOT_AUTHORIZED");
+      const identityKeys=source?emailIdentityKeys(source):[];
+      if(source){
+        const prior=await loadEmailIdentity(tx,tenantId,identityKeys,fingerprint);
+        if(prior){
+          if(!prior.leadId)throw new LmcEmailIdentityConflict("EMAIL_IDEMPOTENCY_CONFLICT");
+          await storeEmailIdentities(tx,{tenantId,leadId:prior.leadId,keys:identityKeys,fingerprint,now});
+          return {id:prior.leadId};
+        }
+      }
+      const externalId = source ? `email:event:${hash(source.providerId)}` : `capture:${value.requestId}`;
+      const [event] = await tx.insert(lmcEvents).values({ tenantId,type:"lead_captured",externalId,metadata:{fingerprint,...(source?{source:source.kind,attachmentsIgnored:source.attachmentsIgnored}:{})},createdAt:now })
         .onConflictDoNothing({ target:[lmcEvents.tenantId,lmcEvents.externalId] }).returning({ id:lmcEvents.id });
       if (!event) {
         const [existing] = await tx.select().from(lmcEvents).where(and(eq(lmcEvents.tenantId,tenantId),eq(lmcEvents.externalId,externalId))).limit(1);
@@ -62,9 +88,12 @@ export class LmcLeadCapture {
       const id = randomUUID(), messageId = randomUUID();
       await tx.insert(lmcLeads).values({ id,tenantId,contactId:contact.id,email,name:name || null,subject,replyTokenHash:replyToken.hash,
         status:suppression ? "suppressed" : "new",reason:suppression?.reason ?? null,consentFollowups:value.consentToFollowUp,lastInboundAt:now,createdAt:now,updatedAt:now });
-      await tx.insert(lmcMessages).values({ id:messageId,tenantId,leadId:id,direction:"lead",kind:"inbound",messageId:`<form-${messageId}@lmc.invalid>`,toEmail:settings.config.fromEmail,
-        subject,body:message,status:"received",createdAt:now });
+      const [storedMessage]=await tx.insert(lmcMessages).values({ id:messageId,tenantId,leadId:id,direction:"lead",kind:"inbound",messageId:source?.messageId??`<form-${messageId}@lmc.invalid>`,toEmail:source?.recipient??settings.config.fromEmail,
+        ...(source?{providerId:source.providerId,headers:{"X-LMC-Ingestion-Source":source.kind,...(source.injectionDetected?{"X-LMC-Injection-Detected":"true"}:{})}}:{}),
+        subject,body:message,status:"received",createdAt:now }).onConflictDoNothing().returning({id:lmcMessages.id});
+      if(!storedMessage)throw new LmcCaptureError(409,"CAPTURE_IDEMPOTENCY_CONFLICT");
       await tx.update(lmcEvents).set({leadId:id}).where(and(eq(lmcEvents.tenantId,tenantId),eq(lmcEvents.id,event.id)));
+      if(source)await storeEmailIdentities(tx,{tenantId,leadId:id,keys:identityKeys,fingerprint,now});
       if (!suppression) await enqueueLmcJob(tx,{tenantId,leadId:id,kind:"process",dedupeKey:`process:${messageId}`,payload:{messageId,replyToken:replyToken.value},availableAt:now});
       // The raw reply token stays inside the tenant's private job payload.
       return { id };

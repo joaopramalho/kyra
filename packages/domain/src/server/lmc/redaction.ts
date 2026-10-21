@@ -8,6 +8,10 @@ export function redactLmcCapabilities(value: string): string {
     .replace(
       /reply\+[A-Za-z0-9_-]{43}@[A-Za-z0-9.-]+/g,
       "[conversation reply address]",
+    )
+    .replace(
+      /(?:lead|forward)\+[A-Za-z0-9_-]{43}@[A-Za-z0-9.-]+/gi,
+      "[lead intake address]",
     );
 }
 

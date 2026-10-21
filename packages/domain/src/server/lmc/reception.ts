@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { lmcProviderEventSchema, type LmcProviderEvent, type LmcInboundProvider } from "@lobbystack/contracts";
 import { lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { routeReplyToken, verifyActionToken, verifyReplyToken } from "./capabilities";
-import { normalizeInboundEmail } from "./inbound";
+import { normalizeInboundEmail, normalizeInboundRecipient } from "./inbound";
+import { LmcInitialEmailIntake } from "./initialEmail";
 import { enqueueLmcJob } from "./queue";
+import { suppressLmcEmail } from "./suppression";
 
 const digest=(value:string)=>createHash("sha256").update(value).digest("hex");
 type ReceptionResult={accepted:boolean;reason?:string};
@@ -20,6 +22,8 @@ export class LmcEmailReception {
     if(!parsed.success)return{accepted:false,reason:"invalid_provider_event"};
     const event=parsed.data;
     if(event.kind==="suppression")return this.providerSuppression(event);
+    const recipient=normalizeInboundRecipient(event.email.to);
+    if(recipient?.startsWith("lead+")||recipient?.startsWith("forward+"))return new LmcInitialEmailIntake(this.input).receive(event);
     const email=normalizeInboundEmail(event.email);
     if(email.kind!=="message")return{accepted:false,reason:email.reason};
     const suffix=`@${this.input.receivingDomain}`;
@@ -83,11 +87,7 @@ export class LmcEmailReception {
 
   private async suppress(tx:DatabaseTransaction,tenantId:string,email:string,reason:"opt_out"|"bounce"|"complaint"){
     const now=this.input.now();
-    // Lock all conversations for the address so concurrent send transactions finish before suppression commits.
-    await tx.select({id:lmcLeads.id}).from(lmcLeads).where(and(eq(lmcLeads.tenantId,tenantId),eq(lmcLeads.email,email))).orderBy(asc(lmcLeads.id)).for("update");
-    await tx.insert(lmcSuppressions).values({tenantId,email,reason,createdAt:now}).onConflictDoNothing({target:[lmcSuppressions.tenantId,lmcSuppressions.email]});
-    await tx.update(lmcLeads).set({status:reason==="opt_out"?"opted_out":"suppressed",reason,aiPaused:true,followupGeneration:sql`${lmcLeads.followupGeneration}+1`,updatedAt:now}).where(and(eq(lmcLeads.tenantId,tenantId),eq(lmcLeads.email,email)));
-    await tx.insert(lmcEvents).values({tenantId,type:"email_suppressed",metadata:{reason},createdAt:now});
+    await suppressLmcEmail(tx,tenantId,email,reason,now);
   }
 
   private async providerSuppression(event:Extract<LmcProviderEvent,{kind:"suppression"}>):Promise<ReceptionResult>{

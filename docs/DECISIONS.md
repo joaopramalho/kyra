@@ -81,3 +81,14 @@
   LMC acceptance processes concurrently against the same test database: each real
   email worker dispatches all due tenant jobs, while fake transports belong to that
   process. Use the serial full suite for final evidence, not overlapping fake inboxes.
+
+- 2026-10-21: Reuse the tenant capture capability for distinct direct/forward intake
+  addresses, without granting thread/booking authority or implicit follow-up consent.
+  Only the authenticated configured owner can forward explicit notification fields;
+  do not guess recipients from quoted routing headers or arbitrary vendor formats.
+  Keep contact/message/source/identity claims/job atomic. Serialize provider-event and
+  RFC Message-ID aliases so changed IDs conflict and rekeyed deliveries deduplicate.
+  Initial direct STOP uses the shared tenant-scoped suppression lock. Preserve normal
+  history stripping except for the explicit forwarding parser, redact intake tokens
+  from reads/prompts, and omit the owner's notification ID from the first lead reply.
+  DNS/provider setup and a dedicated inbox-address settings panel remain separate work.
