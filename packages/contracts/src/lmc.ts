@@ -129,3 +129,5 @@ export interface LmcInboundProvider {
 }
 
 export const lmcFollowupJobSchema = lmcProcessJobSchema.extend({touch:z.number().int().min(1).max(3)}).strict();
+
+export const lmcHumanReplySchema = z.object({requestId:z.string().uuid(),text:z.string().trim().min(1).max(16_000)}).strict();

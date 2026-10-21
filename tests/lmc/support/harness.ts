@@ -9,6 +9,7 @@ import { EmailChannel } from "../../../packages/agent-core/src/channels";
 import { createReplyToken } from "../../../packages/domain/src/server/lmc/capabilities";
 import { handleLmcCapture, LmcLeadCapture } from "../../../packages/domain/src/server/lmc/capture";
 import { handleLmcEmailWebhook, handleLmcUnsubscribe, LmcEmailReception } from "../../../packages/domain/src/server/lmc/reception";
+import { LmcHumanReplies } from "../../../packages/domain/src/server/lmc/handoff";
 import { LmcEmailWorker } from "../../../packages/domain/src/server/lmc/worker";
 import { upsertBusyBlocks } from "../../../packages/domain/src/server/calendar";
 import { candidateStartTimes } from "../../../packages/domain/src/server/receptionistActions";
@@ -38,6 +39,7 @@ export async function createLmcHarness(input:{now:string}){
   await db.admin.db.insert(lmcSettings).values({tenantId,captureTokenHash:captureToken.hash,config:{ownerEmail,fromEmail:"team@example.invalid",physicalAddress:"100 Main Street, Miami FL 33101",serviceAreaZips:["33101","33102"],serviceAreaCities:["Miami"],services:[{id:serviceId,name:"roof repair",aliases:["roof replacement"]}],emergencyKeywords:["active leak","storm damage"],emergencyText,priceInformation:"",tone:"professional",confidenceThreshold:0.8,tools:["availability","book","reschedule","cancel","handoff"],followups:{enabled:true,maxTouches:3,delaysHours:[24,48,72],dailyCap:100}}});
   const captureService=new LmcLeadCapture({database:db.worker.db,now});
   const reception=new LmcEmailReception({database:db.worker.db,now,receivingDomain:"inbound.example.invalid",signingSecret});
+  const human=new LmcHumanReplies({database:db.app.db,now,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret});
   const worker=new LmcEmailWorker({database:db.worker.db,dispatcher:db.dispatcher.db,now,channel:new EmailChannel(providers.model),mail:providers.email,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret});
   const scoped=<T>(fn:Parameters<typeof withBusinessTransaction<T>>[2])=>withBusinessTransaction(db.worker.db,{businessId:tenantId,actorType:"worker"},fn);
   const server=createServer(async(req,res)=>{
@@ -86,7 +88,8 @@ export async function createLmcHarness(input:{now:string}){
     async deliver(event:LmcProviderEvent){const prepared=inbound.prepare(event);const response=await fetch(`${base}/api/lmc/webhook`,{method:"POST",body:prepared.rawBody,headers:prepared.headers});if(response.status!==200)throw new Error(`Webhook failed: ${response.status}`);},
     async reply(id:string,text:string,options:{headers?:Record<string,string>}={}){await h.deliver(await h.replyEvent(id,text,options));},
     async qualifiedLead(email:string){const lead=await h.capture({email,name:"Ana",message:"I need roof repair, ZIP 33101, residential homeowner."});await h.work();await h.reply(lead.id,"Roof repair, ZIP 33101, residential homeowner.");await h.work();return lead;},
-    async humanReply(_id:string,_text:string){throw new Error("HUMAN_REPLY_WORKFLOW_NOT_IMPLEMENTED");},
+    async humanReply(id:string,text:string){return human.reply({tenantId,userId:ownerId,leadId:id},{requestId:randomUUID(),text});},
+    async humanReplyAs(userId:string,id:string,text:string,requestId=randomUUID()){return human.reply({tenantId,userId,leadId:id},{requestId,text});},
     async unsubscribe(mail:LmcOutboundEmail){const path=new URL(mail.headers["List-Unsubscribe"]!.slice(1,-1)).pathname;const response=await fetch(`${base}${path}`,{method:"POST",body:"List-Unsubscribe=One-Click"});if(response.status!==200)throw new Error("UNSUBSCRIBE_FAILED");},
     async bounce(id:string){const lead=await h.lead(id),mail=providers.email.records.filter(mail=>mail.leadId===id&&mail.to===lead.email).at(-1)!;await h.deliver({kind:"suppression",id:randomUUID(),tenantId,providerMessageId:mail.providerMessageId,email:lead.email,reason:"bounce"});},
     advanceDays(days:number){clock+=days*86_400_000;},
