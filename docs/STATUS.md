@@ -168,3 +168,14 @@ acceptance cases passed after the schema change. The combined audit still report
 453 uncovered methods (exit 1). Strict audit typecheck and admin/DB builds passed.
 The full goal remains active, including mixed ownership, API coverage, initial
 email ingestion, configuration completion and the original security/CI/demo work.
+
+
+## Audit fixture reliability (2026-10-21)
+
+Extracted reusable HTTP probe callbacks so the combined audit can share real
+authenticated A/B sessions. Existing standalone read/mutation cases remain intact.
+A lock-controlled concurrency regression proved that the former sequential
+outbox/parent teardown could leave a late committed fixture job orphaned. Atomic
+parent locks, queue deletion and parent deletion fix that failure, and the same
+regression passes. Strict audit typechecking passes. This changes test lifecycle
+only; production auth quotas, voice code and acceptance assertions are unchanged.

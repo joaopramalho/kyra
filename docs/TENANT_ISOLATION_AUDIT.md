@@ -150,3 +150,18 @@ relations. See [tenant identity scope and remaining ownership work](TENANT_IDENT
 The general catalog checker rejects missing or divergent generated keys on this
 class of table. Mixed and globally scoped relations remain in every behavioral
 probe and in the outstanding ownership review.
+
+
+## HTTP fixture lifecycle
+
+Probe groups can share one real authenticated A/B context, preserving the original
+assertions and login quota. Standalone focused suites still use the same setup.
+Fixtures sign out before removing synthetic identities.
+
+A deliberate failing-probe regression holds a real parent FK lock, waits until
+cleanup is blocked, and then commits an outbox row. The former teardown left that
+row orphaned through ON DELETE SET NULL. Cleanup now locks the synthetic business
+parents and deletes their queue rows and parents in one transaction, before the
+remaining fixture/user cleanup. The same red concurrency case passes afterward.
+All cleanup remains scoped to the randomly generated fixture IDs in the guarded
+local test database. No background worker or production protection is disabled.
