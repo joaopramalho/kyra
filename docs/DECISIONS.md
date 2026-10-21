@@ -59,3 +59,9 @@
   isolated process so external SDK/Redis mocks cannot replace the admin runtime.
   Failed/missing/timed-out proof gives no coverage. Keep Astro/Cloudflare landing
   endpoint scope explicitly pending until independently classified and probed.
+
+- 2026-10-21: Independently inventory Astro endpoint and Cloudflare function source,
+  including dynamic/conditional static routes and wildcard middleware. Record seven
+  potential methods until actual deployment behavior is probed. Replace the generic
+  landing scope gap only with its concrete 224 unprobed pairs; readonly static output
+  is not automatically a passed tenant-isolation proof.

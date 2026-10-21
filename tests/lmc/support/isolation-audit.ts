@@ -77,9 +77,9 @@ export async function runTenantIsolationAudit() {
         ...workerAttach.probed,
       ]),
     ];
-    // Next route handlers and worker HTTP are inventoried. Astro endpoints and its
-    // deployment middleware still need independent inventory/classification/probes.
-    const pendingHttpSurfaces = ["landing"];
+    // Known Next, Node worker and Astro/Cloudflare handlers are inventoried.
+    // Discovered but unprobed landing routes now remain explicit below.
+    const pendingHttpSurfaces: string[] = [];
     const skipped = [
       ...pendingHttpSurfaces.map(
         (surface) => `UNINVENTORIED_HTTP_SURFACE:${surface}`,

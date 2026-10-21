@@ -1,3 +1,4 @@
+import { discoverLandingHttpRoutes } from "./isolation-landing-inventory";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
@@ -60,7 +61,7 @@ export type AuditRoute = {
   path: string;
   file: string;
   methods: string[];
-  surface?: "admin" | "worker";
+  surface?: "admin" | "worker" | "landing";
 };
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const methods = new Set([
@@ -168,7 +169,7 @@ export function checkCatalogProtection(catalog: IsolationCatalog): string[] {
 }
 
 export function auditRouteId(route: AuditRoute, method: string): string {
-  return `${route.surface === "worker" ? "worker:" : ""}${method} ${route.path}`;
+  return `${route.surface && route.surface !== "admin" ? `${route.surface}:` : ""}${method} ${route.path}`;
 }
 
 /** Enumerates route files and exported HTTP methods via TypeScript AST, including destructured auth exports. */
@@ -249,5 +250,6 @@ export function discoverApiRoutes(root = projectRoot): AuditRoute[] {
   return [
     ...result.sort((a, b) => a.path.localeCompare(b.path)),
     ...discoverWorkerHttpRoutes(root),
+    ...discoverLandingHttpRoutes(root),
   ];
 }

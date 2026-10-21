@@ -1,5 +1,30 @@
 # Tenant isolation audit
 
+## Astro source inventory checkpoint (supersedes older counts)
+
+All 31 Astro source endpoints and the Cloudflare Pages wildcard middleware are
+now independently discovered from the source tree. The inventory includes Markdown
+sidecars, static/dynamic discovery metadata, RSS, schema, images, the optional
+IndexNow key endpoint and locale variants. It records all seven HTTP methods for
+these 32 source routes, because deployment/static method behavior is not inferred
+from an exported GET alone. `landing:` IDs cannot collide with admin/worker IDs.
+
+New source endpoint/function files are detected; missing HTTP exports, unresolved
+function exports and duplicate endpoint/function paths fail discovery. Two new
+acceptance cases pass, including mutation controls; the four worker inventory
+cases and strict audit typecheck still pass.
+
+The generic landing scope marker is replaced by 224 concrete unprobed method/path
+pairs. Current combined result: 88/88 tables, 85/735 pairs, 650 unprobed pairs,
+zero observed probe failures; exit 1. Of the uncovered pairs, 426 belong to admin
+and 224 to landing. No static/public exemption or behavioral coverage is inferred
+from source discovery. Conditional static routes still need positive/disabled
+controls, and Pages middleware needs deployment-aware behavioral verification.
+The original exhaustive assertions and bound are unchanged. Earlier counts below
+are historical. This inventory does not prove all requests to all rendered pages
+or server actions; the original broader security/startup requirements also remain.
+
+
 ## Latest checkpoint (supersedes older counts below)
 
 The independent inventory now covers every Next route handler (490 method/path

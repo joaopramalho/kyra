@@ -1,6 +1,28 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21 (worker HTTP admission and audit)
+## Current checkpoint — 2026-10-21 (Astro HTTP inventory)
+
+The complete LMC goal remains active. The latest independently discovered scope is
+169 source route patterns / 735 method-path pairs: 134 admin patterns / 490 pairs,
+three worker patterns / 21 pairs, and 31 Astro endpoints plus one Cloudflare Pages
+wildcard middleware / 224 pairs. Behavioral coverage is 64 admin plus all 21 worker
+pairs, totaling **85/735**. All 88 catalog tables have constrained A/B CRUD probes.
+The combined CLI reports 650 unprobed pairs (426 admin, 224 landing), zero observed
+probe failures, and exit 1. Original exhaustive assertions and bound are unchanged.
+
+Source discovery is not a static/public exemption or a behavioral proof. New Astro
+endpoints/functions are detected; unknown exports and duplicate paths fail closed.
+Two new inventory tests plus the four worker inventory cases and strict audit
+typecheck pass. Landing HTTP probes, conditional-route controls and deployment
+middleware verification remain required. See TENANT_ISOLATION_AUDIT.md.
+
+The worker admission fix and its real HTTP/controller/agent/PG controls remain
+implemented. Previous email/voice validation and all remaining original product,
+tenant ownership, security, CI and offline-demo requirements are recorded below;
+they are not made complete by this inventory addition. Earlier sections are
+historical and their counts/scope gaps are superseded by this checkpoint.
+
+## Earlier checkpoint — 2026-10-21 (worker HTTP admission and audit; historical)
 
 The full LMC goal remains active. Email capture/replies/qualification/booking,
 handoff, suppression, bounded follow-ups and operator CRM/settings are implemented;
