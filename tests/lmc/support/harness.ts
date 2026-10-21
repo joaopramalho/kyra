@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction } from "@lobbystack/db";
 import { FakeLmcInboundProvider, SecretBox, createFakeLmcProviders } from "@lobbystack/providers";
 import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent } from "@lobbystack/contracts";
@@ -23,6 +23,7 @@ export async function createLmcHarness(input:{now:string}){
   const emergencyText="Please stay clear of damaged areas. Our team will contact you urgently about the emergency.";
   let clock=Date.parse(input.now);
   const now=()=>new Date(clock),signingSecret=randomBytes(32).toString("hex");
+  const extraUsers:string[]=[];
   const previousEncryptionKey=process.env.ENCRYPTION_KEY;
   process.env.ENCRYPTION_KEY??=randomBytes(32).toString("hex");
   const box=new SecretBox(process.env.ENCRYPTION_KEY);
@@ -59,7 +60,8 @@ export async function createLmcHarness(input:{now:string}){
   const address=server.address();if(!address||typeof address==="string")throw new Error("TEST_HTTP_START_FAILED");
   const base=`http://127.0.0.1:${address.port}`;
   const allowedSlots=Array.from({length:7},(_,day)=>candidateStartTimes({date:new Date(clock+day*86_400_000).toISOString().slice(0,10),timezone:"America/New_York",hours,durationMinutes:60,now:now()})).flat();
-  const h={tenantId,ownerId,ownerEmail,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,scoped,
+  const h={tenantId,ownerId,ownerEmail,now,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,scoped,
+    async addViewer(){const id=randomUUID();await db.admin.db.insert(users).values({id,email:`${id}@example.invalid`,normalizedEmail:`${id}@example.invalid`});await db.admin.db.insert(businessMemberships).values({businessId:tenantId,userId:id,role:"viewer"});extraUsers.push(id);return id;},
     async setDailyCap(cap:number){await withBusinessTransaction(db.app.db,{businessId:tenantId,userId:ownerId,actorType:"operator"},async tx=>{
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId));if(!settings)throw new Error("SETTINGS_NOT_FOUND");
       await tx.update(lmcSettings).set({config:{...settings.config,followups:{...settings.config.followups,dailyCap:cap}}}).where(eq(lmcSettings.tenantId,tenantId));
@@ -93,7 +95,7 @@ export async function createLmcHarness(input:{now:string}){
     async unsubscribe(mail:LmcOutboundEmail){const path=new URL(mail.headers["List-Unsubscribe"]!.slice(1,-1)).pathname;const response=await fetch(`${base}${path}`,{method:"POST",body:"List-Unsubscribe=One-Click"});if(response.status!==200)throw new Error("UNSUBSCRIBE_FAILED");},
     async bounce(id:string){const lead=await h.lead(id),mail=providers.email.records.filter(mail=>mail.leadId===id&&mail.to===lead.email).at(-1)!;await h.deliver({kind:"suppression",id:randomUUID(),tenantId,providerMessageId:mail.providerMessageId,email:lead.email,reason:"bounce"});},
     advanceDays(days:number){clock+=days*86_400_000;},
-    async close(){server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await db.admin.db.delete(businesses).where(eq(businesses.id,tenantId));await db.admin.db.delete(users).where(eq(users.id,ownerId));await db.close();if(previousEncryptionKey===undefined)delete process.env.ENCRYPTION_KEY;else process.env.ENCRYPTION_KEY=previousEncryptionKey;},
+    async close(){server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await db.admin.db.delete(businesses).where(eq(businesses.id,tenantId));await db.admin.db.delete(users).where(inArray(users.id,[ownerId,...extraUsers]));await db.close();if(previousEncryptionKey===undefined)delete process.env.ENCRYPTION_KEY;else process.env.ENCRYPTION_KEY=previousEncryptionKey;},
   };
   return h;
 }

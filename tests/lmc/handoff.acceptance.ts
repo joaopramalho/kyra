@@ -16,6 +16,12 @@ describe("human access and uncertain delivery recovery",()=>{
     expect(h.mail.to("human@example.invalid").filter(mail=>mail.text.includes("I will help you"))).toHaveLength(1);
     await expect(h.humanReplyAs(h.ownerId,lead.id,"Changed message",requestId)).rejects.toThrow("HUMAN_REPLY_IDEMPOTENCY_CONFLICT");
   });
+  it("keeps unsubscribe capabilities out of model history",async()=>{
+    const lead=await h.capture({email:"private-links@example.invalid",message:"Roof help"});await h.work();
+    await h.reply(lead.id,"Roof repair at my home in ZIP 33101");await h.work();
+    expect(h.model.calls.length).toBeGreaterThan(1);
+    expect(JSON.stringify(h.model.calls.at(-1)?.untrusted.history)).not.toContain("/api/lmc/unsubscribe/");
+  });
   it("does not retry an ambiguous customer delivery after the provider idempotency window",async()=>{
     const lead=await h.capture({email:"uncertain@example.invalid",message:"Roof help"});
     const send=h.mail.send.bind(h.mail);let customerAttempts=0;
