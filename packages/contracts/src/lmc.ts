@@ -106,3 +106,15 @@ export const lmcCaptureSchema = z.object({
   consentToFollowUp: z.boolean().default(false),
 }).strict();
 export type LmcCaptureInput = z.infer<typeof lmcCaptureSchema>;
+
+export const lmcProcessJobSchema = z.object({
+  messageId: z.string().uuid(), replyToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/), generation: z.number().int().min(0).default(0),
+}).strict();
+export const lmcOutboundEmailSchema = z.object({
+  tenantId: z.string().uuid(), leadId: z.string().uuid(), idempotencyKey: z.string().min(1).max(255), kind: z.enum(["reply","followup","owner_alert"]),
+  from: lmcEmailAddressSchema, to: lmcEmailAddressSchema, replyTo: lmcEmailAddressSchema,
+  subject: z.string().max(998).refine(value=>!/[\r\n\0]/.test(value)), text: z.string().max(65_536), headers: z.record(z.string(),z.string().max(4096)),
+}).strict();
+export const lmcSendJobSchema = z.object({
+  messageId: z.string().uuid(), outbound: lmcOutboundEmailSchema, generation: z.number().int().min(0), allowPaused: z.boolean(),
+}).strict();
