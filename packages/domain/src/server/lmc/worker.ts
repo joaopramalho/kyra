@@ -4,6 +4,7 @@ import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, l
 import { appointments, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
 import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
+import { redactLmcCapabilities } from "./redaction";
 import { listEmailVisitSlots } from "./scheduling";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 
@@ -84,8 +85,8 @@ export class LmcEmailWorker {
     let actions: LmcStructuredAction[] = [];
     if (!isEmergency && !isInjection) {
       try {
-        actions = (await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:message.subject,text:message.body},
-          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:item.body}))})).actions;
+        actions = (await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
+          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))})).actions;
       } catch { actions=[{type:"handoff",reason:"model_unavailable"}]; }
     }
     const proposed={...lead.qualification};
