@@ -1,3 +1,4 @@
+import { probePublicApiContext } from "./isolation-public-api";
 import { openLmcTestDatabase } from "./database";
 import {
   checkCatalogProtection,
@@ -8,8 +9,9 @@ import { seedIsolationFixtures } from "./isolation-fixtures";
 import { probeStoredTables } from "./isolation-tables";
 import { probeTableInserts } from "./isolation-inserts";
 import {
-  probeEmailReadRoutes,
-  probeEmailMutationRoutes,
+  withHttpAudit,
+  probeEmailReadContext,
+  probeEmailMutationContext,
 } from "./isolation-http";
 
 /** An uncovered discovered route remains a failure. No allowlist or successful structural check substitutes for a probe. */
@@ -43,13 +45,15 @@ export async function runTenantIsolationAudit() {
     );
     const inserts = await probeTableInserts(db, catalog.tables);
     failures.push(...stored.failures, ...inserts.failures);
-    const http = await probeEmailReadRoutes(
+    const http = await withHttpAudit(
       process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
+      async (context) => {
+        await probeEmailReadContext(context);
+        await probeEmailMutationContext(context);
+        await probePublicApiContext(context);
+      },
     );
-    const mutations = await probeEmailMutationRoutes(
-      process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
-    );
-    failures.push(...http.failures, ...mutations.failures);
+    failures.push(...http.failures);
     const tableInventory = catalog.tables.map((table) => table.name);
     const routeInventory = routes.flatMap((route) =>
       route.methods.map((method) => `${method} ${route.path}`),
@@ -57,8 +61,14 @@ export async function runTenantIsolationAudit() {
     const probedTables = stored.probed.filter((table) =>
       inserts.probed.includes(table),
     );
-    const probedRoutes = [...new Set([...http.probed, ...mutations.probed])];
+    const probedRoutes = [...new Set(http.probed)];
+    // Admin route discovery does not yet inventory the worker's separate HTTP server.
+    // Keep this explicit so admin coverage alone cannot make the all-API gate green.
+    const pendingHttpSurfaces = ["worker"];
     const skipped = [
+      ...pendingHttpSurfaces.map(
+        (surface) => `UNINVENTORIED_HTTP_SURFACE:${surface}`,
+      ),
       ...tableInventory
         .filter((table) => !probedTables.includes(table))
         .map((table) => `UNPROBED_TABLE:${table}`),
@@ -77,6 +87,7 @@ export async function runTenantIsolationAudit() {
       skipped,
       failures,
       runtimeRoles: catalog.logins,
+      pendingHttpSurfaces,
     };
   } finally {
     try {

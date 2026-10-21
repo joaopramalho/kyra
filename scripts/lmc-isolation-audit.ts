@@ -21,6 +21,10 @@ async function main() {
       methods: report.routeInventory.length,
       probedMethods: report.probedRoutes.length,
       uncovered: report.skipped.length,
+      uncoveredMethods: report.skipped.filter((value) =>
+        value.startsWith("UNPROBED_ROUTE:"),
+      ).length,
+      pendingHttpSurfaces: report.pendingHttpSurfaces,
       failures: report.failures.length,
     }),
   );

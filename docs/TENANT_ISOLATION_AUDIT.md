@@ -1,7 +1,7 @@
 # Tenant isolation audit
 
 The database audit discovers its inventory from `pg_catalog`, not ORM table lists.
-API inventory is independently discovered from exported route methods using the
+Next admin API inventory is independently discovered from exported route methods using the
 TypeScript AST, including implicit HEAD and OPTIONS. At this checkpoint there are
 88 application tables, 127 API paths, and 469 method/path pairs.
 
@@ -62,7 +62,7 @@ it does not prove behavioral coverage.
 ## Remaining acceptance work
 
 The exhaustive `isolation.acceptance.ts` gate executes the combined table/API
-helper and remains red because 453 discovered method/path pairs have no
+helper and remains red because 405 discovered admin method/path pairs have no
 behavioral probe yet. No API method is counted as
 behaviorally probed solely because it was discovered. Authenticated tenant A/B
 requests, foreign resource IDs, mutations, transport credentials, and provider
@@ -105,8 +105,8 @@ pnpm exec tsx --tsconfig scripts/tsconfig.json \
 ```
 
 This command exits unsuccessfully if any table/route is uncovered or any probe
-fails. The current expected summary is 88/88 tables and 16/469 method/path pairs,
-with 453 uncovered method/path pairs. The original acceptance assertions are
+fails. The current expected summary is 88/88 tables and 64/469 admin method/path pairs,
+with 405 uncovered admin method/path pairs. The original acceptance assertions are
 unchanged: this partial report cannot make the exhaustive gate green.
 
 
@@ -114,8 +114,8 @@ unchanged: this partial report cannot make the exhaustive gate green.
 
 `isolation-http-mutations.acceptance.ts` adds ten method/path pairs:
 POST/OPTIONS human replies, PATCH/OPTIONS automation, GET/HEAD/PUT/OPTIONS email
-settings, and POST/OPTIONS capture-token rotation. The combined audit now probes
-16 of 469 pairs and reports every remaining 453 as uncovered.
+settings, and POST/OPTIONS capture-token rotation. These are the email-specific
+pairs; the public-key group below extends total admin coverage.
 
 Real owner writes must succeed and persist the exact intended action in both
 businesses without changing the other business. Human replies must create one
@@ -165,3 +165,60 @@ parents and deletes their queue rows and parents in one transaction, before the
 remaining fixture/user cleanup. The same red concurrency case passes afterward.
 All cleanup remains scoped to the randomly generated fixture IDs in the guarded
 local test database. No background worker or production protection is disabled.
+
+
+## Public-key API probes
+
+`isolation-public-api.acceptance.ts` contributes 48 method/path pairs:
+all seven standard methods on `/api/v1/contacts`, contact detail, `/services`,
+`/staff`, `/me`, and `/business`, plus list/create and revoke dashboard key routes.
+Of these, 21 are explicitly unsupported method handlers: they must return 405 in
+the documented error shape, with the correct Allow header and unchanged database
+state for both businesses. Supported operations have real positive controls.
+The combined admin report now covers 64/469 pairs with 405 still unprobed.
+
+Keys are issued through the real signed-in dashboard endpoint, used as bearer
+credentials on the real Next server, and revoked through the dashboard. The test
+proves only hashes are stored and lists do not disclose plaintext keys or hashes.
+Anonymous requests, cookie-only public calls, viewers managing keys, insufficient
+scopes, altered keys, revoked keys, foreign resource IDs and forged tenant/user
+headers and query/body fields are exercised. A foreign cookie cannot override a
+presented API key. Dashboard key mutations retain CSRF checks. Valid contact
+creation/replay/conflict, contact updates, business updates and queued snapshot
+refreshes are checked against persisted data in both directions.
+
+The state comparison is built from the live catalog and includes every relation
+with a tenant_id or business_id (71 at this checkpoint). Only the presented key's
+legitimate last_used_at update is excluded when that operation is expected to
+authenticate; its asynchronous write is settled before comparisons. Other key
+state remains included. Redis rate counters are expected request metadata.
+There are no fake handler responses, policy bypasses or disabled runtime quotas.
+Fixtures require the server's fake provider mode and remove their queue work.
+
+The combined audit shares one authenticated fixture among probe groups instead
+of issuing another set of logins per group. Original exhaustive acceptance
+assertions and their 120-second bound remain unchanged. Standalone focused
+suites still exercise the same callbacks and real HTTP pipeline.
+
+## Worker HTTP inventory still required
+
+The 469-method inventory above currently covers the Next admin application.
+Worker HTTP surfaces must also be independently inventoried and behaviorally
+probed before the original all-API requirement can be declared complete.
+Source review identifies `/health/live` and `/health/ready` in
+`apps/worker/src/health.ts`, plus the feature-flagged `/internal/live/attach` in
+`apps/worker/src/liveCalls.ts`. These are pending, not silently exempted or counted
+as covered by the admin matrix. Health handlers currently accept methods without
+an explicit method guard; attach admits POST only when enabled and checks its
+internal service token. Tests must preserve real voice behavior and fake only
+external transports. Remaining tenant ownership/association and security/product
+requirements also remain active.
+
+
+The combined report also retains `pendingHttpSurfaces: ["worker"]` and an explicit
+`UNINVENTORIED_HTTP_SURFACE:worker` skipped entry. Completing only admin methods
+therefore cannot turn the all-API gate green. The CLI distinguishes 405 uncovered
+admin methods from the additional worker inventory gap (406 total skipped
+entries at this checkpoint). Replace that marker with independently discovered
+worker routes and real probes when the worker audit is implemented; do not
+remove it merely to obtain a passing gate.

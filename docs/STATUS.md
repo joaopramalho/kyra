@@ -179,3 +179,36 @@ outbox/parent teardown could leave a late committed fixture job orphaned. Atomic
 parent locks, queue deletion and parent deletion fix that failure, and the same
 regression passes. Strict audit typechecking passes. This changes test lifecycle
 only; production auth quotas, voice code and acceptance assertions are unchanged.
+
+
+## Public-key HTTP audit (2026-10-21)
+
+Added 48 actual admin method/path probes for public contacts, services, staff,
+integration identity, business configuration and dashboard key management. Keys
+are created and revoked through authenticated HTTP, with stored hash/privacy,
+scope, cookie-versus-bearer, foreign-context, strict-body and CSRF checks. Valid
+writes and idempotency are verified in PostgreSQL. Negative and unsupported-method
+attempts compare all 71 tenant/business-column relations, allowing only expected
+presented-key usage metadata. The combined audit covers 64/469 admin pairs and
+retains all 405 uncovered pairs as failures of the original exhaustive gate.
+
+Validation: focused public/email HTTP suites passed; full LMC run before the new
+cleanup regression reports 92 passed and one failed solely on 64 versus 469
+method coverage. The late-writer cleanup regression separately ran red then
+green after atomic cleanup. Strict audit TypeScript check passes. The combined
+CLI after cleanup still reports 88 table probes, 64 admin method probes, zero
+observed probe failures and 405 uncovered pairs (exit 1).
+
+The independent API inventory currently enumerates the Next admin app. Worker
+health and internal live-attach HTTP surfaces still require discovery/probes
+before the all-API requirement is complete. Those three known worker paths are
+explicit pending scope. Mixed storage, global/user ownership review, association
+checks, initial/forwarded email, configuration completion, legacy provider fake
+defaults, dependency remediation, CI, architecture/runbook and demo remain part
+of the full active objective. No production runtime or voice source changed in
+this checkpoint.
+
+Worker discovery is also an explicit machine-readable scope gap in the combined
+report, not just a documentation note. The report has 405 uncovered admin methods
+plus one uninventoried worker-surface marker; admin-only coverage cannot make the
+original all-API gate pass. The CLI prints these categories separately.
