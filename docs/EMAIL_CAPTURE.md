@@ -1,6 +1,6 @@
 # Website lead capture
 
-The anonymous capture endpoint and the dependency-free `lmc-form.js` loader are implemented. Production email-worker startup and real-model wiring remain required; this guide does not imply that the full deployed email workflow is ready. The integration test below exercises the actual queue worker with fake external providers.
+The anonymous capture endpoint and the dependency-free `lmc-form.js` loader are implemented. The email consumer is now connected to the worker when enabled; see [EMAIL_RUNTIME](EMAIL_RUNTIME.md) for its startup flag and provider configuration. The full hosted deployment remains unfinished. The integration test below exercises the actual queue worker with fake external providers.
 
 ## Install the form
 
