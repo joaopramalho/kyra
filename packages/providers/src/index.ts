@@ -98,3 +98,5 @@ export * from "./twilio/twilioProvider";
 export * from "./lmc-fakes";
 
 export * from "./email/resend";
+
+export * from "./lmc-fake-inbound";
