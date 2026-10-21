@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
-import { lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
-import { bookEmailAppointmentInTransaction } from "../booking";
+import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
 import { listEmailVisitSlots } from "./scheduling";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 
@@ -11,6 +11,7 @@ type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
 type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string };
 const terminal = new Set(["opted_out","suppressed","declined","booked"]);
+const processingTerminal = new Set(["opted_out","suppressed","declined"]);
 const injection = (text: string) => /ignore\s+(?:all\s+)?(?:your|previous|system)\s+(?:rules|instructions)|\bsystem\s*:|\b(?:give|apply)\s+\d{1,3}\s*%\s*(?:off|discount)|another\s+tenant/i.test(text);
 
 export class LmcEmailWorker {
@@ -72,7 +73,7 @@ export class LmcEmailWorker {
       const [settings] = await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,job.tenantId)).limit(1);
       const [message] = await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.id,payload.messageId),eq(lmcMessages.direction,"lead"))).limit(1);
       if (!lead || !message || !settings?.enabled || !verifyReplyToken(payload.replyToken,job.tenantId,lead.replyTokenHash)) throw new Error("INVALID_JOB_PAYLOAD");
-      if (lead.aiPaused || terminal.has(lead.status) || lead.followupGeneration!==payload.generation || await this.suppressed(tx,lead)) return null;
+      if (lead.aiPaused || processingTerminal.has(lead.status) || lead.followupGeneration!==payload.generation || await this.suppressed(tx,lead)) return null;
       const history = await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,lead.id))).orderBy(asc(lmcMessages.createdAt),asc(lmcMessages.id));
       return {lead,message,history,settings:lmcBusinessSettingsSchema.parse(settings.config)};
     });
@@ -99,11 +100,11 @@ export class LmcEmailWorker {
     await this.scoped(job.tenantId,async tx => {
       await this.lease(tx,job);
       const [current] = await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id))).for("update");
-      if (!current || current.aiPaused || terminal.has(current.status) || current.followupGeneration!==payload.generation || await this.suppressed(tx,current)) return;
+      if (!current || current.aiPaused || processingTerminal.has(current.status) || current.followupGeneration!==payload.generation || await this.suppressed(tx,current)) return;
       const [already] = await tx.select({id:lmcEvents.id}).from(lmcEvents).where(and(eq(lmcEvents.tenantId,job.tenantId),eq(lmcEvents.externalId,`processed:${job.id}`))).limit(1);
       if (already) return;
       let qualification={...current.qualification,...(current.name ? {name:current.name} : {})};
-      let status="qualifying", reason: string|null=null, paused=false, alert=false, appointmentId=current.appointmentId;
+      let status=current.appointmentId?"booked":"qualifying", reason: string|null=null, paused=false, alert=false, appointmentId=current.appointmentId;
       let offeredSlots=current.offeredSlots;
       let text="Please share your ZIP code and whether you need roof repair or roof replacement. Is this a residential or commercial property?";
       if (isEmergency) {
@@ -123,9 +124,23 @@ export class LmcEmailWorker {
         const service=requestedService ? settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===requestedService)) : undefined;
         if (qualification.zip && !settings.serviceAreaZips.includes(qualification.zip)) {status="declined";reason="outside_service_area";text="This location is outside our service area. We do not serve that ZIP code.";}
         else if (requestedService && !service) {status="declined";reason="unsupported_service";text="We do not offer the requested service. Our team can help only with our listed services.";}
-        else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown","reschedule","cancel"].includes(intent.intent))) {
+        else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown"].includes(intent.intent))) {
           status="human_handoff";reason=handoff?.type==="handoff" ? handoff.reason : "human_review_required";paused=true;alert=true;text="A team member will review your request and reply personally.";
-        } else if(intent?.type==="intent"&&intent.intent==="book"){
+        } else if(intent?.type==="intent"&&(intent.intent==="cancel"||intent.intent==="reschedule")){
+          const [existing]=current.appointmentId&&current.contactId ? await tx.select({id:appointments.id,serviceId:appointments.serviceId}).from(appointments).innerJoin(contacts,and(eq(contacts.businessId,job.tenantId),eq(contacts.id,appointments.contactId),eq(contacts.email,current.email))).where(and(eq(appointments.businessId,job.tenantId),eq(appointments.id,current.appointmentId),eq(appointments.contactId,current.contactId),eq(appointments.sourceChannel,"email"),eq(appointments.status,"confirmed"))).limit(1) : [];
+          const chosen=current.offeredSlots.find(slot=>slot.startsAt===intent.requestedSlot&&slot.serviceId===existing?.serviceId);
+          if(!current.verifiedAt||!current.contactId||!existing||!settings.tools.includes(intent.intent)){
+            status="human_handoff";reason="appointment_change_not_verified";paused=true;alert=true;text="A team member will verify your appointment change request.";
+          }else if(intent.intent==="cancel"){
+            const result=await cancelAppointmentInTransaction(tx,{businessId:job.tenantId,appointmentId:existing.id,change:{source:"api",audit:{actorUserId:null,payload:{source:"email",leadId:current.id}}}});
+            if(result!=="missing"){status="qualified";reason="appointment_cancelled";appointmentId=null;offeredSlots=[];alert=true;text="Your appointment has been cancelled. Reply if you would like to arrange another visit.";}
+          }else if(chosen){
+            const changed=await rescheduleEmailAppointmentInTransaction(tx,{businessId:job.tenantId,appointmentId:existing.id,contactId:current.contactId,contactEmail:current.email,staffId:chosen.staffId,startsAt:chosen.startsAt,now:this.input.now()});
+            if(changed){status="booked";reason="appointment_rescheduled";alert=true;text=`Your visit has been rescheduled to ${changed.startsAt}.`;}
+            else{status="human_handoff";reason="slot_no_longer_available";paused=true;alert=true;text="That time is no longer available. A team member will help arrange the change.";}
+          }else{status="human_handoff";reason="reschedule_time_not_offered";paused=true;alert=true;text="A team member will help you choose and verify another available visit time.";}
+        } else if(current.appointmentId){text="Your visit is already booked. Reply if you need to reschedule or cancel.";}
+        else if(intent?.type==="intent"&&intent.intent==="book"){
           const chosen=current.offeredSlots.find(slot=>slot.startsAt===intent.requestedSlot&&slot.serviceId===service?.id);
           if(!current.verifiedAt||!current.contactId||!qualification.zip||!qualification.propertyType||!chosen||!settings.tools.includes("book")){
             status="human_handoff";reason="booking_not_verified";paused=true;alert=true;text="A team member will help verify your request and arrange your visit.";
@@ -138,6 +153,8 @@ export class LmcEmailWorker {
           qualification.serviceType=service.name;offeredSlots=availableSlots;status="qualified";
           text=`Available visit times: ${availableSlots.map(slot=>slot.startsAt).join(", ")}. Reply with the time you would like us to book.`;
           if(intent?.type==="intent"&&intent.intent==="price")text=`${settings.priceInformation || "We need an inspection to provide an estimate; we cannot quote a price by email."} ${text}`;
+        } else if(service&&qualification.zip&&qualification.propertyType&&(!intent||intent.type!=="intent"||intent.intent!=="wait")){
+          status="human_handoff";reason="no_verified_calendar_slots";paused=true;alert=true;text="A team member will help arrange an inspection once calendar availability is verified.";
         } else if (intent?.type==="intent" && intent.intent==="wait") {text="Thank you. We will wait for you to contact our office.";}
         else {
           const questions:string[]=[];
@@ -220,6 +237,14 @@ export class LmcEmailWorker {
       if (outgoing.idempotencyKey!==`lmc:${message.id}` || JSON.stringify(outgoing.headers)!==JSON.stringify(message.headers)) throw new Error("INVALID_JOB_PAYLOAD");
       if (!settings?.enabled || !validRecipient || (!owner && (await this.suppressed(tx,lead) || ["suppressed","opted_out"].includes(lead.status) || lead.followupGeneration!==payload.generation || (lead.aiPaused && !payload.allowPaused)))) {
         await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return;
+      }
+      // Resend expires idempotency keys after 24h. Never repeat an uncertain send beyond a conservative 23h window.
+      if(job.attempts>1&&this.input.now().getTime()-message.createdAt.getTime()>23*3_600_000){
+        await tx.update(lmcMessages).set({status:"failed"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));
+        await tx.update(lmcLeads).set({status:"human_handoff",reason:"delivery_reconciliation_required",aiPaused:true,followupGeneration:lead.followupGeneration+1,updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
+        await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"outbound_reconciliation_required",externalId:`reconcile:${message.id}`,metadata:{messageId:message.id},createdAt:this.input.now()});
+        if(!owner&&config)await this.outbound(tx,job,lead,message,config,replyToken,`Delivery to ${lead.email} may already have succeeded. Automatic retry has stopped; review provider logs before retrying.\n\nLast message:\n${message.body}`,"owner_alert",true,lead.followupGeneration+1);
+        return;
       }
       if(outgoing.kind==="followup"){
         const touch=payload.followupTouch;
