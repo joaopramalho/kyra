@@ -1,0 +1,81 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { lmcJobs, withBusinessTransaction, withDispatcherTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
+
+export const LMC_MAX_JOB_ATTEMPTS = 10;
+export const LMC_JOB_LEASE_MS = 60_000;
+export type LmcJob = typeof lmcJobs.$inferSelect;
+type NewLmcJob = { tenantId: string; leadId: string; kind: "process" | "send" | "followup"; dedupeKey: string; payload: Record<string,unknown>; availableAt?: Date };
+
+export async function enqueueLmcJob(tx: DatabaseTransaction, input: NewLmcJob): Promise<string> {
+  if (!input.dedupeKey || input.dedupeKey.length > 512 || Buffer.byteLength(JSON.stringify(input.payload), "utf8") > 131_072) throw new Error("INVALID_JOB_PAYLOAD");
+  const [created] = await tx.insert(lmcJobs).values({ ...input, ...(input.availableAt ? { availableAt: input.availableAt } : {}) })
+    .onConflictDoNothing({ target: [lmcJobs.tenantId,lmcJobs.dedupeKey] }).returning({ id: lmcJobs.id });
+  if (created) return created.id;
+  const [existing] = await tx.select({ id: lmcJobs.id }).from(lmcJobs).where(and(
+    eq(lmcJobs.tenantId,input.tenantId), eq(lmcJobs.dedupeKey,input.dedupeKey), eq(lmcJobs.kind,input.kind), eq(lmcJobs.leadId,input.leadId),
+    sql`${lmcJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+  )).limit(1);
+  if (!existing) throw new Error("JOB_IDEMPOTENCY_CONFLICT");
+  return existing.id;
+}
+
+const failureCodes = new Set(["EMAIL_PROVIDER_UNAVAILABLE","MODEL_UNAVAILABLE","CALENDAR_UNAVAILABLE","INVALID_JOB_PAYLOAD","LMC_JOB_FAILED"]);
+
+export class LmcJobQueue {
+  constructor(private readonly input: { worker: Database; dispatcher: Database; now: () => Date }) {}
+
+  async dueTenants(limit = 50): Promise<string[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("INVALID_QUEUE_LIMIT");
+    return withDispatcherTransaction(this.input.dispatcher, async tx => {
+      // This query intentionally uses only columns granted to the dispatcher.
+      const rows = await tx.selectDistinct({ tenantId: lmcJobs.tenantId }).from(lmcJobs)
+        .where(and(inArray(lmcJobs.status,["pending","running"]),lte(lmcJobs.availableAt,this.input.now())))
+        .orderBy(asc(lmcJobs.tenantId)).limit(limit);
+      return rows.map(row => row.tenantId);
+    });
+  }
+
+  async claim(tenantId: string, limit = 25): Promise<LmcJob[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("INVALID_QUEUE_LIMIT");
+    const now = this.input.now();
+    return withBusinessTransaction(this.input.worker, { businessId: tenantId, actorType: "worker" }, async tx => {
+      const expired = or(isNull(lmcJobs.leasedUntil),lte(lmcJobs.leasedUntil,now));
+      await tx.update(lmcJobs).set({ status: "failed", leasedUntil: null, leaseToken: null, lastError: "LMC_JOB_FAILED", updatedAt: now })
+        .where(and(eq(lmcJobs.tenantId,tenantId),gte(lmcJobs.attempts,LMC_MAX_JOB_ATTEMPTS),or(eq(lmcJobs.status,"pending"),and(eq(lmcJobs.status,"running"),expired))));
+      const rows = await tx.select().from(lmcJobs).where(and(
+        eq(lmcJobs.tenantId,tenantId),lte(lmcJobs.availableAt,now),lt(lmcJobs.attempts,LMC_MAX_JOB_ATTEMPTS),
+        or(eq(lmcJobs.status,"pending"),and(eq(lmcJobs.status,"running"),expired)),
+      )).orderBy(asc(lmcJobs.availableAt),asc(lmcJobs.id)).limit(limit).for("update", { skipLocked: true });
+      const claimed: LmcJob[] = [];
+      for (const row of rows) {
+        const [job] = await tx.update(lmcJobs).set({ status: "running", leaseToken: randomUUID(), leasedUntil: new Date(now.getTime()+LMC_JOB_LEASE_MS), attempts: sql`${lmcJobs.attempts}+1`, updatedAt: now })
+          .where(and(eq(lmcJobs.tenantId,tenantId),eq(lmcJobs.id,row.id))).returning();
+        if (job) claimed.push(job);
+      }
+      return claimed;
+    });
+  }
+
+  async complete(job: LmcJob): Promise<boolean> {
+    if (!job.leaseToken) return false;
+    return withBusinessTransaction(this.input.worker, { businessId: job.tenantId, actorType: "worker" }, async tx => {
+      const rows = await tx.update(lmcJobs).set({ status: "done", leasedUntil: null, leaseToken: null, lastError: null, updatedAt: this.input.now() })
+        .where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id),eq(lmcJobs.leaseToken,job.leaseToken!),eq(lmcJobs.status,"running"))).returning({ id: lmcJobs.id });
+      return rows.length === 1;
+    });
+  }
+
+  async fail(job: LmcJob, code: string): Promise<boolean> {
+    if (!job.leaseToken) return false;
+    const now = this.input.now();
+    const dead = job.attempts >= LMC_MAX_JOB_ATTEMPTS;
+    return withBusinessTransaction(this.input.worker, { businessId: job.tenantId, actorType: "worker" }, async tx => {
+      const rows = await tx.update(lmcJobs).set({ status: dead ? "failed" : "pending", leasedUntil: null, leaseToken: null,
+        availableAt: dead ? now : new Date(now.getTime()+Math.min(3_600_000,2**job.attempts*1_000)),
+        lastError: failureCodes.has(code) ? code : "LMC_JOB_FAILED", updatedAt: now })
+        .where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id),eq(lmcJobs.leaseToken,job.leaseToken!),eq(lmcJobs.status,"running"))).returning({ id: lmcJobs.id });
+      return rows.length === 1;
+    });
+  }
+}
