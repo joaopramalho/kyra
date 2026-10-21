@@ -3,6 +3,8 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
 import { lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
+import { bookEmailAppointmentInTransaction } from "../booking";
+import { listEmailVisitSlots } from "./scheduling";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 
 type Lead = typeof lmcLeads.$inferSelect;
@@ -85,6 +87,15 @@ export class LmcEmailWorker {
           history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:item.body}))})).actions;
       } catch { actions=[{type:"handoff",reason:"model_unavailable"}]; }
     }
+    const proposed={...lead.qualification};
+    for(const action of actions)if(action.type==="qualify"&&action.confidence>=settings.confidenceThreshold){const fields=lmcQualificationSchema.safeParse(action.fields);if(fields.success)Object.assign(proposed,fields.data);}
+    const intentAction=actions.find(action=>action.type==="intent");
+    const proposedService=settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===proposed.serviceType?.toLowerCase()));
+    let availableSlots:Lead["offeredSlots"]=[];
+    if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
+      try{availableSlots=await listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()});}
+      catch{actions=[{type:"handoff",reason:"calendar_unavailable"}];}
+    }
     await this.scoped(job.tenantId,async tx => {
       await this.lease(tx,job);
       const [current] = await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id))).for("update");
@@ -92,7 +103,8 @@ export class LmcEmailWorker {
       const [already] = await tx.select({id:lmcEvents.id}).from(lmcEvents).where(and(eq(lmcEvents.tenantId,job.tenantId),eq(lmcEvents.externalId,`processed:${job.id}`))).limit(1);
       if (already) return;
       let qualification={...current.qualification,...(current.name ? {name:current.name} : {})};
-      let status="qualifying", reason: string|null=null, paused=false, alert=false;
+      let status="qualifying", reason: string|null=null, paused=false, alert=false, appointmentId=current.appointmentId;
+      let offeredSlots=current.offeredSlots;
       let text="Please share your ZIP code and whether you need roof repair or roof replacement. Is this a residential or commercial property?";
       if (isEmergency) {
         qualification={...qualification,urgency:"emergency"}; status="human_handoff"; reason="emergency"; paused=true; alert=true; text=settings.emergencyText;
@@ -111,8 +123,21 @@ export class LmcEmailWorker {
         const service=requestedService ? settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===requestedService)) : undefined;
         if (qualification.zip && !settings.serviceAreaZips.includes(qualification.zip)) {status="declined";reason="outside_service_area";text="This location is outside our service area. We do not serve that ZIP code.";}
         else if (requestedService && !service) {status="declined";reason="unsupported_service";text="We do not offer the requested service. Our team can help only with our listed services.";}
-        else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown","reschedule","cancel","book","availability"].includes(intent.intent))) {
+        else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown","reschedule","cancel"].includes(intent.intent))) {
           status="human_handoff";reason=handoff?.type==="handoff" ? handoff.reason : "human_review_required";paused=true;alert=true;text="A team member will review your request and reply personally.";
+        } else if(intent?.type==="intent"&&intent.intent==="book"){
+          const chosen=current.offeredSlots.find(slot=>slot.startsAt===intent.requestedSlot&&slot.serviceId===service?.id);
+          if(!current.verifiedAt||!current.contactId||!qualification.zip||!qualification.propertyType||!chosen||!settings.tools.includes("book")){
+            status="human_handoff";reason="booking_not_verified";paused=true;alert=true;text="A team member will help verify your request and arrange your visit.";
+          }else{
+            const booked=await bookEmailAppointmentInTransaction(tx,{businessId:job.tenantId,contactId:current.contactId,contactEmail:current.email,serviceId:chosen.serviceId,staffId:chosen.staffId,startsAt:chosen.startsAt,now:this.input.now()});
+            if(booked){appointmentId=booked.appointmentId;status="booked";reason="booked";alert=true;text=`Your visit is booked for ${booked.startsAt}. A team member will confirm any further details.`;}
+            else{status="human_handoff";reason="slot_no_longer_available";paused=true;alert=true;text="That time is no longer available. A team member will help arrange another visit.";}
+          }
+        } else if(service&&qualification.zip&&qualification.propertyType&&availableSlots.length){
+          qualification.serviceType=service.name;offeredSlots=availableSlots;status="qualified";
+          text=`Available visit times: ${availableSlots.map(slot=>slot.startsAt).join(", ")}. Reply with the time you would like us to book.`;
+          if(intent?.type==="intent"&&intent.intent==="price")text=`${settings.priceInformation || "We need an inspection to provide an estimate; we cannot quote a price by email."} ${text}`;
         } else if (intent?.type==="intent" && intent.intent==="wait") {text="Thank you. We will wait for you to contact our office.";}
         else {
           const questions:string[]=[];
@@ -125,7 +150,7 @@ export class LmcEmailWorker {
           if (intent?.type==="intent" && intent.intent==="price") text=`${settings.priceInformation || "We need an inspection to provide an estimate; we cannot quote a price by email."} ${text}`;
         }
       }
-      await tx.update(lmcLeads).set({qualification,status,reason,aiPaused:paused,updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
+      await tx.update(lmcLeads).set({qualification,status,reason,aiPaused:paused,appointmentId,offeredSlots,updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
       await this.outbound(tx,job,current,message,settings,payload.replyToken,text,"reply",paused,payload.generation);
       if (alert) {
         const transcript=history.map(item=>`[${item.direction}] ${item.body}`).join("\n\n");
@@ -211,7 +236,7 @@ export class LmcEmailWorker {
       const delivery=await this.input.mail.send(outgoing);
       await tx.update(lmcMessages).set({status:"sent",providerId:delivery.providerMessageId,sentAt:this.input.now()}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));
       if (!owner) await tx.update(lmcLeads).set({lastOutboundMessageId:message.messageId,...(payload.followupTouch?{followupCount:payload.followupTouch}:{}),updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
-      if(!owner&&config?.followups.enabled&&config.followups.dailyCap&&lead.consentFollowups&&!lead.aiPaused&&lead.status==="qualifying"&&lead.followupGeneration===0){
+      if(!owner&&config?.followups.enabled&&config.followups.dailyCap&&lead.consentFollowups&&!lead.aiPaused&&["qualifying","qualified"].includes(lead.status)&&lead.followupGeneration===0){
         const sentTouch=payload.followupTouch??0,nextTouch=sentTouch+1;
         const delay=config.followups.delaysHours[nextTouch-1],previous=sentTouch?config.followups.delaysHours[sentTouch-1]:0;
         if(nextTouch<=config.followups.maxTouches&&delay!==undefined&&previous!==undefined&&delay>previous){
