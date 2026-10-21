@@ -102,3 +102,10 @@
   Emit only redacted synthetic transcripts and check fixture cleanup; explicit
   report output cannot overwrite existing files. The demo does not launch a
   persistent Next dashboard or establish exhaustive production-route coverage.
+
+- 2026-10-21: Document architecture from the implemented source and keep operations
+  procedures explicit about validation limits. Existing Compose restore scripts
+  replace the selected database/cache/storage and are not generic WSL test-DB tools.
+  Backups require confidentiality protection in addition to checksums; restore must
+  reconcile provider effects after the recovery point before outbound replay. A
+  documented procedure is not a completed restore drill or a production release gate.

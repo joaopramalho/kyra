@@ -30,6 +30,14 @@ application/voice sources are unchanged in this checkpoint; prior admin/worker
 build and domain/worker test evidence is retained rather than repeated without a
 runtime code change. See OFFLINE_DEMO.md and the updated README for prerequisites.
 
+ARCHITECTURE.md now documents the actual runtime/data/authority boundaries and
+remaining ownership/provider limits. RUNBOOK.md describes source-derived deployment,
+maintenance, Compose backup/restore and incident procedures, including destructive
+target selection, backup confidentiality and reconciliation of external effects.
+These documents are available; their presence is not a passed production deployment
+or full restore rehearsal. The existing Compose drill still requires execution and
+LMC-specific recovery validation before claiming operational readiness.
+
 The demo requires an already migrated dedicated localhost database with a separate
 `test` name token and separate runtime URLs, and rejects production/real-provider
 mode. It does not provision infrastructure, start a persistent dashboard, prove
