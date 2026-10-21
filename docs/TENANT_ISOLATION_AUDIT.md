@@ -142,3 +142,11 @@ Successful or uncertain writes are never replayed by this retry path. The read
 HTTP fixture's overall time allowance includes that quota wait; its access,
 content, cache, and status assertions are unchanged. The email-response latency
 acceptance tests and the original exhaustive 120-second gate are unchanged.
+
+
+Migration 0073 and `isolation-tenant-columns.acceptance.ts` additionally verify
+stored, non-null tenant identities on all directly business-owned legacy
+relations. See [tenant identity scope and remaining ownership work](TENANT_IDENTITY.md).
+The general catalog checker rejects missing or divergent generated keys on this
+class of table. Mixed and globally scoped relations remain in every behavioral
+probe and in the outstanding ownership review.

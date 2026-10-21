@@ -142,3 +142,29 @@ The combined CLI report has zero observed probe failures and 453 uncovered pairs
 its exit code remains 1. Domain build/typecheck, admin typecheck and strict audit
 source typecheck pass. Existing handoff/workspace regressions passed after the
 typed 404 correction. No voice sources or production auth limits changed.
+
+
+## Legacy tenant identity (2026-10-21)
+
+Migration 0073 adds immutable, stored tenant_id UUID NOT NULL keys to 59 legacy
+relations with direct non-null business ownership, including the business root.
+Keys derive from the established business_id/id, preserving existing voice/ORM
+payloads and ownership predicates. The seven native email tables already have
+required tenant keys: 66 of 88 relations now have them. Five mixed-scope tables
+still need an ownership/storage design, and 17 global/user/OAuth/affiliate
+candidates require final classification. No fabricated tenant is assigned.
+
+The new identity test ran red on all 59 targets first, then passed catalog,
+actual A/B value and privileged-reassignment rejection checks. Migration applied
+and reran idempotently; db:check and behavioral db:verify-rls passed. Real CRUD
+probes on all 88 tables still pass. Full domain suite after migration: 497 passed;
+agent-core reports 103 passed, including compiled/source duplicates and original
+voice tests; DB suite: 25 passed. See docs/TENANT_IDENTITY.md for scope and rollout.
+The full phase and overall goal remain incomplete.
+
+Final migration checkpoint: the 28 focused email/booking/reschedule/cancel/worker
+acceptance cases passed after the schema change. The combined audit still reports
+88/88 table probes, 16/469 method/path probes, zero observed probe failures and
+453 uncovered methods (exit 1). Strict audit typecheck and admin/DB builds passed.
+The full goal remains active, including mixed ownership, API coverage, initial
+email ingestion, configuration completion and the original security/CI/demo work.

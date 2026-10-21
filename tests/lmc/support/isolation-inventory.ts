@@ -128,6 +128,24 @@ export function checkCatalogProtection(catalog: IsolationCatalog): string[] {
   for (const table of catalog.tables) {
     if (!table.rls || !table.forced || table.policies.length === 0)
       failures.push(`UNPROTECTED_TABLE:${table.name}`);
+    const businessOwned =
+      table.name === "businesses" ||
+      table.columns.some(
+        (column) => column.name === "business_id" && !column.nullable,
+      );
+    if (businessOwned) {
+      const tenant = table.columns.find(
+        (column) => column.name === "tenant_id",
+      );
+      if (
+        !tenant ||
+        tenant.nullable ||
+        tenant.type !== "uuid" ||
+        tenant.generated !== "s" ||
+        tenant.default !== (table.name === "businesses" ? "id" : "business_id")
+      )
+        failures.push(`UNSAFE_LEGACY_TENANT_ID:${table.name}`);
+    }
   }
   for (const login of catalog.logins)
     if (login.expected !== login.actual || login.superuser || login.bypassRls)
