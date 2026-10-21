@@ -212,3 +212,13 @@ Worker discovery is also an explicit machine-readable scope gap in the combined
 report, not just a documentation note. The report has 405 uncovered admin methods
 plus one uninventoried worker-surface marker; admin-only coverage cannot make the
 original all-API gate pass. The CLI prints these categories separately.
+
+
+Worker admission checkpoint (2026-10-21): an authenticated mixed-identity attach
+regression was reproduced as 202 and fixed to 404 before session deduplication.
+The real HTTP/PG/controller acceptance passes with valid A/B phone/browser controls
+and durable completion. Existing worker 97, domain 497 and agent-core 103 reported
+tests pass; worker/domain typechecks and worker packaged build pass. Voice handler
+and controller sources are unchanged. See VOICE_ADMISSION.md. This is not a phase
+completion claim; exhaustive HTTP coverage and the remaining original requirements
+are still required.

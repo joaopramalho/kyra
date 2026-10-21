@@ -18,6 +18,7 @@ import { handleJob, type WorkerDependencies } from "./handlers";
 import { createAssistantResponder, createOpenAiSipCallbackDialer, createTwilioMediaClient } from "./assistantAdapters";
 import { startHealthServer } from "./health";
 import { createLiveCallHandler } from "./liveCalls";
+import { createVerifiedLiveAttachHandler } from "./verifiedLiveAttach";
 import { OutboxDispatcher } from "./outboxDispatcher";
 import { getWorkerStartupMode } from "./maintenance";
 import { configureSchedulers } from "./scheduler";
@@ -135,7 +136,8 @@ async function main(): Promise<void> {
   const state = { ready: false, redis: false, database: false, storage: false, activeJobs: 0 };
   const embeddings = createEmbeddingProvider();
   const liveCalls = createLiveCallHandler({ domain: { db: database.db, snapshotCache: getWorkerSnapshotCache(), ...(embeddings ? { embeddings } : {}) } });
-  const health = startHealthServer(Number(process.env.PORT ?? 3002), state, liveCalls.handle);
+  const verifiedAttach = createVerifiedLiveAttachHandler({ domain: { db: database.db }, handle: liveCalls.handle });
+  const health = startHealthServer(Number(process.env.PORT ?? 3002), state, verifiedAttach);
   const email = createEmailProvider();
   const onboardingFollowupSender = createOnboardingFollowupSender();
   const twilio = createTwilioProvider();

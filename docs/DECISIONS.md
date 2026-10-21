@@ -43,3 +43,11 @@
 - 2026-10-21: Add canonical tenant_id to directly business-owned legacy relations as a stored generated UUID NOT NULL of the existing business_id (id at the business root). Preserve the established voice/application payloads and make divergent tenant identity impossible at the database level. Keep the immutable raw migration authoritative and require introspection checks to preserve its expressions. Mixed global/business storage needs an explicit design; never fill those rows with a fictitious tenant to satisfy a NOT NULL check. Global/user/OAuth/affiliate classification remains a separate required review.
 
 - 2026-10-21: Exercise public REST authentication with keys minted/revoked by the actual dashboard HTTP endpoints. Use valid tenant A/B writes as controls, exact persistent state comparisons across catalog-discovered scoped relations, and explicit 405/no-write checks for unsupported exports. Allow only the presented key's documented asynchronous usage timestamp and expected Redis counters; settle usage writes before comparisons. Reuse real signed-in fixtures across the combined audit without changing production quotas or original gate bounds. Keep worker HTTP discovery/probes explicit pending scope beyond the admin filesystem inventory.
+
+- 2026-10-21: Authenticate the internal voice attach service as before, then bind its
+  submitted call/session/business/channel/conversation claims to canonical worker-role
+  PostgreSQL reads before deduplicating. Add an admission wrapper rather than editing
+  the existing voice handler/controller. Keep omitted conversations compatible, reject
+  stored cross-business conversation associations, and deny ended/blocked calls. Use
+  real controller/domain/HTTP/PG acceptance with only external SDK/Redis transports
+  faked; an authenticated 202 mismatch is not evidence of an anonymous exploit.
