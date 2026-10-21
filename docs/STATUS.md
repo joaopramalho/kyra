@@ -117,3 +117,28 @@ module. Its report retains every uncovered method; no allowlist or discovered
 route is substituted for tested behavior. The remaining 463 pairs are work still
 required, alongside tenant-column ownership migration and the other original
 security/product requirements.
+
+
+## Live HTTP mutation audit (2026-10-21)
+
+Added real owner A/B writes and persisted side-effect checks for human replies,
+automation pause, email settings and capture-token replacement. The combined
+report covers 16/469 method/path pairs; 453 remain unprobed. Every denied attempt
+compares both tenants' email/CRM/queue state. Viewer, anonymous, CSRF, foreign
+resource, header/query override, service-ID and sending-identity boundaries pass.
+Human reply idempotency and capture-token hash replacement are verified directly.
+
+A foreign lead ID on the reply API was rejected without writes but returned 500.
+A typed domain not-found error now returns 404; the failing HTTP test is preserved
+and green after the change. Login fixtures now honor bounded Retry-After instead
+of failing spuriously on the real shared login quota. Production limits and the
+email-response latency assertions are unchanged. The full exhaustive API gate is
+still required to fail on the remaining coverage gap.
+
+Validation for this checkpoint: full LMC suite reports 90 passed and one failed,
+solely the unchanged exhaustive method-coverage assertion (16 versus 469). The
+mutation suite successfully waited for the real login quota during that run.
+The combined CLI report has zero observed probe failures and 453 uncovered pairs;
+its exit code remains 1. Domain build/typecheck, admin typecheck and strict audit
+source typecheck pass. Existing handoff/workspace regressions passed after the
+typed 404 correction. No voice sources or production auth limits changed.

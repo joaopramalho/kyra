@@ -6,6 +6,12 @@ import { requireBusinessMembership } from "../../authz";
 import { signActionToken, verifyReplyToken } from "./capabilities";
 import { enqueueLmcJob } from "./queue";
 
+export class LmcHumanReplyError extends Error {
+  constructor(readonly status: number, readonly code: string) {
+    super(code);
+  }
+}
+
 /** Call with the authenticated session user, never a user ID supplied in the HTTP body. */
 export class LmcHumanReplies {
   constructor(private readonly input:{database:Database;now:()=>Date;baseUrl:string;receivingDomain:string;signingSecret:string}){}
@@ -17,7 +23,7 @@ export class LmcHumanReplies {
       await requireBusinessMembership(tx,{businessId:actor.tenantId,userId:actor.userId,minimumRole:"scheduler"});
       const [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,actor.tenantId),eq(lmcLeads.id,actor.leadId))).for("update");
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,actor.tenantId)).limit(1);
-      if(!lead||!settings?.enabled)throw new Error("LEAD_NOT_FOUND");
+      if(!lead||!settings?.enabled)throw new LmcHumanReplyError(404,"LEAD_NOT_FOUND");
       const [suppressed]=await tx.select({email:lmcSuppressions.email}).from(lmcSuppressions).where(and(eq(lmcSuppressions.tenantId,actor.tenantId),eq(lmcSuppressions.email,lead.email))).limit(1);
       if(suppressed||["suppressed","opted_out"].includes(lead.status))throw new Error("EMAIL_SUPPRESSED");
       const config=lmcBusinessSettingsSchema.parse(settings.config);

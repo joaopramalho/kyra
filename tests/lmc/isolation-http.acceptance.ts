@@ -16,4 +16,4 @@ it("uses real authenticated HTTP sessions for tenant A/B lead list and detail ro
       "OPTIONS /api/leads/[leadId]",
     ].sort(),
   );
-}, 60_000);
+}, 120_000);

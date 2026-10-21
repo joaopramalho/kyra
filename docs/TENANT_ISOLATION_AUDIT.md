@@ -62,7 +62,7 @@ it does not prove behavioral coverage.
 ## Remaining acceptance work
 
 The exhaustive `isolation.acceptance.ts` gate executes the combined table/API
-helper and remains red because 463 discovered method/path pairs have no
+helper and remains red because 453 discovered method/path pairs have no
 behavioral probe yet. No API method is counted as
 behaviorally probed solely because it was discovered. Authenticated tenant A/B
 requests, foreign resource IDs, mutations, transport credentials, and provider
@@ -105,6 +105,40 @@ pnpm exec tsx --tsconfig scripts/tsconfig.json \
 ```
 
 This command exits unsuccessfully if any table/route is uncovered or any probe
-fails. The current expected summary is 88/88 tables and 6/469 method/path pairs,
-with 463 uncovered method/path pairs. The original acceptance assertions are
+fails. The current expected summary is 88/88 tables and 16/469 method/path pairs,
+with 453 uncovered method/path pairs. The original acceptance assertions are
 unchanged: this partial report cannot make the exhaustive gate green.
+
+
+## Live mutation probes
+
+`isolation-http-mutations.acceptance.ts` adds ten method/path pairs:
+POST/OPTIONS human replies, PATCH/OPTIONS automation, GET/HEAD/PUT/OPTIONS email
+settings, and POST/OPTIONS capture-token rotation. The combined audit now probes
+16 of 469 pairs and reports every remaining 453 as uncovered.
+
+Real owner writes must succeed and persist the exact intended action in both
+businesses without changing the other business. Human replies must create one
+queued human message and one send job, pause automation, and replay idempotently.
+Pause state, settings tone, and a new token's stored hash are checked directly.
+The old capture token must fail hash verification after rotation.
+
+Each denied attempt compares complete before/after state for all seven email
+tables plus contacts, appointments and tenant-scoped outbox rows in both
+businesses. Cases cover anonymous access, a viewer, foreign business headers and
+queries, forged user/actor headers, foreign lead IDs, and an invalid CSRF origin.
+Settings also reject another business's service IDs and a sender outside the
+platform sending identity. OPTIONS must return only method metadata. The server
+must report fake providers before these action probes proceed.
+
+The probes found that the foreign-lead reply path returned HTTP 500 despite
+rejecting the write. A typed domain error now returns 404 after membership checks,
+matching lead reads and automation. The red HTTP case was retained and passed
+after the production change.
+
+Login fixtures obey the unchanged five-per-minute production rule. Only a rejected
+429 sign-in is retried, at most twice, after a validated Retry-After of 0–60 seconds.
+Successful or uncertain writes are never replayed by this retry path. The read
+HTTP fixture's overall time allowance includes that quota wait; its access,
+content, cache, and status assertions are unchanged. The email-response latency
+acceptance tests and the original exhaustive 120-second gate are unchanged.

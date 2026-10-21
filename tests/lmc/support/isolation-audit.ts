@@ -7,7 +7,10 @@ import {
 import { seedIsolationFixtures } from "./isolation-fixtures";
 import { probeStoredTables } from "./isolation-tables";
 import { probeTableInserts } from "./isolation-inserts";
-import { probeEmailReadRoutes } from "./isolation-http";
+import {
+  probeEmailReadRoutes,
+  probeEmailMutationRoutes,
+} from "./isolation-http";
 
 /** An uncovered discovered route remains a failure. No allowlist or successful structural check substitutes for a probe. */
 export async function runTenantIsolationAudit() {
@@ -43,7 +46,10 @@ export async function runTenantIsolationAudit() {
     const http = await probeEmailReadRoutes(
       process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
     );
-    failures.push(...http.failures);
+    const mutations = await probeEmailMutationRoutes(
+      process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
+    );
+    failures.push(...http.failures, ...mutations.failures);
     const tableInventory = catalog.tables.map((table) => table.name);
     const routeInventory = routes.flatMap((route) =>
       route.methods.map((method) => `${method} ${route.path}`),
@@ -51,7 +57,7 @@ export async function runTenantIsolationAudit() {
     const probedTables = stored.probed.filter((table) =>
       inserts.probed.includes(table),
     );
-    const probedRoutes = [...new Set(http.probed)];
+    const probedRoutes = [...new Set([...http.probed, ...mutations.probed])];
     const skipped = [
       ...tableInventory
         .filter((table) => !probedTables.includes(table))
