@@ -75,9 +75,9 @@ export class FakeLmcCalendarProvider {
   private assertCalendar(calendarId: string) {
     if (!this.calendars.has(calendarId)) { this.unauthorizedCalls.push({ calendarId }); throw new Error("FAKE_CALENDAR_NOT_CONFIGURED"); }
   }
-  async getBusyBlocks(input: { accessToken: string; calendarId: string; startsAt: string; endsAt: string }): Promise<Array<{ startsAt: string; endsAt: string }>> {
+  async getBusyBlocks(input: { accessToken: string; calendarId: string; startsAt: string; endsAt: string }): Promise<Array<{ startsAt: string; endsAt: string; externalEventId?: string }>> {
     this.assertCalendar(input.calendarId);
-    return this.events.filter(event => event.calendarId === input.calendarId && Date.parse(event.startsAt) < Date.parse(input.endsAt) && Date.parse(event.endsAt) > Date.parse(input.startsAt)).map(event => ({ startsAt: event.startsAt, endsAt: event.endsAt }));
+    return this.events.filter(event => event.calendarId === input.calendarId && Date.parse(event.startsAt) < Date.parse(input.endsAt) && Date.parse(event.endsAt) > Date.parse(input.startsAt)).map(event => ({ startsAt: event.startsAt, endsAt: event.endsAt, externalEventId:event.id }));
   }
   async upsertEvent(input: { accessToken: string; calendarId: string; eventId?: string; clientEventId?: string; title: string; startsAt: string; endsAt: string; description?: string }): Promise<{ externalEventId: string }> {
     this.assertCalendar(input.calendarId);
@@ -88,6 +88,7 @@ export class FakeLmcCalendarProvider {
     if (index >= 0) this.events[index] = event; else this.events.push(event);
     return { externalEventId: id };
   }
+  async refreshAccessToken(_input:{refreshToken:string}):Promise<{accessToken:string;expiresIn:number}>{return{accessToken:"fake-calendar-access-token",expiresIn:3600};}
   async deleteEvent(input: { accessToken: string; calendarId: string; eventId: string }): Promise<void> {
     this.assertCalendar(input.calendarId);
     const index = this.events.findIndex(event => event.calendarId === input.calendarId && event.id === input.eventId);
