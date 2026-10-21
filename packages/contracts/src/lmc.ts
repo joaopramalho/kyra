@@ -96,3 +96,13 @@ export type LmcOutboundEmail = {
   headers: Record<string,string>;
 };
 export interface LmcEmailTransport { send(message: LmcOutboundEmail): Promise<{ providerMessageId: string }>; }
+
+export const lmcCaptureSchema = z.object({
+  requestId: z.string().uuid(),
+  email: lmcEmailAddressSchema,
+  name: z.string().max(160).refine(value => !/[\r\n]/.test(value)).default(""),
+  subject: z.string().max(200).refine(value => !/[\r\n]/.test(value)).default(""),
+  message: z.string().trim().min(1).max(16_000),
+  consentToFollowUp: z.boolean().default(false),
+}).strict();
+export type LmcCaptureInput = z.infer<typeof lmcCaptureSchema>;
