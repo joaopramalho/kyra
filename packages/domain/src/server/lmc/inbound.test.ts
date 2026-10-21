@@ -10,6 +10,9 @@ const message = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('inbound email trust boundary', () => {
+  it('preserves the case-sensitive conversation token in the recipient local part', () => {
+    expect(normalizeInboundEmail(message({ to: 'reply+AbC_dEfGh-123@EXAMPLE.INVALID' }))).toMatchObject({to:'reply+AbC_dEfGh-123@example.invalid'});
+  });
   it('normalizes one authenticated sender and case-insensitive headers', () => {
     expect(normalizeInboundEmail(message({ from: 'Ana <ANA@EXAMPLE.INVALID>', headers: { 'mEsSaGe-Id': '<one@example.invalid>', 'IN-REPLY-TO': '<prior@example.invalid>', REFERENCES: '<first@example.invalid> <prior@example.invalid>' } }))).toMatchObject({
       kind: 'message', from: 'ana@example.invalid', messageId: '<one@example.invalid>', inReplyTo: '<prior@example.invalid>', references: ['<first@example.invalid>', '<prior@example.invalid>'],
