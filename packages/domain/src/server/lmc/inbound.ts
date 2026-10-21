@@ -18,10 +18,12 @@ export type NormalizedInboundEmail = {
 };
 export type InboundEmailResult = NormalizedInboundEmail | { kind: "reject" | "ignore"; reason: string };
 
-function address(value: string): string | null {
+function address(value: string, preserveLocalPart = false): string | null {
   if (/[\r\n\0]/.test(value)) return null;
   const match = value.trim().match(/^(?:[^<>\r\n]*<([^<>\r\n]+)>|([^<>\s]+))$/);
-  const candidate = (match?.[1] ?? match?.[2] ?? "").trim().toLowerCase();
+  const raw = (match?.[1] ?? match?.[2] ?? "").trim();
+  const at = raw.lastIndexOf("@");
+  const candidate = preserveLocalPart && at>0 ? `${raw.slice(0,at)}@${raw.slice(at+1).toLowerCase()}` : raw.toLowerCase();
   const parsed = lmcEmailAddressSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
 }
@@ -68,7 +70,7 @@ export function normalizeInboundEmail(input: unknown): InboundEmailResult {
   if (!parsed.success) return { kind: "reject", reason: "invalid_envelope" };
   const email = parsed.data;
   const from = address(email.from);
-  const to = address(email.to);
+  const to = address(email.to,true);
   if (!from || !to || /[\r\n\0]/.test(email.subject) || Object.keys(email.headers).length > 100
     || Object.entries(email.headers).some(([key, value]) => !/^[A-Za-z0-9-]{1,80}$/.test(key) || value.length > 4_096 || /[\r\n\0]/.test(value))) {
     return { kind: "reject", reason: "invalid_envelope" };
