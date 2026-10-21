@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
-import { lmcBusinessSettingsSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
-import { lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
+import { lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 
@@ -35,6 +35,7 @@ export class LmcEmailWorker {
           try {
             if (job.kind==="process") await this.process(job);
             else if (job.kind==="send") await this.send(job);
+            else if (job.kind==="followup") await this.followup(job);
             else throw new Error("INVALID_JOB_PAYLOAD");
             if (await this.queue.complete(job)) result.completed++;
           } catch (error) {
@@ -136,7 +137,26 @@ export class LmcEmailWorker {
     });
   }
 
-  private async outbound(tx: DatabaseTransaction, job: LmcJob, lead: Lead, incoming: Message, settings: LmcBusinessSettings, replyToken: string, body: string, kind: "reply"|"owner_alert", allowPaused: boolean, generation: number) {
+  private async followup(job:LmcJob){
+    const payload=lmcFollowupJobSchema.parse(job.payload);
+    await this.scoped(job.tenantId,async tx=>{
+      await this.lease(tx,job);
+      const [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId))).for("update");
+      const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,job.tenantId)).limit(1);
+      const [message]=await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.id,payload.messageId))).limit(1);
+      if(!lead||!settings||!message||!verifyReplyToken(payload.replyToken,job.tenantId,lead.replyTokenHash))throw new Error("INVALID_JOB_PAYLOAD");
+      const config=lmcBusinessSettingsSchema.parse(settings.config);
+      if(!settings.enabled||!config.followups.enabled||!config.followups.dailyCap||!lead.consentFollowups||lead.aiPaused||terminal.has(lead.status)||lead.followupGeneration!==payload.generation||payload.generation!==0||payload.touch>config.followups.maxTouches||lead.followupCount>=payload.touch||await this.suppressed(tx,lead))return;
+      if(payload.touch!==lead.followupCount+1)throw new Error("LMC_JOB_FAILED");
+      const [done]=await tx.select({id:lmcEvents.id}).from(lmcEvents).where(and(eq(lmcEvents.tenantId,job.tenantId),eq(lmcEvents.externalId,`processed:${job.id}`))).limit(1);
+      if(done)return;
+      const thread={...message,messageId:lead.lastOutboundMessageId??message.messageId};
+      await this.outbound(tx,job,lead,thread,config,payload.replyToken,"Are you still interested in help with your request? Reply when you are ready, or tell us to stop.","followup",false,payload.generation,payload.touch);
+      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"followup_queued",externalId:`processed:${job.id}`,metadata:{touch:payload.touch},createdAt:this.input.now()});
+    });
+  }
+
+  private async outbound(tx: DatabaseTransaction, job: LmcJob, lead: Lead, incoming: Message, settings: LmcBusinessSettings, replyToken: string, body: string, kind: "reply"|"owner_alert"|"followup", allowPaused: boolean, generation: number, followupTouch?:number) {
     const id=randomUUID();
     const messageId=`<${job.id}-${kind}@${this.input.receivingDomain}>`;
     const headers:Record<string,string>={"Message-ID":messageId,"Auto-Submitted":"auto-generated"};
@@ -153,7 +173,7 @@ export class LmcEmailWorker {
     const outbound:LmcOutboundEmail={tenantId:lead.tenantId,leadId:lead.id,idempotencyKey:`lmc:${id}`,kind,from:settings.fromEmail,to:kind==="owner_alert" ? settings.ownerEmail : lead.email,
       replyTo:kind==="owner_alert" ? settings.fromEmail : `reply+${replyToken}@${this.input.receivingDomain}`,subject:kind==="owner_alert" ? "Lead requires your attention" : `Re: ${lead.subject || "Your request"}`,text,headers};
     await tx.insert(lmcMessages).values({id,tenantId:lead.tenantId,leadId:lead.id,direction:kind==="owner_alert" ? "owner" : "assistant",kind,messageId,toEmail:outbound.to,subject:outbound.subject,body:text,headers,status:"queued",createdAt:this.input.now()});
-    await enqueueLmcJob(tx,{tenantId:lead.tenantId,leadId:lead.id,kind:"send",dedupeKey:`send:${id}`,payload:{messageId:id,outbound,generation,allowPaused},availableAt:this.input.now()});
+    await enqueueLmcJob(tx,{tenantId:lead.tenantId,leadId:lead.id,kind:"send",dedupeKey:`send:${id}`,payload:{messageId:id,outbound,generation,allowPaused,...(followupTouch?{followupTouch}:{})},availableAt:this.input.now()});
   }
 
   private async send(job: LmcJob) {
@@ -176,9 +196,29 @@ export class LmcEmailWorker {
       if (!settings?.enabled || !validRecipient || (!owner && (await this.suppressed(tx,lead) || ["suppressed","opted_out"].includes(lead.status) || lead.followupGeneration!==payload.generation || (lead.aiPaused && !payload.allowPaused)))) {
         await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return;
       }
+      if(outgoing.kind==="followup"){
+        const touch=payload.followupTouch;
+        if(!touch||!config?.followups.enabled||!config.followups.dailyCap||touch>config.followups.maxTouches||!lead.consentFollowups||terminal.has(lead.status)||lead.followupCount!==touch-1){
+          await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return;
+        }
+        const now=this.input.now(),windowStart=new Date(Math.floor(now.getTime()/86_400_000)*86_400_000),scopeKey="followup:daily";
+        const [allowance]=await tx.insert(lmcRateWindows).values({tenantId:job.tenantId,scopeKey,windowStart,count:1}).onConflictDoUpdate({target:[lmcRateWindows.tenantId,lmcRateWindows.scopeKey,lmcRateWindows.windowStart],set:{count:sql`${lmcRateWindows.count}+1`},setWhere:sql`${lmcRateWindows.count}<${config.followups.dailyCap}`}).returning({count:lmcRateWindows.count});
+        if(!allowance){
+          await tx.update(lmcJobs).set({status:"pending",leaseToken:null,leasedUntil:null,attempts:Math.max(0,job.attempts-1),availableAt:new Date(windowStart.getTime()+86_400_000),updatedAt:now}).where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id)));
+          return;
+        }
+      }
       const delivery=await this.input.mail.send(outgoing);
       await tx.update(lmcMessages).set({status:"sent",providerId:delivery.providerMessageId,sentAt:this.input.now()}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));
-      if (!owner) await tx.update(lmcLeads).set({lastOutboundMessageId:message.messageId,updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
+      if (!owner) await tx.update(lmcLeads).set({lastOutboundMessageId:message.messageId,...(payload.followupTouch?{followupCount:payload.followupTouch}:{}),updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
+      if(!owner&&config?.followups.enabled&&config.followups.dailyCap&&lead.consentFollowups&&!lead.aiPaused&&lead.status==="qualifying"&&lead.followupGeneration===0){
+        const sentTouch=payload.followupTouch??0,nextTouch=sentTouch+1;
+        const delay=config.followups.delaysHours[nextTouch-1],previous=sentTouch?config.followups.delaysHours[sentTouch-1]:0;
+        if(nextTouch<=config.followups.maxTouches&&delay!==undefined&&previous!==undefined&&delay>previous){
+          const [initial]=await tx.select({id:lmcMessages.id}).from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,lead.id),eq(lmcMessages.direction,"lead"))).orderBy(asc(lmcMessages.createdAt),asc(lmcMessages.id)).limit(1);
+          if(initial)await enqueueLmcJob(tx,{tenantId:job.tenantId,leadId:lead.id,kind:"followup",dedupeKey:`followup:${lead.id}:0:${nextTouch}`,payload:{messageId:initial.id,replyToken,generation:0,touch:nextTouch},availableAt:new Date(this.input.now().getTime()+(delay-previous)*3_600_000)});
+        }
+      }
     });
   }
 }

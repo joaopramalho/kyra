@@ -116,7 +116,7 @@ export const lmcOutboundEmailSchema = z.object({
   subject: z.string().max(998).refine(value=>!/[\r\n\0]/.test(value)), text: z.string().max(65_536), headers: z.record(z.string(),z.string().max(4096)),
 }).strict();
 export const lmcSendJobSchema = z.object({
-  messageId: z.string().uuid(), outbound: lmcOutboundEmailSchema, generation: z.number().int().min(0), allowPaused: z.boolean(),
+  messageId: z.string().uuid(), outbound: lmcOutboundEmailSchema, generation: z.number().int().min(0), allowPaused: z.boolean(), followupTouch: z.number().int().min(1).max(3).optional(),
 }).strict();
 
 export const lmcProviderEventSchema = z.discriminatedUnion("kind",[
@@ -127,3 +127,5 @@ export type LmcProviderEvent = z.infer<typeof lmcProviderEventSchema>;
 export interface LmcInboundProvider {
   verifyAndLoad(input:{rawBody:string;headers:Headers}):Promise<LmcProviderEvent|null>;
 }
+
+export const lmcFollowupJobSchema = lmcProcessJobSchema.extend({touch:z.number().int().min(1).max(3)}).strict();
