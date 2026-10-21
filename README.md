@@ -54,6 +54,7 @@ The Linux baseline passes tests, lint, typecheck and build. The recorded baselin
 
 - [Reconnaissance and baseline](docs/RECON.md)
 - [Implementation status](docs/STATUS.md)
+- [Website lead capture](docs/EMAIL_CAPTURE.md)
 - [Decisions](docs/DECISIONS.md)
 - [Historical upstream README](docs/UPSTREAM-README.md)
 
