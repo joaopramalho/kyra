@@ -89,3 +89,13 @@ it("rejects webhooks before their handlers can acknowledge events during mainten
   expect(response.status).toBe(503);
   expect(response.headers.get("retry-after")).toBe("60");
 });
+
+it("permits capability-protected LMC intake and opt-out without exempting operator actions",()=>{
+  for(const path of ["/api/lmc/capture/opaque","/api/lmc/unsubscribe/opaque"]){
+    const response=proxy(new NextRequest(`http://localhost:3210${path}`,{method:"POST",headers:{origin:"https://contractor.invalid"}}));
+    expect(response.status).toBe(200);
+  }
+  for(const path of ["/api/leads/lead/reply","/api/lmc/settings","/api/lmc/capture-settings"]){
+    expect(proxy(new NextRequest(`http://localhost:3210${path}`,{method:"POST",headers:{origin:"https://untrusted.invalid"}})).status).toBe(403);
+  }
+});
