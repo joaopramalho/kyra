@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export default defineConfig({
   resolve: { alias: {
+    "@lobbystack/agent-core": `${root}/packages/agent-core/src/index.ts`,
     "@lobbystack/domain": `${root}/packages/domain/src/index.ts`,
     "@lobbystack/contracts": `${root}/packages/contracts/src/index.ts`,
     "@lobbystack/db": `${root}/packages/db/src/index.ts`,
