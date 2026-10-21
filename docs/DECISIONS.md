@@ -12,3 +12,6 @@
 
 - 2026-10-20: Add email persistence with tenant_id referencing businesses.id; preserve the existing voice schema and business context names. Use a separate durable email queue so the voice dispatcher and latency path remain unchanged. An unscoped dispatcher may discover queue tenant IDs/status/timing, with no payload privilege; workers read payloads only inside a tenant transaction.
 - 2026-10-20: Run the new end-to-end acceptance gate explicitly with pnpm test:lmc against an isolated local database. Its incomplete workflow/audit harnesses must fail, and will not be skipped or treated as passing until implemented.
+
+- 2026-10-20: Separate platform instructions from untrusted model input. Model output supplies bounded intent/qualification facts only; prices, availability, booking permissions and sender verification must be checked by application code before side effects.
+- 2026-10-20: Conversation reply tokens contain a tenant UUID routing prefix and 128 random secret bits, fitting an email local-part. Store and compare a SHA-256 token hash inside the resolved tenant. Routing alone grants no access. Action links use HMAC-SHA256, explicit purpose and mandatory expiry for appointment changes; unsubscribe links may remain valid for the life of the lead.
