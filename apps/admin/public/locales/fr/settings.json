@@ -21,7 +21,8 @@
     "apiKeys": "Clés API",
     "connectedApps": "Applications connectées",
     "kyra": "Lead My Company",
-    "backOffice": "Back Office"
+    "backOffice": "Back Office",
+    "email": "Automatisation e-mail"
   },
   "widget": {
     "title": "Widget de site web",

@@ -12,6 +12,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useTranslation("settings");
   const items = [
+    { label: t("sections.email"), href: "/settings/email" },
     { label: t("sections.kyra"), href: "/settings/kyra" },
     { label: t("sections.backOffice"), href: "/settings/kyra/back-office" },
     { label: t("sections.usage"), href: "/settings/usage" },
