@@ -123,7 +123,8 @@
     "replacement:onboarding": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-onboarding-check.ts",
     "replacement:catalog": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-catalog-check.ts",
     "replacement:calendar": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-calendar-check.ts",
-    "replacement:contacts": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-contact-pagination-check.ts"
+    "replacement:contacts": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-contact-pagination-check.ts",
+    "test:lmc": "vitest run --config tests/lmc/vitest.config.mts"
   },
   "devDependencies": {
     "@types/luxon": "^3.7.1",
