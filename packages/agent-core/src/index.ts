@@ -8,3 +8,5 @@ export { buildBrowserSessionConfig, buildPhoneSessionConfig, LIVE_MODEL } from "
 export { createCallSummarizer, hasSummarizableTranscript, summarizeCall, type CallSummarizer, type CallSummaryResult, type CallSummaryTurn } from "./callSummary";
 
 export { EmailChannel, VoiceChannel, type LmcEmailModel, type LmcModelPrompt } from "./channels";
+
+export { createLmcEmailModel } from "./emailModel";

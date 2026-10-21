@@ -135,3 +135,19 @@ export const lmcHumanReplySchema = z.object({requestId:z.string().uuid(),text:z.
 export const lmcSettingsWriteSchema = z.object({config:lmcBusinessSettingsSchema,enabled:z.boolean()}).strict();
 
 export const lmcPauseSchema = z.object({paused:z.boolean()}).strict();
+
+// Strict structured-output APIs require required properties; unknown facts are null on the wire.
+const facts = lmcQualificationSchema.shape;
+export const lmcEmailDecisionWireSchema = z.object({
+  intent: lmcEmailDecisionSchema.shape.intent,
+  confidence: lmcEmailDecisionSchema.shape.confidence,
+  qualification: z.object({
+    serviceType: facts.serviceType.unwrap().nullable(), zip: facts.zip.unwrap().nullable(),
+    city: facts.city.unwrap().nullable(), urgency: facts.urgency.unwrap().nullable(),
+    propertyType: facts.propertyType.unwrap().nullable(), name: facts.name.unwrap().nullable(), phone: facts.phone.unwrap().nullable(),
+  }).strict(),
+  requestedSlot: lmcEmailDecisionSchema.shape.requestedSlot.unwrap().nullable(),
+}).strict();
+
+
+export type LmcEmailDecisionWire = z.infer<typeof lmcEmailDecisionWireSchema>;
