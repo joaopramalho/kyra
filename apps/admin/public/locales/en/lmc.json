@@ -102,7 +102,9 @@
       "reschedule": "Reschedule a verified appointment",
       "cancel": "Cancel a verified appointment",
       "handoff": "Hand off to the owner"
-    }
+    },
+    "snippet": "Website form snippet",
+    "snippetHelp": "Save and enable email processing, then paste this snippet into your website HTML where you want the form."
   },
   "resumeHelp": "Resuming takes effect on the next incoming reply."
 }

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { selectActiveBusiness } from "@/lib/active-business";
 import { requestJson } from "@/lib/request-json";
+import { createLmcFormSnippet } from "@/lib/lmc-form-snippet";
 
 type Settings = {
   config: LmcBusinessSettings | null;
@@ -504,6 +505,22 @@ function SettingsForm({
                   {t("emailSettings.token")}
                 </label>
                 <Input id="email-capture-token" readOnly value={captureToken} />
+                <label className="mt-4 block" htmlFor="email-capture-snippet">
+                  {t("emailSettings.snippet")}
+                </label>
+                <Textarea
+                  id="email-capture-snippet"
+                  readOnly
+                  spellCheck={false}
+                  className="mt-2 font-mono text-sm"
+                  value={createLmcFormSnippet(
+                    window.location.origin,
+                    captureToken,
+                  )}
+                />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t("emailSettings.snippetHelp")}
+                </p>
               </div>
             )}
             <label className="flex items-start gap-2">

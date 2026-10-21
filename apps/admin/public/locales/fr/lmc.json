@@ -102,7 +102,9 @@
       "reschedule": "Déplacer un rendez-vous vérifié",
       "cancel": "Annuler un rendez-vous vérifié",
       "handoff": "Transférer au propriétaire"
-    }
+    },
+    "snippet": "Code du formulaire pour votre site",
+    "snippetHelp": "Enregistrez et activez le traitement des e-mails, puis collez ce code dans le HTML de votre site à l’endroit où afficher le formulaire."
   },
   "resumeHelp": "La reprise prend effet à la prochaine réponse entrante."
 }
