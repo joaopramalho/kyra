@@ -76,7 +76,7 @@ export class LmcEmailWorker {
     if (!snapshot) return;
     const {lead,message,settings,history} = snapshot;
     const isEmergency = settings.emergencyKeywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase()));
-    const isInjection = injection(`${lead.name ?? ""}\n${message.subject}\n${message.body}`);
+    const isInjection = message.headers["X-LMC-Injection-Detected"]==="true" || injection(`${lead.name ?? ""}\n${message.subject}\n${message.body}`);
     let actions: LmcStructuredAction[] = [];
     if (!isEmergency && !isInjection) {
       try {

@@ -118,3 +118,12 @@ export const lmcOutboundEmailSchema = z.object({
 export const lmcSendJobSchema = z.object({
   messageId: z.string().uuid(), outbound: lmcOutboundEmailSchema, generation: z.number().int().min(0), allowPaused: z.boolean(),
 }).strict();
+
+export const lmcProviderEventSchema = z.discriminatedUnion("kind",[
+  z.object({kind:z.literal("message"),id:z.string().min(1).max(255).regex(/^[\x21-\x7e]+$/),email:lmcRawEmailSchema}).strict(),
+  z.object({kind:z.literal("suppression"),id:z.string().min(1).max(255).regex(/^[\x21-\x7e]+$/),tenantId:z.string().uuid(),providerMessageId:z.string().min(1).max(255),email:lmcEmailAddressSchema.transform(value=>value.toLowerCase()),reason:z.enum(["bounce","complaint"])}).strict(),
+]);
+export type LmcProviderEvent = z.infer<typeof lmcProviderEventSchema>;
+export interface LmcInboundProvider {
+  verifyAndLoad(input:{rawBody:string;headers:Headers}):Promise<LmcProviderEvent|null>;
+}
