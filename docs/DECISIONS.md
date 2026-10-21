@@ -72,3 +72,12 @@
   add three regressions against the configured LMC identity. The preview Pages
   project hostname is a provisional domain-derived default, not an asserted live
   deployment. Keep static preview smoke checks separate from full A/B API coverage.
+
+- 2026-10-21: Allow the email HTTP acceptance fixture to use the actual signed
+  inbound provider adapter with only its external fetch transport fake. Remove
+  fixture outbox rows and their business parent atomically under a parent lock in
+  the general harness, extending the earlier HTTP-audit teardown fix. A regression
+  first observed one orphaned outbox row and now observes none. Do not run separate
+  LMC acceptance processes concurrently against the same test database: each real
+  email worker dispatches all due tenant jobs, while fake transports belong to that
+  process. Use the serial full suite for final evidence, not overlapping fake inboxes.

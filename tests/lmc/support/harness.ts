@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
-import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction } from "@lobbystack/db";
 import { FakeLmcInboundProvider, SecretBox, createFakeLmcProviders } from "@lobbystack/providers";
-import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent } from "@lobbystack/contracts";
+import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent, LmcInboundProvider } from "@lobbystack/contracts";
 import { EmailChannel } from "../../../packages/agent-core/src/channels";
 import { createReplyToken } from "../../../packages/domain/src/server/lmc/capabilities";
 import { handleLmcCapture, LmcLeadCapture } from "../../../packages/domain/src/server/lmc/capture";
@@ -17,7 +17,7 @@ import { syncAppointmentCalendar } from "../../../apps/worker/src/calendarJobs";
 import { openLmcTestDatabase } from "./database";
 
 /** Production HTTP boundaries + application worker + PostgreSQL; only external providers and clock are fake. */
-export async function createLmcHarness(input:{now:string}){
+export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInboundProvider}){
   const db=openLmcTestDatabase(),tenantId=randomUUID(),ownerId=randomUUID(),staffId=randomUUID(),serviceId=randomUUID(),connectionId=randomUUID();
   const providers=createFakeLmcProviders(),ownerEmail="owner@example.invalid",captureToken=createReplyToken(tenantId),calendarId=`calendar-${tenantId}`;
   const emergencyText="Please stay clear of damaged areas. Our team will contact you urgently about the emergency.";
@@ -51,7 +51,7 @@ export async function createLmcHarness(input:{now:string}){
       const request=new Request(`http://127.0.0.1${req.url}`,init),url=new URL(request.url);
       let response:Response;
       if(url.pathname===`/api/lmc/capture/${captureToken.value}`)response=await handleLmcCapture(request,captureToken.value,captureService);
-      else if(url.pathname==="/api/lmc/webhook")response=await handleLmcEmailWebhook(request,inbound,reception);
+      else if(url.pathname==="/api/lmc/webhook")response=await handleLmcEmailWebhook(request,input.inboundProvider??inbound,reception);
       else if(url.pathname.startsWith("/api/lmc/unsubscribe/"))response=await handleLmcUnsubscribe(request,url.pathname.split("/").at(-1)!,reception);
       else response=new Response("Not found",{status:404});
       res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
@@ -88,6 +88,7 @@ export async function createLmcHarness(input:{now:string}){
       if(!outgoing)throw new Error("NO_OUTBOUND_THREAD");
       return{kind:"message",id:randomUUID(),email:{from:lead.email,to:outgoing.replyTo,subject:`Re: ${lead.subject}`,text,headers:{"Message-ID":`<${randomUUID()}@example.invalid>`,"In-Reply-To":outgoing.headers["Message-ID"]!,...options.headers},authentication:{spf:"pass",dkim:"pass",dmarc:"pass",aligned:true},attachments:[]}} as LmcProviderEvent;
     },
+    postInbound(rawBody:string,headers:Headers){return fetch(`${base}/api/lmc/webhook`,{method:"POST",body:rawBody,headers});},
     async deliver(event:LmcProviderEvent){const prepared=inbound.prepare(event);const response=await fetch(`${base}/api/lmc/webhook`,{method:"POST",body:prepared.rawBody,headers:prepared.headers});if(response.status!==200)throw new Error(`Webhook failed: ${response.status}`);},
     async reply(id:string,text:string,options:{headers?:Record<string,string>}={}){await h.deliver(await h.replyEvent(id,text,options));},
     async qualifiedLead(email:string){const lead=await h.capture({email,name:"Ana",message:"I need roof repair, ZIP 33101, residential homeowner."});await h.work();await h.reply(lead.id,"Roof repair, ZIP 33101, residential homeowner.");await h.work();return lead;},
@@ -96,7 +97,11 @@ export async function createLmcHarness(input:{now:string}){
     async unsubscribe(mail:LmcOutboundEmail){const path=new URL(mail.headers["List-Unsubscribe"]!.slice(1,-1)).pathname;const response=await fetch(`${base}${path}`,{method:"POST",body:"List-Unsubscribe=One-Click"});if(response.status!==200)throw new Error("UNSUBSCRIBE_FAILED");},
     async bounce(id:string){const lead=await h.lead(id),mail=providers.email.records.filter(mail=>mail.leadId===id&&mail.to===lead.email).at(-1)!;await h.deliver({kind:"suppression",id:randomUUID(),tenantId,providerMessageId:mail.providerMessageId,email:lead.email,reason:"bounce"});},
     advanceDays(days:number){clock+=days*86_400_000;},
-    async close(){server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await db.admin.db.delete(businesses).where(eq(businesses.id,tenantId));await db.admin.db.delete(users).where(inArray(users.id,[ownerId,...extraUsers]));await db.close();if(previousEncryptionKey===undefined)delete process.env.ENCRYPTION_KEY;else process.env.ENCRYPTION_KEY=previousEncryptionKey;},
+    async close(){server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await db.admin.db.transaction(async tx=>{
+      await tx.execute(sql`select id from businesses where id=${tenantId}::uuid for update`);
+      await tx.execute(sql`delete from outbox_messages where business_id=${tenantId}::uuid`);
+      await tx.delete(businesses).where(eq(businesses.id,tenantId));
+    });await db.admin.db.delete(users).where(inArray(users.id,[ownerId,...extraUsers]));await db.close();if(previousEncryptionKey===undefined)delete process.env.ENCRYPTION_KEY;else process.env.ENCRYPTION_KEY=previousEncryptionKey;},
   };
   return h;
 }
