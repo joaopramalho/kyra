@@ -6,3 +6,5 @@ export { LiveCallController, type DelegationTiming, type LiveCallControllerOptio
 export { LiveLatencyTracker, type LiveCallLatency } from "./live/latency";
 export { buildBrowserSessionConfig, buildPhoneSessionConfig, LIVE_MODEL } from "./live/session";
 export { createCallSummarizer, hasSummarizableTranscript, summarizeCall, type CallSummarizer, type CallSummaryResult, type CallSummaryTurn } from "./callSummary";
+
+export { EmailChannel, VoiceChannel, type LmcEmailModel, type LmcModelPrompt } from "./channels";

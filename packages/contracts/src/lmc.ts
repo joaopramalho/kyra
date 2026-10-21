@@ -75,3 +75,24 @@ export interface LmcChannel {
   readonly kind: "email" | "voice";
   run(request: LmcChannelRequest): Promise<{ actions: LmcStructuredAction[] }>;
 }
+
+export type LmcModelPrompt = {
+  tenantId: string;
+  trustedInstructions: string;
+  business: { services: Array<{ name: string; aliases: string[] }>; tone: string };
+  untrusted: { message: LmcChannelRequest["message"]; history: LmcChannelRequest["history"] };
+};
+export interface LmcEmailModel { analyze(prompt: LmcModelPrompt): Promise<unknown>; }
+export type LmcOutboundEmail = {
+  tenantId: string;
+  leadId: string;
+  idempotencyKey: string;
+  kind: "reply" | "followup" | "owner_alert";
+  from: string;
+  to: string;
+  replyTo: string;
+  subject: string;
+  text: string;
+  headers: Record<string,string>;
+};
+export interface LmcEmailTransport { send(message: LmcOutboundEmail): Promise<{ providerMessageId: string }>; }
