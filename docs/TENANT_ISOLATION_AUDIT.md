@@ -61,8 +61,9 @@ it does not prove behavioral coverage.
 
 ## Remaining acceptance work
 
-The exhaustive `isolation.acceptance.ts` gate is still red because the combined
-table/API audit helper has not been implemented. No API method is counted as
+The exhaustive `isolation.acceptance.ts` gate executes the combined table/API
+helper and remains red because 463 discovered method/path pairs have no
+behavioral probe yet. No API method is counted as
 behaviorally probed solely because it was discovered. Authenticated tenant A/B
 requests, foreign resource IDs, mutations, transport credentials, and provider
 webhooks need route-specific controls and persisted side-effect assertions.
@@ -74,3 +75,36 @@ The legacy schema still needs the requested `tenant_id NOT NULL` review/migratio
 for tenant-owned tables. Global auth/platform relations require explicit ownership
 classification. Neither this document nor the focused database suite declares
 the complete isolation requirement achieved.
+
+
+## First live HTTP probes
+
+`isolation-http.acceptance.ts` currently probes only GET, HEAD and OPTIONS for
+`/api/leads` and `/api/leads/[leadId]`: six method/path pairs out of the discovered
+469. It uses the running Next server, real Better Auth password sign-in/cookies,
+real role-specific PostgreSQL connections, and two synthetic businesses. Own A/B
+responses are positive controls; anonymous requests, forged actor/user headers,
+foreign business headers/query parameters and foreign resource IDs must fail
+without exposing foreign IDs/content. Read responses must prevent shared caching.
+OPTIONS is checked as metadata-only. Sessions are signed out and synthetic
+identities/accounts/leads are removed afterward. No real provider is called.
+
+Start the local admin against the same isolated test database with fake providers
+before running this HTTP suite. `LMC_TEST_HTTP_BASE_URL` can select another explicit
+HTTP loopback origin; the default is `http://localhost:3000`. Sign-in must return the
+exact synthetic user seeded in the guarded test database, binding the test to that
+server/database. This focused suite does not count the auth catch-all route as
+fully audited and does not replace the remaining route-specific mutation probes.
+
+
+The combined report can be generated with an explicit output path:
+
+```sh
+pnpm exec tsx --tsconfig scripts/tsconfig.json \
+  scripts/lmc-isolation-audit.ts /absolute/output/audit.json
+```
+
+This command exits unsuccessfully if any table/route is uncovered or any probe
+fails. The current expected summary is 88/88 tables and 6/469 method/path pairs,
+with 463 uncovered method/path pairs. The original acceptance assertions are
+unchanged: this partial report cannot make the exhaustive gate green.

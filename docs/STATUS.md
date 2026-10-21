@@ -102,3 +102,18 @@ full LMC run reports 88 passing tests across 18 suites and one existing failing
 suite, solely the missing exhaustive table/API helper. The focused audit source
 and CLI also passed a strict TypeScript check. This remaining acceptance failure
 is retained and prevents declaring the project complete.
+
+
+The first live Next HTTP isolation suite also passes for GET/HEAD/OPTIONS on
+lead list/detail (6 of 469 method/path pairs), using real sign-in cookies and
+persisted A/B controls. It rejects anonymous access, foreign IDs, company override
+and forged actor/user headers. Other APIs and mutations remain unprobed by this
+new suite; the exhaustive acceptance gate remains incomplete.
+
+The combined isolation helper now executes the actual database and first live
+HTTP probes. The unchanged exhaustive acceptance test reaches its assertions and
+fails on six probed methods versus 469 discovered methods, rather than on a missing
+module. Its report retains every uncovered method; no allowlist or discovered
+route is substituted for tested behavior. The remaining 463 pairs are work still
+required, alongside tenant-column ownership migration and the other original
+security/product requirements.
