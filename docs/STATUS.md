@@ -67,3 +67,38 @@ Authenticated replies require a valid conversation token, matching sender and a 
 Added an explicit real Resend adapter with raw-body Svix signature verification, fixed-origin API retrieval, bounded response reads, trusted receiving-server authentication verdicts, outbound idempotency and tenant tags for bounce routing. Seven adapter tests and the original webhook signature test pass with network stubs; no real email has been sent. Complete providers tests: 78 passed, typecheck passed. Agent-core tests: 85 reported passed (includes baseline compiled/source duplicates), with live voice sources unchanged. Domain typecheck passed after reception changes.
 
 Still pending: follow-up execution, verified calendar booking/reschedule/cancel, owner reply UI/API, runtime bootstrap and Next route wiring, embed/forwarded lead ingestion, exhaustive existing-table/API isolation audit, vulnerability remediation, CI and final demo. The original full a–m acceptance gate remains incomplete; focused suites do not replace it. No phase completion or production readiness is claimed.
+
+
+## Database isolation correction (2026-10-21)
+
+The independent audit discovers 88 application tables, 127 API paths and 469
+method/path pairs. Real app-role SELECT/UPDATE/DELETE probes initially found 214
+failures from impersonating the internal system actor. Migration 0072 separates
+that authority into an authenticated, unprivileged system login; app credentials
+cannot SET ROLE into it. Trusted internal operations use separate credentials,
+verify the actual identity, and reject a different database target. Compose,
+bootstrap, startup assertions and generated example credentials support the role.
+The environment generator also handles Windows CRLF templates.
+
+All 88 tables now pass the focused app-role read/update/delete and valid INSERT
+probes, including foreign-company selection, service-actor spoofing and missing
+users. Positive controls prove stored rows and constraint-valid insertion payloads;
+the suite detects a deliberately permissive FORCE-RLS policy. This is database
+evidence, not a claim of HTTP/API completeness. Required roles and app membership
+are independently checked. The inventory artifact is generated outside source
+control. See docs/TENANT_ISOLATION_AUDIT.md for exact scope and commands.
+
+Validation: migration applied and rerun idempotently; db:check and behavioral
+db:verify-rls passed. DB client tests: 16 passed; full domain suite: 497 passed,
+including original voice/calendar/integration coverage. Admin/worker typechecks
+passed. Startup-role tests: 8 passed; environment generator tests: 5 passed.
+Actual system-authenticated business creation and global auth outbox
+deduplication/rollback pass. Production rollout and full tenant_id migration are
+not complete. The original exhaustive table/API acceptance gate remains red until
+its complete behavioral helper exists; no gate was removed or relaxed.
+
+Final checkpoint validation for this change: admin production build passed. The
+full LMC run reports 88 passing tests across 18 suites and one existing failing
+suite, solely the missing exhaustive table/API helper. The focused audit source
+and CLI also passed a strict TypeScript check. This remaining acceptance failure
+is retained and prevents declaring the project complete.
