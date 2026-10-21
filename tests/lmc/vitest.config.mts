@@ -6,6 +6,7 @@ export default defineConfig({
     "@lobbystack/domain": `${root}/packages/domain/src/index.ts`,
     "@lobbystack/contracts": `${root}/packages/contracts/src/index.ts`,
     "@lobbystack/db": `${root}/packages/db/src/index.ts`,
+    "@lobbystack/providers/crypto/secretBox": `${root}/packages/providers/src/crypto/secretBox.ts`,
     "@lobbystack/providers": `${root}/packages/providers/src/index.ts`,
     "@lobbystack/shared": `${root}/packages/shared/src/index.ts`,
     "@lobbystack/telemetry/node": `${root}/packages/telemetry/src/node.ts`,
