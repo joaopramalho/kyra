@@ -22,6 +22,7 @@ import { OutboxDispatcher } from "./outboxDispatcher";
 import { getWorkerStartupMode } from "./maintenance";
 import { configureSchedulers } from "./scheduler";
 import { getWorkerSnapshotCache } from "./snapshot-cache";
+import { createLmcEmailRuntime, emailWorkerEnabled } from "./lmcEmail";
 
 function createEmailProvider(): SmtpEmailProvider | undefined {
   const host = process.env.SMTP_HOST;
@@ -116,6 +117,9 @@ async function main(): Promise<void> {
   const database = createDatabaseClient("lobbystack_worker");
   const dispatcherDatabase = createDatabaseClient("lobbystack_dispatcher");
   await Promise.all([assertDatabaseRole(database), assertDatabaseRole(dispatcherDatabase)]);
+  const emailRuntime = emailWorkerEnabled() ? createLmcEmailRuntime({ database: database.db, dispatcher: dispatcherDatabase.db }) : undefined;
+  let emailReady = true;
+  console.info(emailRuntime ? `LMC email consumer configured (${emailRuntime.mode}).` : "LMC email consumer disabled.");
   const realtime = createRedisConnection({ prefix: process.env.REDIS_PREFIX ?? "lobbystack" });
   const queues = new Map<JobQueue, ReturnType<typeof createQueue>>();
   for (const queueName of jobQueues) {
@@ -237,6 +241,7 @@ async function main(): Promise<void> {
   });
   const dispatcher = new OutboxDispatcher(dispatcherDatabase.db, new Map(queues));
   const abort = new AbortController();
+  const emailLoop = emailRuntime?.run(abort.signal, ready => { emailReady = ready; state.ready = state.redis && state.database && state.storage && emailReady; });
   const dispatchLoop = dispatcher.run(abort.signal).catch((error) => console.error("outbox dispatcher stopped", redactOtelExceptionText(error instanceof Error ? error.message : String(error))));
   const redisChecks = await Promise.all([...queues.values()].map(async (queue) => {
     try { await queue.getJobCounts(); return true; } catch { return false; }
@@ -250,7 +255,7 @@ async function main(): Promise<void> {
   state.redis = redisChecks.every(Boolean);
   state.database = (await databaseHealthCheck(database)).ok;
   state.storage = await storage.ensureReady().then(() => true).catch(() => false);
-  state.ready = state.redis && state.database && state.storage;
+  state.ready = state.redis && state.database && state.storage && emailReady;
   const healthRefresh = setInterval(() => void (async () => {
     const [databaseStatus, storageStatus, ...queueStatuses] = await Promise.all([
       databaseHealthCheck(database).then((result) => result.ok).catch(() => false),
@@ -261,7 +266,7 @@ async function main(): Promise<void> {
     state.database = databaseStatus;
     state.storage = storageStatus;
     state.redis = queueStatuses.every(Boolean);
-    state.ready = state.database && state.redis && state.storage;
+    state.ready = state.database && state.redis && state.storage && emailReady;
   })(), 10_000);
   healthRefresh.unref();
 
@@ -272,6 +277,8 @@ async function main(): Promise<void> {
     dispatcher.stop();
     // Finalize live calls while the database pool is still open.
     await liveCalls.closeAll();
+    // Finish the current email lease before closing either database pool.
+    await emailLoop;
     await Promise.allSettled([dispatchLoop, ...workers.map((worker) => worker.close()), ...[...queues.values()].map((queue) => queue.close()), realtime.quit(), database.pool.end(), dispatcherDatabase.pool.end(), new Promise<void>((resolve) => health.close(() => resolve())), shutdownTelemetry()]);
   };
   process.once("SIGINT", () => void shutdown().finally(() => process.exit(0)));

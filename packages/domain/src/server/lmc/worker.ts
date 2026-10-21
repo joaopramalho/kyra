@@ -10,7 +10,7 @@ import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
-type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string };
+type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string; allowLocalHttp?: boolean };
 const terminal = new Set(["opted_out","suppressed","declined","booked"]);
 const processingTerminal = new Set(["opted_out","suppressed","declined"]);
 const injection = (text: string) => /ignore\s+(?:all\s+)?(?:your|previous|system)\s+(?:rules|instructions)|\bsystem\s*:|\b(?:give|apply)\s+\d{1,3}\s*%\s*(?:off|discount)|another\s+tenant/i.test(text);
@@ -20,7 +20,8 @@ export class LmcEmailWorker {
   private readonly baseUrl: string;
   constructor(private readonly input: WorkerInput) {
     const url = new URL(input.baseUrl);
-    if (url.protocol!=="https:" || url.username || url.password || url.search || url.hash || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(input.receivingDomain) || input.channel.kind!=="email") throw new Error("INVALID_EMAIL_WORKER_CONFIG");
+    const localHttp = input.allowLocalHttp === true && url.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(url.hostname);
+    if ((url.protocol!=="https:" && !localHttp) || url.username || url.password || url.search || url.hash || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(input.receivingDomain) || input.channel.kind!=="email") throw new Error("INVALID_EMAIL_WORKER_CONFIG");
     this.baseUrl = input.baseUrl.replace(/\/$/,"");
     // Validate the mandatory signing secret before the first outbound transaction.
     signActionToken({tenantId:"00000000-0000-4000-8000-000000000000",leadId:"00000000-0000-4000-8000-000000000000",purpose:"unsubscribe"},input.signingSecret);
@@ -28,13 +29,14 @@ export class LmcEmailWorker {
   }
 
   /** Bounded work per invocation. The runtime can call this again while work remains. */
-  async drain(maxRounds = 20): Promise<{ completed: number; failed: number }> {
+  async drain(maxRounds = 20, signal?: AbortSignal): Promise<{ completed: number; failed: number }> {
     if (!Number.isInteger(maxRounds) || maxRounds<1 || maxRounds>100) throw new Error("INVALID_QUEUE_LIMIT");
     const result = {completed:0,failed:0};
-    for (let round=0;round<maxRounds;round++) {
+    for (let round=0;round<maxRounds && !signal?.aborted;round++) {
       let claimed=0;
       for (const tenant of await this.queue.dueTenants()) {
-        for (const job of await this.queue.claim(tenant,10)) {
+        if (signal?.aborted) break;
+        for (const job of await this.queue.claim(tenant,1)) {
           claimed++;
           try {
             if (job.kind==="process") await this.process(job);
