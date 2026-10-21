@@ -1,6 +1,46 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21 (initial email ingestion)
+## Current checkpoint — 2026-10-21 (one-command offline demo)
+
+`pnpm lmc:demo` now runs the full offline email workflow over temporary loopback
+HTTP, production handlers/domain/worker and real PostgreSQL, with only external
+providers and clock fake. It covers signed initial email, first reply, verified
+qualification, canonical booking/calendar synchronization and owner summary. A
+separate unanswered form lead explicitly consents to follow-up and then sends STOP.
+Seven more simulated days produce no later sends; the booked lead gets no touches.
+The runner checks actual role identities/flags, uses a demo session lock, refuses
+existing due work and removes/checks its synthetic business, owner and outbox rows.
+It shares the acceptance fixture rather than a second fake business implementation.
+
+An actual CLI run with a private env file produced all eight stages, a first reply
+in 188 ms, one booking and one consented follow-up, no future sends after STOP,
+and confirmed cleanup. A redacted JSON transcript/report is available outside Git
+in the task outputs. `--json`, explicit non-overwriting `--output` and `--help` are
+implemented. No real credentials are needed for providers, and no database URLs,
+reply/intake/unsubscribe capabilities or exception stacks are emitted.
+
+Tests first failed on the missing runner/command. Six final demo/CLI acceptance
+cases pass, including actual package command and report-file agreement, refusing
+overwrite/production/real providers, rejecting the misleading database name `latest`
+and connection-query destination overrides, plus real HTTP/PG workflow/cleanup.
+Full serial LMC suite: **120 passed, one failed solely on unchanged exhaustive
+HTTP isolation coverage (85 versus 735)**. Full script typecheck, dedicated demo
+test-source typecheck and five environment-generation tests pass. Production
+application/voice sources are unchanged in this checkpoint; prior admin/worker
+build and domain/worker test evidence is retained rather than repeated without a
+runtime code change. See OFFLINE_DEMO.md and the updated README for prerequisites.
+
+The demo requires an already migrated dedicated localhost database with a separate
+`test` name token and separate runtime URLs, and rejects production/real-provider
+mode. It does not provision infrastructure, start a persistent dashboard, prove
+live provider delivery, or count as complete production Next/API isolation. Known
+production inventory remains 735 pairs with 650 unprobed, and ownership review,
+full configuration/inbox UX, remaining branding and legacy fake defaults, dependency/
+security/CI/startup/header/health work and operational restore verification remain
+required. The full goal stays active; this delivers the demo requirement, not
+overall completion. Earlier sections are historical and superseded where needed.
+
+## Earlier checkpoint — 2026-10-21 (initial email ingestion; historical)
 
 Initial direct emails and owner-forwarded lead notifications now enter the same
 signed provider boundary, tenant-scoped capture transaction and real email worker.

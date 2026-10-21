@@ -92,3 +92,13 @@
   history stripping except for the explicit forwarding parser, redact intake tokens
   from reads/prompts, and omit the owner's notification ID from the first lead reply.
   DNS/provider setup and a dedicated inbox-address settings panel remain separate work.
+
+- 2026-10-21: Implement the offline demo as an executable workflow sharing the
+  real HTTP/domain/PG/worker acceptance fixture, not a second business simulator.
+  Use a separate explicitly consenting unanswered lead for follow-up/STOP so the
+  booked email lead never receives a follow-up. Require local tokenized-test DB
+  names and actual unprivileged runtime roles, reject destination override query
+  options/real/production modes, serialize demos, and refuse existing due work.
+  Emit only redacted synthetic transcripts and check fixture cleanup; explicit
+  report output cannot overwrite existing files. The demo does not launch a
+  persistent Next dashboard or establish exhaustive production-route coverage.

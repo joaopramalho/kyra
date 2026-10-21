@@ -2,7 +2,7 @@
 
 Lead My Company helps service businesses capture, engage, and convert more leads into booked jobs — automatically, 24/7.
 
-LMC is being built for US home-service contractors, starting with roofing businesses in Florida. The target workflow is email lead capture, qualification, calendar-backed estimate booking, owner summaries and human handoff. See [STATUS](docs/STATUS.md) for what is implemented; the complete email workflow and default fake-provider demo are not yet available.
+LMC is being built for US home-service contractors, starting with roofing businesses in Florida. The implemented email path includes form/direct/owner-forwarded intake, qualification, calendar-backed estimate booking, owner summaries, human handoff and bounded consented follow-ups. Run the offline demo below; see [STATUS](docs/STATUS.md) for remaining configuration, exhaustive isolation and security work.
 
 ## Local development
 
@@ -18,7 +18,7 @@ pnpm typecheck
 pnpm build
 ```
 
-The default test command uses fake collaborators in unit tests and skips explicitly opted-in database tests. It does not send live email or make live voice calls. Do not enter production provider credentials for local tests. The production adapters are inherited and the dev runtime is not yet fully switched to fake providers; that is required before the email demo is considered complete.
+The default test command uses fake collaborators in unit tests and skips explicitly opted-in database tests. It does not send live email or make live voice calls. Do not enter production provider credentials for local tests. The offline email demo constructs fake providers explicitly. Real email adapters are opt-in; the remaining legacy dev voice/SMS/provider entry points still need their full fake-default audit.
 
 For integration tests, use an isolated local PostgreSQL database with pgvector and Redis. Never point these tests at production. The repository includes Docker Compose infrastructure:
 
@@ -35,6 +35,26 @@ Configure local connection URLs using `.env.example` and the database-role docum
 
 Run `pnpm dev` for the dashboard, worker and marketing site, or `pnpm dev:admin` for the dashboard. The dashboard defaults to port 3000. Real domain DNS, provider credentials and production operations are a separate deployment step, not needed for the unit suite.
 
+## Offline email demo
+
+With a dedicated migrated localhost test database and separate runtime-role URLs
+configured in ignored local environment files:
+
+```sh
+pnpm lmc:demo
+```
+
+The single command runs initial email → reply → verified qualification → booking
+→ owner summary, then a consented follow-up and STOP on a separate unanswered
+lead. It uses real HTTP/PostgreSQL/application logic with fake external providers
+and clock, verifies no booked-lead follow-ups or later sends after STOP, and removes
+the fixture. `--json` and `--output /existing/directory/report.json` provide a redacted
+transcript/report; existing output files are preserved. It does not launch a
+persistent dashboard or complete the exhaustive Next/API isolation audit.
+
+See [offline demo setup and verification](docs/OFFLINE_DEMO.md) for the role URLs,
+private `LMC_DEMO_ENV_FILE`, safety checks and exact report options.
+
 ## Architecture
 
 - `apps/admin`: Next.js dashboard, authentication, APIs and embedded channels.
@@ -46,16 +66,19 @@ Run `pnpm dev` for the dashboard, worker and marketing site, or `pnpm dev:admin`
 - `packages/providers`: provider adapters.
 - `packages/shared/src/brand.ts`: shared LMC name, tagline, URL, colors and provisional logo path.
 
-The existing voice runtime remains intact. Email must be added behind a channel interface without changing voice latency or audio behavior. Internal workspace names and database role names retain `lobbystack` to avoid unnecessary runtime migrations.
+The existing voice runtime remains intact. Email uses a separate channel adapter while preserving the original voice controller and handler. Internal workspace names and database role names retain `lobbystack` to avoid unnecessary runtime migrations.
 
 ## Project status and verification
 
-The Linux baseline passes tests, lint, typecheck and build. The recorded baseline dependency audit has unresolved vulnerabilities. Rebranding is in progress; email acceptance scenarios, full tenant isolation probes and security remediation remain required. No production-readiness claim is made.
+The Linux baseline passes tests, lint, typecheck and build. The recorded baseline dependency audit has unresolved vulnerabilities. The email a–l acceptance workflows pass with fake external providers and PostgreSQL. Rebranding/configuration work, exhaustive tenant isolation and security remediation remain open; the exhaustive acceptance gate is deliberately still red. No production-readiness claim is made.
 
 - [Reconnaissance and baseline](docs/RECON.md)
 - [Implementation status](docs/STATUS.md)
 - [Website lead capture](docs/EMAIL_CAPTURE.md)
 - [Email worker runtime](docs/EMAIL_RUNTIME.md)
+- [Initial/forwarded email ingestion](docs/EMAIL_INGESTION.md)
+- [Offline email demo](docs/OFFLINE_DEMO.md)
+- [Tenant isolation audit](docs/TENANT_ISOLATION_AUDIT.md)
 - [Decisions](docs/DECISIONS.md)
 - [Historical upstream README](docs/UPSTREAM-README.md)
 
