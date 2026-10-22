@@ -30,6 +30,8 @@
     "./replacement-smoke.ts",
     "./replacement-smoke.test.ts",
     "./critical-dependencies.test.ts",
+    "./dependency-boundaries.test.ts",
+    "./smtp-dns-isolation.test.ts",
     "./replacement-sms-consent-check.ts",
     "./replacement-unit-economics-check.ts",
     "./replacement-analytics-usage-check.ts",

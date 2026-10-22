@@ -90,6 +90,7 @@ const sitemapAlternateLinks = (url) => {
 
 // https://astro.build/config
 export default defineConfig({
+  output: "static",
   site: SITE_URL,
   devToolbar: {
     enabled: false,
