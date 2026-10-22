@@ -27,3 +27,17 @@ export const lmcTenantSeedSchema = z.object({
   settings,
 }).strict();
 export type LmcTenantSeed = z.infer<typeof lmcTenantSeedSchema>;
+
+export const lmcTenantIdentitySchema = z.object({ tenantId: z.string().uuid(), userId: z.string().uuid() }).strict();
+export const lmcTenantBootstrapSchema = z.object({
+  userId: z.string().uuid(),
+  name: z.string().trim().min(2).max(160),
+  slug: z.string().trim().min(2).max(120).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
+  timezone: lmcTenantSeedSchema.shape.timezone,
+  businessType: z.string().trim().min(2).max(120),
+}).strict();
+export const lmcTenantSetupSchema = z.discriminatedUnion("operation", [
+  lmcTenantBootstrapSchema.extend({ operation: z.literal("bootstrap") }),
+  lmcTenantIdentitySchema.extend({ operation: z.literal("calendar-authorize") }),
+  lmcTenantIdentitySchema.extend({ operation: z.literal("inspect") }),
+]);

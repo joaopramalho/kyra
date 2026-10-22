@@ -50,6 +50,7 @@
     "./operations/**/*.ts",
     "./lmc-demo.ts",
     "./lmc/**/*.ts",
-    "./lmc-tenant.ts"
+    "./lmc-tenant.ts",
+    "./lmc-tenant-setup.ts"
   ]
 }

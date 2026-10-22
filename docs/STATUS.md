@@ -10,10 +10,11 @@
 
 - Existing-tenant configuration CLI implemented: services, service area, canonical hours, FAQ context, escalation, booking rules and calendar selection. `docs/TENANT_CONFIGURATION.md` documents private output and prerequisites. Real PostgreSQL regression: **95 tests / 15 files passed, no skips**. Workspace/script typechecks and full build passed (16 prerender checks). API isolation revalidation passed in 26.12s; strict SAST passed 101 rules / 1,767 targets with zero findings/errors. Contracts: 6 tests; agent-core: 106; domain unit profile: 428 passed with the existing 69 environment-dependent integrations excluded (not counted as integration proof).
 
+- Initial setup CLI complete: canonical business/owner/staff creation, private Google OAuth issuance and owned calendar/staff inspection. Setup/configuration integration: **10/10 tests passed, zero skips**; actual callback consumes a CLI-issued state once and rejects wrong sessions/replay. Exhaustive API gate passed again in 24.98s. Workspace/scripts/new-test types and full build passed. Strict SAST: **101 rules / 1773 targets, zero findings/errors**; staged secret scan passed. Real Google consent remains a manual provider step.
+
 ## Still required before release
 
 - Allowed page/static-asset checks and authenticated pilot-page behavior.
-- Complete initial business/staff provisioning and Google OAuth initiation through the operator CLI; the existing-tenant configuration command currently requires those records.
 - Public-site content cleanup, production Compose profile and an executed isolated backup/restore rehearsal.
 - Hosted CI with real PostgreSQL integrations and no skipped integration. No hosted run or deployment has occurred.
 

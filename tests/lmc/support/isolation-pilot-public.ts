@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { assertDatabaseRole, createDatabaseClient } from "@lobbystack/db";
+import { issueLmcCalendarAuthorization } from "../../../scripts/lmc/tenant-setup";
 import { getLmcEnvironment } from "@lobbystack/providers";
 import { signActionToken, createReplyToken } from "../../../packages/domain/src/server/lmc/capabilities";
 import { createCalendarOAuthState, calendarOAuthStateDigest } from "../../../apps/admin/src/lib/google-calendar-oauth";
@@ -59,7 +61,24 @@ export async function probePilotPublicContext(context: HttpAuditContext) {
   }
   probed.push("POST /api/lmc/capture/[token]", "OPTIONS /api/lmc/capture/[token]", "GET /api/lmc/unsubscribe/[token]", "POST /api/lmc/unsubscribe/[token]", "OPTIONS /api/lmc/unsubscribe/[token]");
 
-  const states = [a, b].map(fixture => createCalendarOAuthState({ userId: fixture.ownerId, businessId: fixture.tenantId }));
+  // Tenant A uses the same issuer as the trusted CLI; B retains the original
+  // callback fixture. All identity, method, replay and cross-tenant checks stay.
+  const auth = createDatabaseClient("lobbystack_auth");
+  const oauthKeys = ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET","GOOGLE_REDIRECT_URI"] as const;
+  const previousOAuth = oauthKeys.map(key=>process.env[key]);
+  let issuedState: string;
+  try {
+    await assertDatabaseRole(auth,{NODE_ENV:"production"});
+    process.env.GOOGLE_CLIENT_ID="fixture-client";
+    process.env.GOOGLE_CLIENT_SECRET="fixture-client-secret";
+    process.env.GOOGLE_REDIRECT_URI=new URL("/api/calendar/google/callback",base).toString();
+    const issued=await issueLmcCalendarAuthorization({database:db.app.db,authDatabase:auth.db},{tenantId:a.tenantId,userId:a.ownerId});
+    issuedState=new URL(issued.authorizationUrl).searchParams.get("state")!;
+  } finally {
+    oauthKeys.forEach((key,index)=>{const value=previousOAuth[index];if(value===undefined)delete process.env[key];else process.env[key]=value;});
+    await auth.pool.end();
+  }
+  const states = [issuedState,createCalendarOAuthState({userId:b.ownerId,businessId:b.tenantId})];
   const identifiers = states.map(state => `google-calendar:${calendarOAuthStateDigest(state)}`);
   async function remaining(index: number) {
     return (await db.admin.pool.query("select id from verifications where identifier=$1", [identifiers[index]])).rowCount;
@@ -71,9 +90,7 @@ export async function probePilotPublicContext(context: HttpAuditContext) {
     return fetch(url, { method, redirect: "manual", signal: AbortSignal.timeout(15000), headers: { ...(cookie ? { cookie } : {}), "x-user-id": b.ownerId, "x-tenant-id": b.tenantId, "x-business-id": b.tenantId, "x-actor-type": "system" } });
   }
   try {
-    for (const [index, fixture] of [a, b].entries()) {
-      await db.admin.pool.query("insert into verifications(identifier,value,expires_at) values($1,$2,$3)", [identifiers[index], `${fixture.ownerId}:${fixture.tenantId}`, new Date(Date.now() + 600000)]);
-    }
+    await db.admin.pool.query("insert into verifications(identifier,value,expires_at) values($1,$2,$3)", [identifiers[1], `${b.ownerId}:${b.tenantId}`, new Date(Date.now() + 600000)]);
     const head = await callback(states[0]!, cookieA, "HEAD");
     check(head.status === 405 && (await head.text()) === "" && await remaining(0) === 1, "PILOT_CALENDAR_HEAD_CONSUMED_STATE");
     for (const [cookie, expected] of [["", 401], [cookieB, 403]] as const) {

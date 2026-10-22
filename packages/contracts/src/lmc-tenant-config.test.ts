@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { lmcBookingRulesSchema } from "./lmc";
-import { lmcTenantSeedSchema } from "./lmc-tenant-config";
+import { lmcTenantBootstrapSchema, lmcTenantSeedSchema } from "./lmc-tenant-config";
 
 it("keeps requester verification mandatory and bounds the existing seven-day scheduling horizon", () => {
   expect(lmcBookingRulesSchema.parse({})).toEqual({ minimumNoticeMinutes: 0, horizonDays: 7, requireVerifiedRequester: true });
@@ -15,4 +15,13 @@ it("rejects duplicate hours, overlapping service aliases and provider secrets be
   expect(lmcTenantSeedSchema.safeParse({ ...minimal, calendar: { ...minimal.calendar, accessToken: "never-accept-provider-credentials-here" } }).success).toBe(false);
   expect(lmcTenantSeedSchema.safeParse({ ...minimal, settings: { ...minimal.settings, services: [{ ...minimal.settings.services[0], aliases: ["Roof repair"] }] } }).success).toBe(false);
   expect(lmcTenantSeedSchema.safeParse({ ...minimal, timezone: "Invalid/Timezone" }).success).toBe(false);
+});
+
+it("rejects bootstrap slugs that canonical creation would normalize and break repeat lookup",()=>{
+  const seed={userId:"22222222-2222-4222-8222-222222222222",name:"Pilot company",slug:"pilot-company",timezone:"America/New_York",businessType:"service_company"};
+  expect(lmcTenantBootstrapSchema.safeParse(seed).success).toBe(true);
+  expect(lmcTenantBootstrapSchema.parse({...seed,slug:"  pilot-company \n"}).slug).toBe("pilot-company");
+  for(const slug of ["pilot--company","pilot-company-","Pilot-company","p"]){
+    expect(lmcTenantBootstrapSchema.safeParse({...seed,slug}).success).toBe(false);
+  }
 });
