@@ -1,7 +1,8 @@
+import type * as AiModule from "ai";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ generate: vi.fn(), model: vi.fn() }));
 vi.mock("ai", async (original) => ({
-  ...(await original<typeof import("ai")>()),
+  ...(await original<typeof AiModule>()),
   generateText: mocks.generate,
 }));
 vi.mock("./model", () => ({ createAgentModel: mocks.model }));

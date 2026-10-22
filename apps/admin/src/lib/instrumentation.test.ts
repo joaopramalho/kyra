@@ -1,3 +1,4 @@
+import type * as NodeModule from "@lobbystack/telemetry/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DatabaseClient, DatabaseRole } from "@lobbystack/db";
@@ -5,7 +6,7 @@ import type { DatabaseClient, DatabaseRole } from "@lobbystack/db";
 const mocks = vi.hoisted(() => ({ getDatabase: vi.fn() }));
 
 vi.mock("@lobbystack/telemetry/node", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@lobbystack/telemetry/node")>(),
+  ...await importOriginal<typeof NodeModule>(),
   initializeTelemetry: vi.fn(),
   shutdownTelemetry: vi.fn(),
 }));

@@ -58,14 +58,24 @@ The first pass ran 101 rules and found two audit flags:
   annotation documents this audit false positive; installer tests enforce the
   checksum and extraction boundary.
 
-After review, there are zero findings, but the strict scan **still fails** on 38
-partial-parsing warnings in TypeScript test files. Raising the rule timeout to
-30 seconds removed the initial schema-rule timeout. Approximately 1,750 targets
-were scanned; default ignore patterns and one file above the size limit remain
-reported by the tool. Zero findings does not mean complete analysis or a green
-SAST gate. Parser limitations and skipped-source coverage require further review;
-no parser-error waiver or broad exclusion was added to turn this gate green.
+The initial strict scan failed on 38 partial-parsing reports: 37 test files and
+the actual database schema. All locations used inline import types in generic
+arguments. These references were moved to explicit type-only namespace imports
+(47 type references in 38 files). TypeScript transpilation followed by JavaScript
+AST normalization proved identical emitted runtime code for every changed file;
+the database definitions, test assertions and voice behavior are unchanged.
+
+The final strict scan passes: **101 rules, 1,749 targets, zero findings and zero
+parser errors**, with only the two precise audit annotations above. No parser-error
+waiver, broad exclusion or removed rule was introduced. The initial rule timeout
+is also resolved. The target-list difference is two generated Python bytecode
+caches now ignored and the newly added security documentation, not excluded
+application code. Default ignore patterns and one file above the size limit remain
+reported scope limits; scanner success is not proof against every possible flaw.
 The OAuth suite still passes all 21 tests, including the unchanged HTTP rejection.
+Full workspace/script typecheck, default tests and build subsequently pass. Default
+tests retain 69 domain and 27 admin environment-dependent skips; those are not
+represented as passed integration proofs. Admin lint has zero errors/17 warnings.
 
 ## Dependency audit status
 

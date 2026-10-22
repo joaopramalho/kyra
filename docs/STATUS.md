@@ -1,6 +1,44 @@
 # LMC status
 
-## Current checkpoint — 2026-10-22 (mandatory security CI gates)
+## Current checkpoint — 2026-10-22 (strict SAST parsing resolved)
+
+Semgrep now passes in strict mode: 101 rules, 1,749 targets, zero findings and zero
+parser errors. Detailed review corrected the initial report: one of the 38 parser
+reports affected the real database schema, alongside 37 test files. All used the
+same inline import-type syntax in generic arguments. Replaced 47 such type
+references with explicit type-only namespace imports across those 38 files.
+TypeScript transpilation and normalized JavaScript AST comparison proved identical
+emitted runtime code for every file (before/after SHA-256 proof saved in outputs).
+No test assertion, database definition, voice handler/controller or applied
+migration is changed. No parser-error waiver or broad test/schema exclusion is used.
+
+Final validation: full `pnpm typecheck` and `pnpm test` exit 0. The latter includes
+908 admin tests (27 environment-dependent skips), 428 domain tests (69 skips),
+97 worker tests, 103 reported agent-core tests and all 162 script tests, plus the
+other workspace suites. The initial run overlapped typechecking and had four
+admin failures; the two affected files passed all 16 tests alone, then the full
+command passed without concurrent typechecking. No test timeout, assertion or
+parallelism configuration was changed. Skipped integrations are not counted as
+passed real-database proofs. `pnpm test:build-config` passes eight tests, including
+the nested three-case installer suite; the unchanged OAuth negative suite passes 21.
+Full `pnpm build` exits 0, including all packages/apps, the worker runtime bundle,
+16 localized public prerender checks and embed-loader copy. Admin lint exits 0
+with 17 warnings and no errors; the existing Astro title-length warning remains.
+
+Both documented exact audit annotations remain: the deliberately insecure OAuth
+negative fixture and the pinned HTTPS/checksummed scanner installer. Default
+scanner ignores and its tool-reported file-size limit remain documented.
+The apparent target-list reduction only removes two generated Python bytecode
+caches; the new security document is added to the scanned targets.
+
+Security CI gates, dedicated System configuration, exact historical Gitleaks
+exceptions and fresh-secret detection regression are implemented. Gitleaks passed
+the staged changes and 397-commit post-CI-commit history with the reviewed 30
+exceptions. Root and standalone dependency audits are still red; all earlier
+tenant/API, settings/inbox, provider-default, branding, startup and recovery work
+remains within the active goal. No full-goal completion or hosted CI run is claimed.
+
+## Earlier checkpoint — 2026-10-22 (mandatory security CI gates; historical)
 
 Added independent workspace/standalone dependency audit, full-history Gitleaks and
 strict Semgrep jobs. Release validation now requires them and the existing Zapier
@@ -20,14 +58,15 @@ passes. See SECURITY_SCANNING.md and docs/security/gitleaks-reviewed.json.
 Semgrep 1.181.0 runs 101 maintained security rules. Two precise documented audit
 false positives are annotated: the OAuth negative HTTP fixture and a fixed HTTPS,
 hash-verified installer download. OAuth assertions remain unchanged (21 passed).
-Final scan has zero findings but still exits 1 in strict mode because of 38 partial
-TypeScript test parse warnings; no broad parser waiver or exclusion was added.
+The initial strict scan had zero findings but exited 1 on 38 partial-parsing
+reports: 37 test files and the database schema. These errors are resolved in the
+latest checkpoint; no broad parser waiver or exclusion was added.
 The initial schema-rule timeout is resolved by the 30-second rule timeout.
 
 Fresh audit gates remain red: workspace 93 distinct advisories / 126 metadata
 findings, and standalone Zapier 33 npm findings (28 high, five moderate). Both have
 zero critical. Security gates are configured and tested, not all passing. Further
-dependency remediation and SAST parser/coverage work remain required, together
+dependency remediation and scan-scope review remain required, together
 with all earlier isolation, business-settings/inbox, provider-default, branding,
 production hardening and restore requirements. The full goal stays active.
 

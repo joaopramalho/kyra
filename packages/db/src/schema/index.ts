@@ -1,3 +1,4 @@
+import type * as ContractsModule from "@lobbystack/contracts";
 import { customType } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -1679,7 +1680,7 @@ export const invoices = pgTable(
 
 export const lmcSettings = pgTable("lmc_settings", {
   tenantId: uuid("tenant_id").primaryKey().references(() => businesses.id, { onDelete: "cascade" }),
-  config: jsonb("config").$type<import("@lobbystack/contracts").LmcBusinessSettings>().notNull(),
+  config: jsonb("config").$type<ContractsModule.LmcBusinessSettings>().notNull(),
   captureTokenHash: text("capture_token_hash").notNull(), enabled: boolean("enabled").default(true).notNull(), ...timestamps,
 });
 
@@ -1687,7 +1688,7 @@ export const lmcLeads = pgTable("lmc_leads", {
   id: uuid("id").defaultRandom().primaryKey(), tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
   contactId: uuid("contact_id"), email: text("email").notNull(), name: text("name"), subject: text("subject").default("").notNull(),
   status: varchar("status", { length: 32 }).default("new").notNull(), reason: text("reason"),
-  qualification: jsonb("qualification").$type<import("@lobbystack/contracts").LmcQualification>().default({}).notNull(),
+  qualification: jsonb("qualification").$type<ContractsModule.LmcQualification>().default({}).notNull(),
   offeredSlots: jsonb("offered_slots").$type<Array<{ startsAt: string; endsAt: string; serviceId: string; staffId: string }>>().default([]).notNull(),
   replyTokenHash: text("reply_token_hash").notNull(), consentFollowups: boolean("consent_followups").default(false).notNull(),
   followupCount: integer("followup_count").default(0).notNull(), followupGeneration: integer("followup_generation").default(0).notNull(),

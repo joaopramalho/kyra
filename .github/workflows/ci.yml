@@ -163,10 +163,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Audit the workspace dependency graph
-        run: pnpm audit
+        run: pnpm audit --audit-level low
       - name: Audit the standalone Zapier lockfile even if the workspace audit fails
         if: ${{ !cancelled() }}
-        run: npm audit --prefix integrations/zapier
+        run: npm audit --prefix integrations/zapier --audit-level=low
 
   secret-scan:
     runs-on: ubuntu-latest
