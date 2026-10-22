@@ -2,24 +2,20 @@
 
 ## Done
 
-- Authenticated API gate passed: **88/88 tables and 238/238 method/path pairs**, no skips/failures. Original exhaustive timeout and strict assertions retained; test passed in 42.24s.
-- Signup, verification, both password-recovery flows, logout and signed webhook proved over real HTTP/PostgreSQL. Cross-tenant state, signature, replay and session-revocation controls passed. Test fixtures stay private; no external email is sent.
-- Production denial proof: 164 inherited routes × seven methods, 1,148 requests plus nine controls passed. Voice controllers remain unchanged outside pilot mode.
-- Providers: 82 tests passed; fixture compatibility: three passed; audit/provider typechecks and full build passed. Strict SAST: 101 rules, 1,761 targets, zero findings/errors in documented scope. Staged secret scan passed.
-- Production dependency gate remains high/critical zero on the unchanged lockfile. Static landing mode and Zapier exclusion are configured; advisory triage is documented.
-
-- Existing-tenant configuration CLI implemented: services, service area, canonical hours, FAQ context, escalation, booking rules and calendar selection. `docs/TENANT_CONFIGURATION.md` documents private output and prerequisites. Real PostgreSQL regression: **95 tests / 15 files passed, no skips**. Workspace/script typechecks and full build passed (16 prerender checks). API isolation revalidation passed in 26.12s; strict SAST passed 101 rules / 1,767 targets with zero findings/errors. Contracts: 6 tests; agent-core: 106; domain unit profile: 428 passed with the existing 69 environment-dependent integrations excluded (not counted as integration proof).
-
-- Initial setup CLI complete: canonical business/owner/staff creation, private Google OAuth issuance and owned calendar/staff inspection. Setup/configuration integration: **10/10 tests passed, zero skips**; actual callback consumes a CLI-issued state once and rejects wrong sessions/replay. Exhaustive API gate passed again in 24.98s. Workspace/scripts/new-test types and full build passed. Strict SAST: **101 rules / 1773 targets, zero findings/errors**; staged secret scan passed. Real Google consent remains a manual provider step.
+- Production admin/worker deny-by-default boundary and allowlist; inherited voice controllers unchanged outside pilot mode.
+- Real HTTP/PostgreSQL isolation: 88/88 tables and 238/238 method/path pairs, no skips/failures. Signup, verification, recovery, session revocation, signed webhook and cross-tenant controls covered.
+- Production dependencies: high/critical zero on the unchanged lockfile; dev advisory triage and standalone Zapier exclusion documented.
+- Trusted tenant CLI: initial business/staff creation, services/area/hours/FAQ context/escalation/booking settings, private Google OAuth issuance and calendar selection. Ten setup/configuration integration cases passed without skips; real Google consent remains manual.
+- Public site: six static pages / 18 files, no JS/server/DB/trackers, LMC `[FILL]` details and required attribution. Existing 81 tests, 11 artifact regressions, two unchanged inventory tests, 56 HTTP controls, build, types, lint and desktop/mobile QA passed. Static archive was extracted and revalidated. Strict SAST passed 101 rules / 1,794 targets with zero findings/errors; staged secret scan passed. See STATIC_PUBLIC_SITE.md.
 
 ## Still required before release
 
-- Allowed page/static-asset checks and authenticated pilot-page behavior.
-- Public-site content cleanup, production Compose profile and an executed isolated backup/restore rehearsal.
-- Hosted CI with real PostgreSQL integrations and no skipped integration. No hosted run or deployment has occurred.
+- Allowed admin page/static-asset checks and authenticated pilot-page behavior.
+- Production Compose profile, real-provider environment/checklist and an executed isolated backup/restore rehearsal.
+- Hosted CI with real PostgreSQL integrations and no skipped integration, strict security/dependency gates. Workflow changes are local; no hosted run or deployment has occurred.
 
 ## Your manual steps
 
-- Supply LMC contact/legal/physical-address data (`[FILL]` until supplied) and legal review before public release.
-- Configure DNS, Resend in/out/webhook signing, Google Calendar OAuth and LLM keys through the staging template/checklist when ready.
-- Supply an authorized hosting/repository destination and real deployment credentials when the local release gate is ready.
+- Supply approved LMC entity/contact/address/legal details for `[FILL]` before public release; the site remains noindex.
+- Configure DNS, Resend in/out/webhook signing, Google OAuth/consent and LLM keys through the staging template/checklist when ready.
+- Supply an authorized repository/hosting destination and credentials when the local release gate is ready.

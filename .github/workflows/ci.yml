@@ -39,6 +39,8 @@ jobs:
       - run: pnpm --filter @lobbystack/admin --filter @lobbystack/landing lint
       - run: pnpm telemetry:coverage
       - run: pnpm build
+      - name: Reject public artifact regressions before release validation
+        run: pnpm --filter @lobbystack/landing pilot:test
       - name: Verify the committed embed loader matches the build
         run: git diff --exit-code -- apps/admin/public/embed/embed.js
       - run: pnpm test

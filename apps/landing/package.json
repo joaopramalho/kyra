@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "prebuild": "pnpm --filter @lobbystack/shared build",
-    "build": "astro build",
+    "build": "astro build && node scripts/verify-pilot-static.mjs",
     "preview": "astro preview",
     "astro": "astro",
     "lint": "eslint .",
@@ -14,7 +14,11 @@
     "pretypecheck": "pnpm --filter @lobbystack/shared build",
     "typecheck": "astro check",
     "test": "vitest run --passWithNoTests",
-    "seo:validate": "node scripts/validate-seo-build.mjs"
+    "seo:validate": "node scripts/verify-pilot-static.mjs",
+    "pilot:verify": "node scripts/verify-pilot-static.mjs",
+    "pilot:test": "node --test scripts/pilot-static.node.mjs",
+    "seo:validate:legacy": "node scripts/validate-seo-build.mjs",
+    "pilot:http": "node scripts/check-pilot-http.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

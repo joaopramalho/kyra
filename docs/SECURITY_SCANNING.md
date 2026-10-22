@@ -100,3 +100,8 @@ npm audit --prefix integrations/zapier
 Run Semgrep from an isolated environment with version 1.181.0 installed, as in CI.
 Keep raw scanner reports private/ignored; share only redacted metadata. Scanner
 success never substitutes for the independent exhaustive tenant/API audit.
+
+
+## Pilot static-artifact negative fixture
+
+The new artifact regression suite deliberately inserts `<script>void 0;</script>` into an unserved disposable copy and requires `verifyPilotStatic` to reject it with ACTIVE_PUBLIC_ELEMENT. Semgrep's unknown-value-with-script-tag audit emits two matches on that one `writeFile` fixture line. A single exact-rule annotation documents the intentional negative payload; no production code is exempted and no test behavior/assertion is changed. The guarded temporary-directory cleanup and rejection test execute locally. Existing rules, parser settings and ignore patterns remain unchanged.
