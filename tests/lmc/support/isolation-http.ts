@@ -24,6 +24,7 @@ export type HttpAuditContext = {
   other: { id: string };
   cookieA: string;
   cookieB: string;
+  verifiedLoginUsers: readonly string[];
   request: AuditRequest;
   login: (h: Harness) => Promise<string>;
   check: (condition: boolean, code: string) => void;
@@ -51,6 +52,7 @@ export async function withHttpAudit(
     probed: string[] = [];
   let a: Harness | undefined, b: Harness | undefined;
   const loggedInCookies: string[] = [];
+  const verifiedLoginUsers: string[] = [];
   const check = (condition: boolean, code: string) => {
     if (!condition) failures.push(code);
   };
@@ -129,6 +131,7 @@ export async function withHttpAudit(
     if (!cookies.includes("session_token="))
       throw new Error("AUDIT_SESSION_COOKIE_MISSING");
     loggedInCookies.push(cookies);
+    verifiedLoginUsers.push(h.ownerId);
     return cookies;
   }
   try {
@@ -153,6 +156,7 @@ export async function withHttpAudit(
       other,
       cookieA,
       cookieB,
+      verifiedLoginUsers,
       request,
       login,
       check,

@@ -2,21 +2,20 @@
 
 ## Done
 
-- Feature scope frozen to the email pilot; criteria in [RELEASE_GATE.md](RELEASE_GATE.md).
-- Admin/worker production routing defaults to the pilot boundary. Unknown legacy routes return 404; allowed paths restrict methods. Worker controllers and voice behavior remain unchanged outside pilot mode.
-- SMTP upgraded to 10.0.9 with a failing-before/passing-after TLS identity regression. Six dependency regressions pass; production audit has zero high/critical (one moderate, one low tracked).
-- Proxy tests: 13 passed. Worker: 101 passed. Providers: 81 passed. Full workspace/scripts typecheck passed. Admin production and static landing builds passed. Admin unit run: 913 passed, 27 integration tests skipped without DB; not hosted integration evidence.
-- Strict Semgrep: 101 rules, 1,757 targets, zero findings/errors; the new loopback runner also passes its targeted scan. CI configuration tests: nine passed.
-- Static landing compiler dependencies classified; standalone Zapier excluded from this CI. Development advisories documented. Inherited deployment requires explicit user-owned LMC configuration.
+- Production routing defaults to the pilot boundary; unknown inherited routes return 404. Production denial proof: 164 routes × seven methods, 1,148 probes plus nine controls passed at the previous checkpoint.
+- Current authenticated API audit: **88/88 tables**, **220/231 method/path pairs**, zero observed failures. Exact equality/no-skips/no-failures assertions remain; the gate still fails on 11 uncovered pairs.
+- Real A/B method, session, workspace, capture, opt-out and calendar-capability probes pass. Dotted unsubscribe tokens now work; opt-out cancels queued lead-facing work while preserving owner alerts and other contacts. Calendar returns to reachable pilot settings and rejects HEAD before state consumption.
+- Production dependency gate: zero high/critical; one moderate and one low tracked in DEV_ADVISORIES.md. Static landing compiler dependencies classified; unused standalone Zapier excluded from this CI.
+- Current targeted proxy/calendar tests: 25 passed. Pilot inventory/mutation tests: six passed. Worker API audit, method guards, session/workspace, public capabilities and opt-out queue tests passed. Audit/domain/admin typechecks passed. Email/booking/follow-up regression run: 68 passed without skips. Full build passed, including 16 prerender checks and unchanged embed output. Strict SAST passed in its existing scope (101 rules, 1,758 targets, zero findings/errors).
 
 ## Still required before release
 
-- Authenticated HTTP allowlist audit across all methods and all 88 DB table probes. Production denied-route proof already passes: 164 independently discovered routes × seven methods = 1,148 HTTP probes plus nine controls. Earlier broad acceptance: 121 passed, one route-coverage failure; not a release pass.
-- Tenant configuration CLI, public-site content cleanup, production Compose profile and isolated backup/restore rehearsal.
-- Hosted CI with real PostgreSQL integrations and no skipped integration, plus final security scans/builds. CI configuration changes have not yet run on a hosted runner.
+- Complete ten authentication controls and a valid signed webhook HTTP positive control; verify all allowed pages/assets and rerun final release/security checks.
+- Tenant configuration CLI; remove inherited public articles/claims/legal/contact details; production Compose profile and an executed isolated backup/restore rehearsal.
+- Hosted CI with real PostgreSQL integrations and no skipped pilot integration. No hosted run or deployment has been performed.
 
 ## Your manual steps
 
-- Supply LMC contact/legal/physical-address information (until then `[FILL]`).
-- Configure sending/receiving DNS, Resend credentials/webhook signing secret, Google Calendar OAuth and LLM credentials using the documented environment template; legal review before public release.
-- Provide an authorized hosting/repository destination and production credentials when staging/hosted CI are ready. No deployment has been performed.
+- Supply LMC contact/legal/physical-address details (`[FILL]` until supplied) and obtain legal review before public release.
+- Configure DNS, Resend in/out and webhook signing, Google Calendar OAuth and LLM credentials through the environment template/checklist when staging is ready.
+- Provide an authorized hosting/repository destination and real deployment credentials when the local release gate is ready.

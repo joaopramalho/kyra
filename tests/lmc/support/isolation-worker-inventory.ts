@@ -14,6 +14,36 @@ const workerMethods = [
   "POST",
   "PUT",
 ];
+/** Resolve literal path sets through the shared package's source exports, without executing policy code. */
+function sourcePathSet(root: string, file: string, symbol: string, visited = new Set<string>()): string[] | undefined {
+  const key = `${file}:${symbol}`;
+  if (visited.has(key)) throw new Error("CYCLIC_WORKER_PATH_SET");
+  visited.add(key);
+  const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+  for (const statement of source.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || declaration.name.text !== symbol) continue;
+        const value = declaration.initializer;
+        if (!value || !ts.isNewExpression(value) || !ts.isIdentifier(value.expression) || value.expression.text !== "Set" || value.arguments?.length !== 1 || !ts.isArrayLiteralExpression(value.arguments[0]!))
+          throw new Error(`UNRESOLVED_WORKER_PATH_SET:${symbol}`);
+        return value.arguments[0]!.elements.map(element => {
+          if (!ts.isStringLiteral(element) || !element.text.startsWith("/")) throw new Error(`UNRESOLVED_WORKER_PATH_SET:${symbol}`);
+          return element.text;
+        });
+      }
+    }
+    if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const name = statement.exportClause.elements.find(element => element.name.text === symbol);
+      if (!name) continue;
+      const target = resolve(dirname(file), `${statement.moduleSpecifier.text}.ts`);
+      if (!target.startsWith(resolve(root, "packages/shared/src") + sep)) throw new Error("UNRESOLVED_WORKER_PATH_SET_MODULE");
+      return sourcePathSet(root, target, name.propertyName?.text ?? name.name.text, visited);
+    }
+  }
+  return undefined;
+}
+
 const comparisons = new Set([
   ts.SyntaxKind.EqualsEqualsEqualsToken,
   ts.SyntaxKind.ExclamationEqualsEqualsToken,
@@ -129,6 +159,19 @@ export function discoverWorkerHttpRoutes(root = projectRoot): AuditRoute[] {
         )
           constants.set(node.name.text, node.initializer.text);
       });
+      const pathSets = new Map<string, string[]>();
+      for (const statement of source.statements) {
+        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== "@lobbystack/shared") continue;
+        const bindings = statement.importClause?.namedBindings;
+        if (!bindings || !ts.isNamedImports(bindings)) continue;
+        for (const binding of bindings.elements) {
+          const name = binding.propertyName?.text ?? binding.name.text;
+          if (name !== "PILOT_WORKER_HEALTH_PATHS") continue;
+          const values = sourcePathSet(root, join(root, "packages/shared/src/index.ts"), name);
+          if (!values?.length) throw new Error(`UNRESOLVED_WORKER_PATH_SET:${name}`);
+          pathSets.set(binding.name.text, values);
+        }
+      }
       function isPath(node: ts.Node): boolean {
         if (ts.isParenthesizedExpression(node)) return isPath(node.expression);
         return (
@@ -184,8 +227,12 @@ export function discoverWorkerHttpRoutes(root = projectRoot): AuditRoute[] {
               ((ts.isPropertyAccessExpression(expression.expression) &&
                 isPath(expression.expression.expression)) ||
                 expression.arguments.some(isPath))
-            )
-              throw new Error(`UNRESOLVED_WORKER_ROUTING:${label}`);
+            ) {
+              const call = expression.expression;
+              if (ts.isPropertyAccessExpression(call) && call.name.text === "has" && ts.isIdentifier(call.expression) && pathSets.has(call.expression.text) && expression.arguments.length === 1 && isPath(expression.arguments[0]!)) {
+                for (const value of pathSets.get(call.expression.text)!) paths.add(value);
+              } else throw new Error(`UNRESOLVED_WORKER_ROUTING:${label}`);
+            }
           });
         }
         if (

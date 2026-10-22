@@ -51,6 +51,16 @@ it("discovers newly added routing and rejects unresolved dynamic paths or listen
     expect(discoverWorkerHttpRoutes(root).map((route) => route.path)).toEqual([
       "/internal/new-probe",
     ]);
+    writeFileSync(join(src, "index.ts"), 'import "./http";');
+    const shared = join(root, "packages/shared/src");
+    mkdirSync(shared, { recursive: true });
+    writeFileSync(join(shared, "index.ts"), 'export { PILOT_WORKER_HEALTH_PATHS } from "./pilot";');
+    writeFileSync(join(shared, "pilot.ts"), 'export const PILOT_WORKER_HEALTH_PATHS = new Set(["/new-from-shared-source"]);');
+    writeFileSync(file, 'import { createServer } from "node:http"; import { PILOT_WORKER_HEALTH_PATHS as allowed } from "@lobbystack/shared"; const server = createServer((request,response)=> { const path=new URL(request.url,"http://localhost").pathname; if(!allowed.has(path))response.end(); }); server.listen(0);');
+    expect(discoverWorkerHttpRoutes(root).map(route => route.path)).toEqual(["/new-from-shared-source"]);
+    writeFileSync(join(shared, "pilot.ts"), 'export const PILOT_WORKER_HEALTH_PATHS = new Set([dynamicPath]);');
+    expect(() => discoverWorkerHttpRoutes(root)).toThrow("UNRESOLVED_WORKER_PATH_SET");
+    writeFileSync(file, 'import {createServer} from "node:http"; const server=createServer((request,response)=> {const path=new URL(request.url,"http://localhost").pathname;if(path==="/internal/new-probe")response.end("ok");});server.listen(0);');
     writeFileSync(join(src, "index.ts"), 'import("./" + selectedModule);');
     expect(() => discoverWorkerHttpRoutes(root)).toThrow(
       "UNRESOLVED_WORKER_MODULE",

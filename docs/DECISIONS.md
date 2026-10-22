@@ -123,3 +123,11 @@
 ## 2026-10-22 — Pilot release scope
 
 Freeze features and gate the effective email pilot surface rather than inherited-app completeness. Production HTTP routing defaults closed; legacy operation needs explicit pilot opt-out outside the pilot deployment. Keep all 88-table isolation probes. Production dependencies gate high/critical zero; development-only advisories are triaged separately without blanket suppression. Static landing ships generated files separately; unused standalone Zapier is excluded, not declared remediated. Tenant setup is CLI-based. Hosted CI and an executed isolated restore rehearsal remain release requirements.
+
+## 2026-10-22 — Behavioral pilot isolation coverage
+
+Inventory the effective concrete admin/worker APIs independently from implemented probes and require all seven methods on every permitted pattern. Retain all 88 catalog table CRUD/insert probes, exact coverage equality, no skips/failures and the original exhaustive timeout. A negative signature or malformed-body rejection alone does not count as a positive webhook/auth control. Current 220/231 coverage remains a failing gate.
+
+OAuth's existing missing-session error redirect is a safe callback contract when its exact destination is reachable and neither stored capability is consumed; the new probe was refined from an initial generic-API 401 expectation to those stronger callback-specific invariants. Different authenticated users still require 403. No existing committed assertion was removed. Test-only signing keys are generated in a mode-600 WSL overlay outside the repository and are never printed, exported or committed.
+
+Opt-out cancels pending lead-facing jobs in the suppression transaction. Already-running work retains the existing locked send-time suppression check; owner alerts and unrelated contacts remain active. This is an opt-out correction, not a new messaging feature.

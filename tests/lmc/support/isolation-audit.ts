@@ -1,12 +1,13 @@
+import { probePilotPublicContext } from "./isolation-pilot-public";
+import { probePilotSessionContext } from "./isolation-pilot-session";
+import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
+import { probePilotMethodGuards } from "./isolation-pilot-guards";
+import { probePilotWorker } from "./isolation-pilot-worker";
 import { probeAdminHealthContext } from "./isolation-admin-health";
-import { probeWorkerAttach } from "./isolation-worker-attach-audit";
-import { probeWorkerHealth } from "./isolation-worker-health";
-import { probePublicApiContext } from "./isolation-public-api";
 import { openLmcTestDatabase } from "./database";
 import {
   checkCatalogProtection,
   auditRouteId,
-  discoverApiRoutes,
   readIsolationCatalog,
 } from "./isolation-inventory";
 import { seedIsolationFixtures } from "./isolation-fixtures";
@@ -18,13 +19,13 @@ import {
   probeEmailMutationContext,
 } from "./isolation-http";
 
-/** An uncovered discovered route remains a failure. No allowlist or successful structural check substitutes for a probe. */
+/** Inventory follows the effective pilot boundary; every discovered method still requires a behavioral probe. */
 export async function runTenantIsolationAudit() {
   const db = openLmcTestDatabase();
   let fixtures: Awaited<ReturnType<typeof seedIsolationFixtures>> | undefined;
   try {
     const catalog = await readIsolationCatalog(db),
-      routes = discoverApiRoutes();
+      routes = discoverPilotApiRoutes();
     const failures = checkCatalogProtection(catalog);
     // Detect grant masking before interpreting a 42501 from CRUD probes as evidence.
     const columns = await db.admin.pool.query<{ name: string }>(
@@ -52,18 +53,20 @@ export async function runTenantIsolationAudit() {
     const http = await withHttpAudit(
       process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
       async (context) => {
+        await probePilotMethodGuards(context, routes);
+        await probePilotSessionContext(context);
         await probeAdminHealthContext(context);
         await probeEmailReadContext(context);
+        // Token-rotation controls revoke the fixture capture URLs; exercise
+        // public capabilities first, without relaxing either set of assertions.
+        await probePilotPublicContext(context);
         await probeEmailMutationContext(context);
-        await probePublicApiContext(context);
       },
     );
-    const workerHealth = await probeWorkerHealth();
-    const workerAttach = await probeWorkerAttach();
+    const workerHealth = await probePilotWorker(routes.filter(route => route.surface === "worker"));
     failures.push(
       ...http.failures,
       ...workerHealth.failures,
-      ...workerAttach.failures,
     );
     const tableInventory = catalog.tables.map((table) => table.name);
     const routeInventory = routes.flatMap((route) =>
@@ -76,11 +79,10 @@ export async function runTenantIsolationAudit() {
       ...new Set([
         ...http.probed,
         ...workerHealth.probed,
-        ...workerAttach.probed,
       ]),
     ];
-    // Known Next, Node worker and Astro/Cloudflare handlers are inventoried.
-    // Discovered but unprobed landing routes now remain explicit below.
+    // Static landing is a separate artifact; legacy routes are denied at the pilot boundary.
+    // Every allowlisted API method remains mandatory, including unsupported-method guards.
     const pendingHttpSurfaces: string[] = [];
     const skipped = [
       ...pendingHttpSurfaces.map(
@@ -97,6 +99,7 @@ export async function runTenantIsolationAudit() {
       if (!routeInventory.includes(route))
         failures.push(`UNDISCOVERED_ROUTE_PROBE:${route}`);
     return {
+      auditScope: "pilot" as const,
       tableInventory,
       routeInventory,
       probedTables,

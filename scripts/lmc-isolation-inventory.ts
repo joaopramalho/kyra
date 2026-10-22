@@ -1,3 +1,4 @@
+import { discoverPilotApiRoutes } from "../tests/lmc/support/isolation-pilot-inventory";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { openLmcTestDatabase } from "../tests/lmc/support/database";
@@ -13,11 +14,14 @@ async function main() {
   const db = openLmcTestDatabase();
   try {
     const catalog = await readIsolationCatalog(db),
-      routes = discoverApiRoutes();
+      discoveredRoutes = discoverApiRoutes(),
+      routes = discoverPilotApiRoutes(discoveredRoutes);
     const result = {
       generatedAt: new Date().toISOString(),
+      auditScope: "pilot",
       ...catalog,
       routes,
+      inheritedSourceRoutes: discoveredRoutes,
       structuralFailures: checkCatalogProtection(catalog),
       summary: {
         tables: catalog.tables.length,
