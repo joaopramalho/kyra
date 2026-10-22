@@ -22,7 +22,9 @@ it("discovers worker HTTP routes independently from reachable production source"
   expect(routes.map((route) => route.path).sort()).toEqual([
     "/health/live",
     "/health/ready",
+    "/healthz",
     "/internal/live/attach",
+    "/readyz",
   ]);
   expect(
     routes.every(

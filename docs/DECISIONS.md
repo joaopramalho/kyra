@@ -109,3 +109,5 @@
   Backups require confidentiality protection in addition to checksums; restore must
   reconcile provider effects after the recovery point before outbound replay. A
   documented procedure is not a completed restore drill or a production release gate.
+
+- 2026-10-21: Add `/healthz` and `/readyz` to admin and worker as aliases of existing health behavior, preserving service identifiers and legacy paths. Admin aliases explicitly remain dynamic and delegate to existing handlers; automatic HEAD/OPTIONS and unsupported mutations are verified through real Next HTTP. Worker retains all-method routing compatibility. Dependency fault behavior is tested without external providers. Local preview storage uses a private generated signing secret outside the repository; readiness must not be forced green by bypassing dependencies.

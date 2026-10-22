@@ -14,12 +14,12 @@ export function startHealthServer(port: number, state: WorkerHealthState, extraR
   const server = createServer(async (request, response) => {
     if (extraRoutes && await extraRoutes(request, response)) return;
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (path === "/health/live") {
+    if (path === "/health/live" || path === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ ok: true }));
       return;
     }
-    if (path === "/health/ready") {
+    if (path === "/health/ready" || path === "/readyz") {
       const ok = state.ready && state.redis && state.database && state.storage;
       response.writeHead(ok ? 200 : 503, { "content-type": "application/json" });
       response.end(JSON.stringify({ ok, ...state }));

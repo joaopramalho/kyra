@@ -32,7 +32,7 @@ export async function probeWorkerHealth() {
       "POST",
       "PUT",
     ];
-    for (const path of ["/health/live", "/health/ready"])
+    for (const path of ["/health/live", "/health/ready", "/healthz", "/readyz"])
       for (const method of methods) {
         const id = `worker:${method} ${path}`,
           before = structuredClone(state);
@@ -59,7 +59,7 @@ export async function probeWorkerHealth() {
             method === "HEAD"
               ? ""
               : JSON.stringify(
-                  path === "/health/live"
+                  path === "/health/live" || path === "/healthz"
                     ? { ok: true }
                     : { ok: true, ...before },
                 );
@@ -83,29 +83,37 @@ export async function probeWorkerHealth() {
       "storage",
     ] as const) {
       state[dependency] = false;
-      for (const method of methods) {
-        const response = await fetch(`${base}/health/ready`, {
-          method,
-          signal: AbortSignal.timeout(5000),
-        });
-        const text = await response.text();
-        if (
-          response.status !== 503 ||
-          text !==
-            (method === "HEAD" ? "" : JSON.stringify({ ok: false, ...state }))
-        )
-          failures.push(`WORKER_NOT_READY:${dependency}:${method}`);
-        const live = await fetch(`${base}/health/live`, {
-          method,
-          signal: AbortSignal.timeout(5000),
-        });
-        if (
-          live.status !== 200 ||
-          (await live.text()) !==
-            (method === "HEAD" ? "" : JSON.stringify({ ok: true }))
-        )
-          failures.push(`WORKER_LIVENESS:${dependency}:${method}`);
-      }
+      for (const [readyPath, livePath] of [
+        ["/health/ready", "/health/live"],
+        ["/readyz", "/healthz"],
+      ])
+        for (const method of methods) {
+          const response = await fetch(`${base}${readyPath}`, {
+            method,
+            signal: AbortSignal.timeout(5000),
+          });
+          const text = await response.text();
+          if (
+            response.status !== 503 ||
+            text !==
+              (method === "HEAD" ? "" : JSON.stringify({ ok: false, ...state }))
+          )
+            failures.push(
+              `WORKER_NOT_READY:${readyPath}:${dependency}:${method}`,
+            );
+          const live = await fetch(`${base}${livePath}`, {
+            method,
+            signal: AbortSignal.timeout(5000),
+          });
+          if (
+            live.status !== 200 ||
+            (await live.text()) !==
+              (method === "HEAD" ? "" : JSON.stringify({ ok: true }))
+          )
+            failures.push(
+              `WORKER_LIVENESS:${livePath}:${dependency}:${method}`,
+            );
+        }
       state[dependency] = true;
     }
     const unknown = await fetch(`${base}/__lmc_unknown_route`, {

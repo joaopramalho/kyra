@@ -122,9 +122,12 @@ session/channel/conversation checks before session deduplication. The internal
 service token remains necessary, and an authenticated inconsistent claim is denied.
 See VOICE_ADMISSION.md; this is not an anonymous endpoint bypass claim.
 
-The worker has existing liveness/readiness routes and explicit maintenance startup
-behavior. Complete requested `/healthz`/`/readyz`, startup/headers/CI/dependency and
-deployment hardening still need the remaining release work. LMC email fake bindings
+Both runtimes expose `/healthz` and `/readyz` while preserving their original
+health paths. Admin aliases delegate to the same handlers; worker aliases share
+the same routing branches and dependency state. Health is global operational
+metadata, independent of selected tenant. Maintenance startup behavior is explicit.
+Complete startup/headers/CI/dependency and deployment hardening still need the
+remaining release work. LMC email fake bindings
 and the offline demo are implemented; legacy dev voice/SMS/provider defaults are
 not yet universally certified. Real DNS, sender/receiving domain setup, credentials
 and operations are separate manual deployment prerequisites.

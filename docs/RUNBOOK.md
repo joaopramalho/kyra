@@ -42,11 +42,16 @@ deployment or full backup/restore rehearsal was executed for this document.
    verification results, recovery point and rollback decision. Never record the
    credential values themselves.
 
-Current operational routes are admin `/api/health/live`, `/api/health/ready` and
-worker `/health/live`, `/health/ready`. Readiness reflects dependencies and email
-consumer startup when enabled. The requested short `/healthz`/`/readyz` aliases and
-the complete startup/header hardening remain release work; do not advertise them
-as already implemented.
+Both admin and worker expose `/healthz` (liveness) and `/readyz` (readiness).
+The original admin `/api/health/live`, `/api/health/ready` and worker `/health/live`,
+`/health/ready` remain available. Liveness reports that the HTTP runtime is alive;
+it stays successful when dependencies fail. Admin readiness requires its application
+database and storage; worker readiness additionally requires Redis and its runtime
+ready flag (including email consumer startup when enabled). A 503 is a deployment
+configuration/dependency signal, not a reason to bypass readiness. Health responses
+contain global operational metadata only, never tenant records. Admin supports
+GET/HEAD plus automatic OPTIONS and rejects mutations; worker retains its existing
+all-method behavior. Complete startup/header hardening remains release work.
 
 ## Pause and resume safely
 

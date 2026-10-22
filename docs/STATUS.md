@@ -1,6 +1,45 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21 (one-command offline demo)
+## Current checkpoint — 2026-10-21 (health aliases and operational probes)
+
+Admin and worker now expose `/healthz` and `/readyz`, preserving all original
+health routes and operational payloads. Admin aliases explicitly stay dynamic and
+delegate to the existing handlers. Worker aliases use the same liveness/readiness
+branches; no voice handler/controller code changes. Liveness stays independent of
+dependency failures, and readiness must fail when required dependencies are down.
+
+Tests first failed on absent aliases (worker HTTP 404 and missing admin modules),
+then passed. Actual Next HTTP checks cover GET/HEAD/OPTIONS for all four admin
+health paths with anonymous, A/B session and forged tenant contexts, private
+no-store caching, no redirect/cookie, stable operational metadata and denied
+mutations. Worker probes cover all seven methods on all four paths, forged
+contexts, each unavailable dependency and unknown-route rejection. New probes
+feed the unchanged exhaustive isolation test; discovery still comes independently
+from production source, never from the probe list.
+
+Focused health/inventory acceptance: six tests passed. Admin dependency-fault and
+proxy regressions: eleven passed. Existing worker suite: 97 passed. Admin and worker
+typechecks and production builds passed; audit-source typecheck passed. Next MCP
+compilation reports no issues for either alias. Browser-runtime error reporting
+was unavailable because no browser session was connected, so that is not claimed.
+The local preview initially correctly returned 503 for missing storage signing
+configuration. A generated private local-only key outside Git and a preview restart
+restored real database/storage readiness; the health implementation was not bypassed.
+
+Full serial LMC run: 121 passed; the exhaustive test aborted one real public API
+request at its existing timeout while Next was compiling cold routes during the
+production build. Its timeout/assertions are unchanged. A separate subsequent
+complete audit finished with **88/88 tables, 111/755 method/path pairs, 644 unprobed
+pairs and zero observed failures**, exit 1 for incomplete coverage. Admin coverage
+is now 76/496, worker 35/35, landing 0/224. This is partial coverage, not isolation
+completion. The extra operational paths increased the independent inventory.
+
+The full goal remains active. Exhaustive API coverage, ownership review, remaining
+business settings/inbox UX, provider defaults, dependency/CI/security remediation
+and restore rehearsal are still required. ARCHITECTURE.md and RUNBOOK.md now
+document the implemented health aliases rather than listing them as pending.
+
+## Earlier checkpoint — 2026-10-21 (one-command offline demo; historical)
 
 `pnpm lmc:demo` now runs the full offline email workflow over temporary loopback
 HTTP, production handlers/domain/worker and real PostgreSQL, with only external

@@ -5,7 +5,7 @@ it("probes the real worker health server over HTTP with readiness and forged ten
   const report = await probeWorkerHealth();
   expect(report.failures).toEqual([]);
   expect(report.probed.sort()).toEqual(
-    ["/health/live", "/health/ready"]
+    ["/health/live", "/health/ready", "/healthz", "/readyz"]
       .flatMap((path) =>
         ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"].map(
           (method) => `worker:${method} ${path}`,

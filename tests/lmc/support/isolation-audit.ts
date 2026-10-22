@@ -1,3 +1,4 @@
+import { probeAdminHealthContext } from "./isolation-admin-health";
 import { probeWorkerAttach } from "./isolation-worker-attach-audit";
 import { probeWorkerHealth } from "./isolation-worker-health";
 import { probePublicApiContext } from "./isolation-public-api";
@@ -51,6 +52,7 @@ export async function runTenantIsolationAudit() {
     const http = await withHttpAudit(
       process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
       async (context) => {
+        await probeAdminHealthContext(context);
         await probeEmailReadContext(context);
         await probeEmailMutationContext(context);
         await probePublicApiContext(context);
