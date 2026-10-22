@@ -66,10 +66,26 @@ describe("production database role startup validation", () => {
 
   it("asserts every runtime role before startup completes", async () => {
     await expect(register()).resolves.toBeUndefined();
-    expect(mocks.getDatabase).toHaveBeenCalledTimes(4);
-    for (const role of ["lobbystack_app", "lobbystack_auth", "lobbystack_worker", "lobbystack_dispatcher"]) {
+    const roles = ["lobbystack_app", "lobbystack_system", "lobbystack_auth", "lobbystack_worker", "lobbystack_dispatcher"];
+    expect(mocks.getDatabase).toHaveBeenCalledTimes(5);
+    expect(mocks.getDatabase.mock.calls.map(([role]) => role).sort()).toEqual([...roles].sort());
+    for (const [index, role] of roles.entries()) {
       expect(mocks.getDatabase).toHaveBeenCalledWith(role);
+      const client = mocks.getDatabase.mock.results[index]!.value as DatabaseClient;
+      expect(client.role).toBe(role);
+      expect(client.pool.query).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it.each([
+    ["privileged system login", [{ role: "lobbystack_system", privileged: true }]],
+    ["substituted app login", [{ role: "lobbystack_app", privileged: false }]],
+    ["absent role metadata", []],
+  ] as const)("rejects startup with %s", async (_name, rows) => {
+    mocks.getDatabase.mockImplementation((role: DatabaseRole) => role === "lobbystack_system"
+      ? runtimeClient(role, rows.map(row => ({...row})))
+      : ownRole(role));
+    await expect(register()).rejects.toThrow("Database role assertion failed");
   });
 
   it("rejects startup when a runtime role resolves to the privileged base role", async () => {

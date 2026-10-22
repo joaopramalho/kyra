@@ -1,6 +1,55 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21 (health aliases and operational probes)
+## Current checkpoint — 2026-10-21 (critical dependency fixes)
+
+Refreshed the registry audit and patched its three critical findings: admin Next
+and matching ESLint plugin 16.3.5 → 16.3.6, root development tooling proxy-addr
+2.0.7 → 2.0.8 and shell-quote 1.9.0 → 1.11.0. Exact dependency paths, conditional
+attack prerequisites and maintainer advisories are in SECURITY_REMEDIATION.md.
+The lockfile changes only this patch graph and associated peer snapshots; voice
+handlers/controllers are unchanged. No audit suppressions are added.
+
+Two behavior regressions were red on the installed vulnerable transitive copies
+and green after the upgrade: reject all four line terminators after a shell comment;
+do not trust arbitrary IPv4 clients through a short mapped IPv6 subnet. Normal
+arguments and correctly scoped proxy subnets remain positive controls. No generated
+shell payload is executed. The real concurrently launcher smoke also passed.
+All 162 script tests and full script typecheck pass.
+Admin typecheck and the Next 16.3.6 production build pass. Admin lint exits 0
+with zero errors and 17 warnings; these warnings are not represented as clean.
+All 19 development-server route compilations used to prepare the HTTP audit
+report zero issues; compilation is setup, never counted as behavioral route coverage.
+
+The broad admin run exposed an existing instrumentation expectation of four roles,
+stale after the dedicated System login was introduced. The test now requires all
+five distinct roles and an actual role assertion query on every resolved client;
+three new register-level cases reject privileged/substituted/missing System role
+metadata. No production startup guard is relaxed. Targeted startup suites: 19 pass.
+Final broad admin suite: **908 passed, 27 skipped** across 162 files. The 27 skipped
+legacy/environment-dependent cases are not counted as successful integration
+proofs. Real LMC/PG/HTTP verification is recorded separately.
+
+Fresh audit now has **zero critical** findings, but remains red (exit 1): 93 distinct
+advisories (38 high, 43 moderate, 12 low). pnpm metadata counts 126 affected entries
+(46 high, 65 moderate, 15 low). Before: 96 advisories/129 affected entries, including
+three critical. Remaining findings are work, not accepted release exceptions.
+
+The independent API inventory remains 755 pairs; last completed combined audit
+proved 111 with zero observed failures and 644 unprobed. All 88 tables were probed.
+Post-upgrade real HTTP rerun: both health acceptance tests pass; the unchanged
+exhaustive test finishes within its 120-second bound and fails specifically on
+111 versus 755 coverage, rather than timing out. A fresh post-upgrade combined
+CLI audit confirms 88/88 tables, 111/755 pairs, 644 unprobed and zero observed
+failures (exit 1). WSL preview smoke: login 200, anonymous lead API 401.
+Browser-session runtime error reporting remains unavailable; no browser QA is
+claimed. The script typecheck explicitly includes the new security regression
+source through scripts/tsconfig.json.
+
+The original exhaustive test and its time bound remain unchanged. The complete
+goal stays active; remaining dependencies/CI/security work, API/ownership coverage,
+settings/inbox UX, provider defaults and restore rehearsal are still required.
+
+## Earlier checkpoint — 2026-10-21 (health aliases and operational probes; historical)
 
 Admin and worker now expose `/healthz` and `/readyz`, preserving all original
 health routes and operational payloads. Admin aliases explicitly stay dynamic and

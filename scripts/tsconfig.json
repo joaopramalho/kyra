@@ -29,6 +29,7 @@
     "./replacement-reconciliation.ts",
     "./replacement-smoke.ts",
     "./replacement-smoke.test.ts",
+    "./critical-dependencies.test.ts",
     "./replacement-sms-consent-check.ts",
     "./replacement-unit-economics-check.ts",
     "./replacement-analytics-usage-check.ts",
