@@ -64,7 +64,7 @@ export async function withHttpAudit(
     extra: Record<string, string> = {},
     body?: unknown,
   ) {
-    return fetch(new URL(path, base), {
+    const send = () => fetch(new URL(path, base), {
       method,
       headers: {
         ...(!["GET", "HEAD", "OPTIONS"].includes(method)
@@ -78,6 +78,26 @@ export async function withHttpAudit(
       signal: AbortSignal.timeout(15_000),
       redirect: "error",
     });
+    let response = await send();
+    // Recovery/logout positive controls also log in. Respect the same real
+    // per-path quota as fixture login, without replaying an accepted write.
+    if (path === "/api/auth/sign-in/email" && method === "POST") {
+      for (let retry = 0; response.status === 429 && retry < 2; retry += 1) {
+        const seconds = Number(response.headers.get("retry-after") ?? 60);
+        if (!Number.isFinite(seconds) || seconds < 0 || seconds > 60)
+          throw new Error("AUDIT_AUTH_RETRY_AFTER_INVALID");
+        await response.arrayBuffer();
+        console.info("AUDIT_LOGIN_429_RETRY_AFTER_RESPECTED");
+        let remaining = (seconds + 0.25) * 1000;
+        while (remaining > 0) {
+          const delay = Math.min(remaining, 30_000);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          remaining -= delay;
+        }
+        response = await send();
+      }
+    }
+    return response;
   }
   async function login(h: Harness) {
     const password = `Audit-${randomBytes(24).toString("hex")}!`;

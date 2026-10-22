@@ -8,6 +8,7 @@ import type { LocaleSource } from "@/lib/locale-request";
 export const appMetadata = {
   title: brand.name,
   description: brand.tagline,
+  icons: { icon: [{ url: "/brand/lmc-logo.svg", type: "image/svg+xml" }] },
 };
 
 export function RootDocument({

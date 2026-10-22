@@ -1,23 +1,24 @@
-# LMC pilot status — 2026-10-22
+# Pilot release gate
 
-## Done
+**Active — local validation only.** No hosted CI run or deployment is claimed. New features remain frozen; voice controllers, applied migrations and database grants remain unchanged.
 
-- Production admin/worker deny-by-default boundary and allowlist; inherited voice controllers unchanged outside pilot mode.
-- Real HTTP/PostgreSQL isolation: 88/88 tables and 238/238 method/path pairs, no skips/failures. Signup, verification, recovery, session revocation, signed webhook and cross-tenant controls covered.
-- Production dependencies: high/critical zero on the unchanged lockfile; dev advisory triage and standalone Zapier exclusion documented.
-- Trusted tenant CLI: initial business/staff creation, services/area/hours/FAQ context/escalation/booking settings, private Google OAuth issuance and calendar selection. Ten setup/configuration integration cases passed without skips; real Google consent remains manual.
-- Public site: six static pages / 18 files, no JS/server/DB/trackers, LMC `[FILL]` details and required attribution. Existing 81 tests, 11 artifact regressions, two unchanged inventory tests, 56 HTTP controls, build, types, lint and desktop/mobile QA passed. Static archive was extracted and revalidated. Strict SAST passed 101 rules / 1,794 targets with zero findings/errors; staged secret scan passed. See STATIC_PUBLIC_SITE.md.
+## Done locally
 
-- Configured pilot pages now require fresh verified identity, canonical active business, active membership and valid LMC settings; other states return 404. Real HTTP covers 21 pairs / 88 controls; PostgreSQL guard and 59 focused component cases passed. Admin unit profile: 925 passed / 27 environment integrations excluded. Types and full build passed. Strict SAST passed 101 rules / 1,796 targets with zero findings/errors. Browser observation was blocked; no visual QA claim. See PILOT_ADMIN_PAGES.md.
+- Production-default deny-by-default admin/worker routing; permitted email/CRM/auth/session/capture/unsubscribe/webhook/health/calendar callback only. Marketing is a separate static artifact.
+- Strict isolation: 88-table equality and all 238 API-method combinations, with actual PostgreSQL roles, no skipped/failed probes and the original exhaustive timeout. Protected dashboard pages have 88 additional HTTP controls plus a direct PostgreSQL access-guard case; verified identity, canonical business membership and valid tenant configuration are mandatory.
+- Public authentication/static production-default audit: 21 display paths and 149 static paths, all seven methods, 1,218 probes; exact-byte positives and closed-asset controls. Original tests remain unchanged. See PILOT_PUBLIC_ASSETS.md and PILOT_ADMIN_PAGES.md.
+- Production dependency audit: zero high/critical advisories at the unchanged lockfile checkpoint. Dev-only triage is in DEV_ADVISORIES.md; unused standalone Zapier is excluded from the pilot build.
+- Verified-operator CLI bootstrap, tenant configuration, calendar authorization and inspection; strict private outputs, App/Auth role separation, ownership checks and real PostgreSQL tests. See TENANT_CONFIGURATION.md.
+- Public artifact: six static pages / eighteen files; inherited claims/articles/legal/contact content excluded, required notices preserved and LMC details marked [FILL]. Artifact/tamper/HTTP checks and public desktop/mobile QA passed. See STATIC_PUBLIC_SITE.md.
+- Workspace/script types, full build, sixteen public prerender checks, targeted lint and original proxy tests passed. Strict Semgrep and secret scans remain release gates. The wider admin unit checkpoint passed 925 with 27 existing environment integration exclusions; this is not no-skip hosted integration evidence. Authenticated visual browser QA is not claimed because the browser URL policy denied access.
 
-## Still required before release
+## Still required
 
-- Finish allowed public auth-page/static-asset method coverage; configured protected page behavior is verified.
-- Production Compose profile, real-provider environment/checklist and an executed isolated backup/restore rehearsal.
-- Hosted CI with real PostgreSQL integrations and no skipped integration, strict security/dependency gates. Workflow changes are local; no hosted run or deployment has occurred.
+- Complete production Compose profile, real-provider environment/checklist and run an isolated backup/restore rehearsal. Docker 29.1.3 and Compose 2.40.3 are installed locally; no restore rehearsal is claimed yet.
+- Prepare and execute hosted units plus real PostgreSQL pilot integration with zero skipped integration, Gitleaks, strict Semgrep and production audit. Local checks do not establish hosted success.
 
 ## Your manual steps
 
-- Supply approved LMC entity/contact/address/legal details for `[FILL]` before public release; the site remains noindex.
-- Configure DNS, Resend in/out/webhook signing, Google OAuth/consent and LLM keys through the staging template/checklist when ready.
+- Supply approved entity, contact, physical address and legal details for [FILL] before release; public pages remain noindex.
+- Configure domain DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys through the staging checklist; complete actual calendar consent.
 - Supply an authorized repository/hosting destination and credentials when the local release gate is ready.

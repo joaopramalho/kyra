@@ -163,3 +163,8 @@ Original source fixtures and tests are retained, including the unchanged 32-endp
 ## Configured pilot dashboard access — 2026-10-22
 
 CLI-configured LMC businesses can enter leads/email settings without completing voice/billing onboarding, but only after fresh Auth verification, canonical active-business resolution, active recognized membership and valid native LMC configuration. The flag alone is insufficient; every failed condition returns 404. Existing API permissions remain authoritative for operations and no onboarding stage/grant is changed. Paused automation still permits operator settings access. The non-pilot flow keeps its original onboarding check and full navigation. Pilot UI suppresses only links/widgets/providers that call closed endpoints, using a server-resolved mode prop.
+
+
+## Preserve the favicon contract with the existing LMC asset
+
+The full public method inventory found an allowlisted favicon with no physical file. Keep every original proxy test unchanged and resolve GET/HEAD internally to the existing LMC SVG, preserving MIME type and security headers. Metadata references that SVG directly. The default method gate still runs before the rewrite, so writes and Server Actions remain denied. No new handler or duplicate image is introduced. The production audit compares bytes for all emitted Next assets and every explicitly allowed public asset, and checks exact public-policy coverage.
