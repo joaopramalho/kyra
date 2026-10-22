@@ -1,6 +1,37 @@
 # LMC status
 
-## Current checkpoint — 2026-10-21 (critical dependency fixes)
+## Current checkpoint — 2026-10-22 (mandatory security CI gates)
+
+Added independent workspace/standalone dependency audit, full-history Gitleaks and
+strict Semgrep jobs. Release validation now requires them and the existing Zapier
+job. Database CI includes its dedicated System login URL/password. Six new workflow
+checks first failed, then passed; the complete build-config suite passes eight
+tests. Three installer cases cover checksum rejection, selected-file extraction,
+license preservation and existing-content protection. The real pinned installer
+also downloaded and verified its release successfully. No hosted CI run is claimed.
+
+Gitleaks initially found 30 matches in 396 commits (~29 MB). Exact source review
+classified historical OCR data and public/synthetic test fixtures; each exception
+is restricted to its original commit/path/rule/line and documented without values.
+A real scanner regression rejects and redacts a new generated token at a reviewed
+path, proving these exceptions cannot hide a new commit. The reviewed history scan
+passes. See SECURITY_SCANNING.md and docs/security/gitleaks-reviewed.json.
+
+Semgrep 1.181.0 runs 101 maintained security rules. Two precise documented audit
+false positives are annotated: the OAuth negative HTTP fixture and a fixed HTTPS,
+hash-verified installer download. OAuth assertions remain unchanged (21 passed).
+Final scan has zero findings but still exits 1 in strict mode because of 38 partial
+TypeScript test parse warnings; no broad parser waiver or exclusion was added.
+The initial schema-rule timeout is resolved by the 30-second rule timeout.
+
+Fresh audit gates remain red: workspace 93 distinct advisories / 126 metadata
+findings, and standalone Zapier 33 npm findings (28 high, five moderate). Both have
+zero critical. Security gates are configured and tested, not all passing. Further
+dependency remediation and SAST parser/coverage work remain required, together
+with all earlier isolation, business-settings/inbox, provider-default, branding,
+production hardening and restore requirements. The full goal stays active.
+
+## Earlier checkpoint — 2026-10-21 (critical dependency fixes; historical)
 
 Refreshed the registry audit and patched its three critical findings: admin Next
 and matching ESLint plugin 16.3.5 → 16.3.6, root development tooling proxy-addr
