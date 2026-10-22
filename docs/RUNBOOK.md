@@ -1,10 +1,8 @@
 # LMC operations runbook
 
-This is a source-derived procedure, not a completed production certification.
-The current exhaustive API isolation gate, ownership review, dependency/security/CI
-work and some business configuration are still open. Do not treat an offline demo
-or a successful build as authorization to release with those gaps. No production
-deployment or full backup/restore rehearsal was executed for this document.
+For the current email-pilot production profile, private real-provider template, deployment checklist and verified isolated recovery procedure, start with [PILOT_STAGING.md](PILOT_STAGING.md). RELEASE_GATE.md and STATUS.md contain current completion evidence. The generic legacy procedures below do not replace the dedicated pilot profile.
+
+The local PostgreSQL/local-storage rehearsal has now passed, including exact 88-application-table equality, migration-journal preservation, RLS and checksum rejection. It does not establish live provider connectivity, an HTTPS deployment or hosted no-skip CI; those outcomes must be verified separately.
 
 ## Prepare and deploy
 

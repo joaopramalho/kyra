@@ -37,7 +37,6 @@ Provider tests: 82 passed; fixture compatibility subset: three passed; audit/pro
 ## Remaining release requirements
 
 - Keep `pnpm audit --prod --audit-level high` at high/critical zero. Current unchanged lockfile satisfies that gate; residual moderate/low and dev-only findings are in DEV_ADVISORIES.md. Standalone Zapier is excluded and is not declared remediated.
-- Production Compose profile, real Resend in/out, Google OAuth and LLM environment template, DNS/key checklist, and an executed backup/restore rehearsal against an isolated disposable Compose project.
 - Hosted CI must run units and real PostgreSQL pilot integrations with no skipped integration, Gitleaks, strict Semgrep and production audit. Local evidence is not a hosted run. No deployment has occurred; inherited production migration remains explicit LMC opt-in.
 
 ## Existing-tenant configuration verification — 2026-10-22
@@ -81,3 +80,8 @@ PILOT_PUBLIC_ASSETS.md records the production-default method test: 21 authentica
 
 
 Final local verification: the exhaustive 88-table/238-API-method audit, configured-page HTTP test and direct PostgreSQL guard test passed together, three tests with zero skips/failures. The exhaustive case passed in 23.67s with its original 120-second timeout. Workspace/script and acceptance types, full workspace build plus final admin rebuild, sixteen public prerender checks, nine unchanged pilot proxy tests and targeted lint passed. Strict Semgrep passed 101 rules / 1,797 scanned files, zero findings/errors; existing default ignore/large-file limits remain. The HTTP audit client now also respects bounded actual 429 Retry-After responses on its recovery/logout sign-in controls, matching existing fixture-login behavior; no application quota, assertion or timeout was weakened, and accepted/uncertain writes are never replayed. The initial combined run had two login-control failures and is not counted as a pass.
+
+
+## Production profile and recovery — verified locally
+
+PILOT_STAGING.md contains the dedicated prod Compose profile, private real-provider .env.example, preflight, DNS/key/Google/LLM checklist, deployment/recovery commands and completed isolated image-based rehearsal. Exact 88-application-table name equality, preserved migration journal, three RLS/policy checks, PostgreSQL/storage marker recovery, private 0600 storage, tampered-dump rejection and owned-resource cleanup passed. All three actual production Dockerfiles built successfully; the final recovery run reused those exact local artifacts with validated revision labels. Twelve configuration tests and strict Semgrep (101 rules / 1802 targets, zero findings/errors) passed with unchanged scanner policies. Staged Gitleaks passed. No provider consumer/call, hosted CI or HTTPS deployment is claimed. Hosted no-skip PostgreSQL CI remains a release requirement, and real domain/provider credentials/consent remain manual pre-launch work.

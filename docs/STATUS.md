@@ -12,13 +12,14 @@
 - Public artifact: six static pages / eighteen files; inherited claims/articles/legal/contact content excluded, required notices preserved and LMC details marked [FILL]. Artifact/tamper/HTTP checks and public desktop/mobile QA passed. See STATIC_PUBLIC_SITE.md.
 - Workspace/script types, full build, sixteen public prerender checks, targeted lint and original proxy tests passed. Strict Semgrep and secret scans remain release gates. The wider admin unit checkpoint passed 925 with 27 existing environment integration exclusions; this is not no-skip hosted integration evidence. Authenticated visual browser QA is not claimed because the browser URL policy denied access.
 
+- Dedicated production Compose profile, real-provider private template/preflight and DNS/key/consent checklist completed. Three production images built; isolated PostgreSQL/local-storage recovery passed with exact 88-table name equality, preserved migration journal, three RLS checks, private 0600 storage, tampered-backup rejection and confirmed cleanup. Twelve configuration tests and strict Semgrep (101 rules / 1,802 targets, zero findings/errors) passed. See PILOT_STAGING.md. No real provider call or HTTPS deployment is claimed.
+
 ## Still required
 
-- Complete production Compose profile, real-provider environment/checklist and run an isolated backup/restore rehearsal. Docker 29.1.3 and Compose 2.40.3 are installed locally; no restore rehearsal is claimed yet.
 - Prepare and execute hosted units plus real PostgreSQL pilot integration with zero skipped integration, Gitleaks, strict Semgrep and production audit. Local checks do not establish hosted success.
 
 ## Your manual steps
 
 - Supply approved entity, contact, physical address and legal details for [FILL] before release; public pages remain noindex.
-- Configure domain DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys through the staging checklist; complete actual calendar consent.
+- Configure domain DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys through PILOT_STAGING.md; complete actual calendar consent.
 - Supply an authorized repository/hosting destination and credentials when the local release gate is ready.
