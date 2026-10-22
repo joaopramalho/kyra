@@ -8,10 +8,13 @@
 - Providers: 82 tests passed; fixture compatibility: three passed; audit/provider typechecks and full build passed. Strict SAST: 101 rules, 1,761 targets, zero findings/errors in documented scope. Staged secret scan passed.
 - Production dependency gate remains high/critical zero on the unchanged lockfile. Static landing mode and Zapier exclusion are configured; advisory triage is documented.
 
+- Existing-tenant configuration CLI implemented: services, service area, canonical hours, FAQ context, escalation, booking rules and calendar selection. `docs/TENANT_CONFIGURATION.md` documents private output and prerequisites. Real PostgreSQL regression: **95 tests / 15 files passed, no skips**. Workspace/script typechecks and full build passed (16 prerender checks). API isolation revalidation passed in 26.12s; strict SAST passed 101 rules / 1,767 targets with zero findings/errors. Contracts: 6 tests; agent-core: 106; domain unit profile: 428 passed with the existing 69 environment-dependent integrations excluded (not counted as integration proof).
+
 ## Still required before release
 
 - Allowed page/static-asset checks and authenticated pilot-page behavior.
-- Tenant configuration CLI, public-site content cleanup, production Compose profile and an executed isolated backup/restore rehearsal.
+- Complete initial business/staff provisioning and Google OAuth initiation through the operator CLI; the existing-tenant configuration command currently requires those records.
+- Public-site content cleanup, production Compose profile and an executed isolated backup/restore rehearsal.
 - Hosted CI with real PostgreSQL integrations and no skipped integration. No hosted run or deployment has occurred.
 
 ## Your manual steps

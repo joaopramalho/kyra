@@ -137,3 +137,12 @@ Opt-out cancels pending lead-facing jobs in the suppression transaction. Already
 Add only the GET password-reset callback actually emitted in recovery emails, increasing the method inventory to 238 rather than dropping routes to pass. Discovery resolves exact auth routes before the catch-all. The SDK verification-email sender remains intentionally disabled and receives a valid-input/no-persistence 404 control alongside the successful supported custom sender.
 
 Signed webhook fixtures are loaded from an owner-private file only in test mode. They preserve server-side event registration and signature validation; incoming JSON never supplies a trusted event and no public fixture endpoint exists. Both default in-memory prepare and cross-process fixtures remain tested. Keys, queued codes and capability URLs are never printed or committed. The full API/table gate passes; pages/assets, tenant CLI, site cleanup, staging recovery and hosted CI remain required.
+
+
+## Existing-tenant configuration checkpoint — 2026-10-22
+
+The operator seed uses the existing canonical service catalog, business hours, staff assignments, calendar connection and native email settings; no table or migration was added. Optional FAQ/escalation/booking fields retain old email defaults, and voice controllers and voice availability behavior are unchanged. Requester verification remains mandatory. Both offered and final email booking slots enforce the configured notice and local-day horizon.
+
+The trusted CLI uses separate actual App and Auth logins, always verifies their roles, preserves the verified-operator check and confirms administrator membership and calendar/staff ownership before writing. Auth alone reads the private email-verification column; no App grants were broadened. The strict JSON rejects provider credentials. New capture credentials go exclusively into a new mode-0600 private file, never stdout. Matching repeat configuration preserves the existing capture token and calendar freshness; changing the selected calendar/staff invalidates freshness and queues canonical reconciliation.
+
+This checkpoint configures an existing tenant. Initial business/staff provisioning and Google OAuth state issuance still need a complete operator CLI path because their inherited public endpoints remain denied in pilot mode. The pilot release gate remains active; no hosted CI or staging rehearsal is claimed.

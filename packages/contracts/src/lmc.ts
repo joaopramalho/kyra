@@ -41,7 +41,16 @@ export const lmcEmailDecisionSchema = z.object({
 }).strict();
 export type LmcEmailDecision = z.infer<typeof lmcEmailDecisionSchema>;
 
+export const lmcBookingRulesSchema = z.object({
+  minimumNoticeMinutes: z.number().int().min(0).max(10_080).default(0),
+  horizonDays: z.number().int().min(1).max(7).default(7),
+  requireVerifiedRequester: z.literal(true).default(true),
+}).strict();
+
 export const lmcBusinessSettingsSchema = z.object({
+  faqs: z.array(z.object({ question: z.string().trim().min(3).max(500), answer: z.string().trim().min(1).max(2_000) }).strict()).max(50).optional(),
+  escalation: z.object({ keywords: z.array(z.string().trim().min(3).max(100)).max(50), replyText: z.string().trim().min(20).max(2_000) }).strict().optional(),
+  bookingRules: lmcBookingRulesSchema.optional(),
   ownerEmail: lmcEmailAddressSchema,
   fromEmail: lmcEmailAddressSchema,
   physicalAddress: z.string().trim().min(10).max(500),
@@ -79,7 +88,7 @@ export interface LmcChannel {
 export type LmcModelPrompt = {
   tenantId: string;
   trustedInstructions: string;
-  business: { services: Array<{ name: string; aliases: string[] }>; tone: string };
+  business: { services: Array<{ name: string; aliases: string[] }>; tone: string; faqs?: Array<{ question: string; answer: string }> };
   untrusted: { message: LmcChannelRequest["message"]; history: LmcChannelRequest["history"] };
 };
 export interface LmcEmailModel { analyze(prompt: LmcModelPrompt): Promise<unknown>; }

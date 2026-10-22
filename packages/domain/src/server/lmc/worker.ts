@@ -84,8 +84,10 @@ export class LmcEmailWorker {
     const {lead,message,settings,history} = snapshot;
     const isEmergency = settings.emergencyKeywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase()));
     const isInjection = message.headers["X-LMC-Injection-Detected"]==="true" || injection(`${lead.name ?? ""}\n${message.subject}\n${message.body}`);
+    const isConfiguredEscalation = settings.escalation?.keywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase())) ?? false;
     let actions: LmcStructuredAction[] = [];
-    if (!isEmergency && !isInjection) {
+    if (!isEmergency && !isInjection && isConfiguredEscalation) actions=[{type:"handoff",reason:"configured_escalation"}];
+    if (!isEmergency && !isInjection && !isConfiguredEscalation) {
       try {
         actions = (await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
           history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))})).actions;
@@ -128,7 +130,7 @@ export class LmcEmailWorker {
         if (qualification.zip && !settings.serviceAreaZips.includes(qualification.zip)) {status="declined";reason="outside_service_area";text="This location is outside our service area. We do not serve that ZIP code.";}
         else if (requestedService && !service) {status="declined";reason="unsupported_service";text="We do not offer the requested service. Our team can help only with our listed services.";}
         else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown"].includes(intent.intent))) {
-          status="human_handoff";reason=handoff?.type==="handoff" ? handoff.reason : "human_review_required";paused=true;alert=true;text="A team member will review your request and reply personally.";
+          status="human_handoff";reason=handoff?.type==="handoff" ? handoff.reason : "human_review_required";paused=true;alert=true;text=reason==="configured_escalation" ? settings.escalation!.replyText : "A team member will review your request and reply personally.";
         } else if(intent?.type==="intent"&&(intent.intent==="cancel"||intent.intent==="reschedule")){
           const [existing]=current.appointmentId&&current.contactId ? await tx.select({id:appointments.id,serviceId:appointments.serviceId}).from(appointments).innerJoin(contacts,and(eq(contacts.businessId,job.tenantId),eq(contacts.id,appointments.contactId),eq(contacts.email,current.email))).where(and(eq(appointments.businessId,job.tenantId),eq(appointments.id,current.appointmentId),eq(appointments.contactId,current.contactId),eq(appointments.sourceChannel,"email"),eq(appointments.status,"confirmed"))).limit(1) : [];
           const chosen=current.offeredSlots.find(slot=>slot.startsAt===intent.requestedSlot&&slot.serviceId===existing?.serviceId);

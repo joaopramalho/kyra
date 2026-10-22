@@ -38,7 +38,15 @@ Provider tests: 82 passed; fixture compatibility subset: three passed; audit/pro
 
 - Verify every allowed admin page/static asset method and authenticated page behavior; API coverage does not claim this separately pending surface.
 - Keep `pnpm audit --prod --audit-level high` at high/critical zero. Current unchanged lockfile satisfies that gate; residual moderate/low and dev-only findings are in DEV_ADVISORIES.md. Standalone Zapier is excluded and is not declared remediated.
-- Implement a validated tenant CLI/seed for services, area, hours, FAQs, escalation, booking rules and calendar, using canonical data; no new UI.
+- Complete the initial business/staff and Google OAuth initiation path for the operator CLI. Existing-tenant configuration is implemented and documented in TENANT_CONFIGURATION.md; no new UI.
 - Remove inherited public articles/claims/legal/contact details. LMC operator details remain `[FILL]` until supplied. Static packaging must exclude server/function sources.
 - Production Compose profile, real Resend in/out, Google OAuth and LLM environment template, DNS/key checklist, and an executed backup/restore rehearsal against an isolated disposable Compose project.
 - Hosted CI must run units and real PostgreSQL pilot integrations with no skipped integration, Gitleaks, strict Semgrep and production audit. Local evidence is not a hosted run. No deployment has occurred; inherited production migration remains explicit LMC opt-in.
+
+## Existing-tenant configuration verification — 2026-10-22
+
+The trusted `pnpm lmc:tenant` command configures canonical services, area, hours, FAQ model context, escalation, booking rules and calendar selection, using separate verified App/Auth roles. It preserves verified-operator, administrator and ownership checks; no database grant/migration or voice-controller changes were introduced. A strict template and private-output instructions are in TENANT_CONFIGURATION.md. Initial tenant creation and OAuth initiation remain pending.
+
+Real PostgreSQL email/configuration regression passed **95 tests in 15 files with zero skips**. The five configuration cases passed again after adding the production event/idempotency assertion. Workspace/script typechecks and full build passed, including 16 public prerender checks. Contracts passed six tests and agent-core passed 106; the separate domain unit profile passed 428 with 69 existing environment-dependent integration skips, explicitly not hosted integration evidence.
+
+The unchanged exhaustive API gate passed again in **26.12 seconds**, with the same 88-table/238-method inventory, exact equality, safe roles, empty skips/failures and original 120-second timeout. Strict Semgrep passed **101 rules on 1,767 targets, zero findings/errors**; the CLI, configuration domain service and seed contract are confirmed in its scanned paths. Existing default ignores/large-file scope limits remain. Staged Gitleaks passed. The production lockfile is unchanged. This is a local checkpoint, not a hosted run or deployment.

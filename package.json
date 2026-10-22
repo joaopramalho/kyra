@@ -125,7 +125,8 @@
     "replacement:calendar": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-calendar-check.ts",
     "replacement:contacts": "tsx --tsconfig scripts/tsconfig.json scripts/replacement-contact-pagination-check.ts",
     "test:lmc": "vitest run --config tests/lmc/vitest.config.mts",
-    "lmc:demo": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-demo.ts"
+    "lmc:demo": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-demo.ts",
+    "lmc:tenant": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-tenant.ts"
   },
   "devDependencies": {
     "@types/luxon": "^3.7.1",

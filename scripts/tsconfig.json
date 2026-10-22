@@ -49,6 +49,7 @@
     "./performance/**/*.ts",
     "./operations/**/*.ts",
     "./lmc-demo.ts",
-    "./lmc/**/*.ts"
+    "./lmc/**/*.ts",
+    "./lmc-tenant.ts"
   ]
 }

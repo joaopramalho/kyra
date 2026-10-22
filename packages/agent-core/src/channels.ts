@@ -30,7 +30,7 @@ export class EmailChannel implements LmcChannel {
       raw = await this.model.analyze({
         tenantId: request.tenant.id,
         trustedInstructions: instructions,
-        business: { services: settings.data.services.map(service => ({ name: service.name, aliases: [...service.aliases] })), tone: settings.data.tone },
+        business: { services: settings.data.services.map(service => ({ name: service.name, aliases: [...service.aliases] })), tone: settings.data.tone, ...(settings.data.faqs?.length ? { faqs: settings.data.faqs.map(faq => ({ ...faq })) } : {}) },
         untrusted: {
           message: { ...request.message },
           history: request.history.slice(-20).map(message => ({ role: message.role, text: message.text.slice(0, 4_000) })),

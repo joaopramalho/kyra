@@ -1,6 +1,8 @@
+import { DateTime } from "luxon";
+import { lmcBookingRulesSchema } from "@lobbystack/contracts";
 import { and, asc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
-import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, closures, contacts, enqueueOutbox, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, closures, contacts, enqueueOutbox, lmcSettings, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
 
 import { computeAvailability } from "../availability";
@@ -437,7 +439,12 @@ export async function findEmailAvailabilityInTransaction(
   input: { businessId: string; serviceId: string; startsAt: string; now: Date; staffId?: string; ignoreAppointmentId?: string },
 ) {
   const reference = await loadAvailabilityReference(tx,input);
-  if (reference.startsAt <= input.now) return [];
+  const [settings] = await tx.select({ config: lmcSettings.config }).from(lmcSettings).where(eq(lmcSettings.tenantId, input.businessId)).limit(1);
+  const rules = lmcBookingRulesSchema.safeParse(settings?.config.bookingRules ?? {});
+  if (!rules.success) return [];
+  const horizon = DateTime.fromJSDate(input.now, { zone: reference.timezone }).startOf("day").plus({ days: rules.data.horizonDays }).toMillis();
+  const starts = reference.startsAt.getTime();
+  if (!Number.isFinite(horizon) || reference.startsAt <= input.now || starts < input.now.getTime() + rules.data.minimumNoticeMinutes * 60_000 || starts >= horizon) return [];
   const selected = eligibleStaffIds(reference,input.staffId ? [input.staffId] : undefined).filter(id =>
     reference.connections.some(connection => connection.provider === "google" && connection.status === "connected" && connection.selectedCalendarId && (!connection.staffId || connection.staffId === id))
     && isCalendarFresh(reference,id,input.now.getTime()));
