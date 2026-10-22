@@ -1,3 +1,4 @@
+import { isPilotMode } from "@lobbystack/shared";
 import { brand } from "@lobbystack/shared/brand";
 import { Providers } from "@/app/providers";
 import { resourcesForRoute } from "@/lib/i18n-resources";
@@ -24,6 +25,7 @@ export function RootDocument({
     <html lang={locale} suppressHydrationWarning>
       <body>
         <Providers
+          pilotMode={isPilotMode(process.env)}
           initialLocale={locale}
           initialLocaleSource={localeSource}
           initialResources={resourcesForRoute(locale, namespaces)}

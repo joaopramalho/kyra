@@ -42,7 +42,7 @@ import { BillingPastDueBanner, type BillingPermissions } from "./billing-past-du
 import { DashboardUtilityBar } from "./dashboard-utility-bar";
 import { DashboardSetupGuideCard } from "./dashboard-setup-guide-card";
 import { NavUser } from "./nav-user";
-import { useOpenUpgradePlanDialog } from "./upgrade-plan-dialog-context";
+import { UpgradePlanDialogProvider, useOpenUpgradePlanDialog } from "./upgrade-plan-dialog-context";
 import { resolveLocale } from "@/lib/locale";
 import { localizePublicPath } from "@/lib/locale-path";
 
@@ -53,6 +53,7 @@ type Business = {
 };
 
 type DashboardShellProps = {
+  pilotMode?: boolean;
   children: React.ReactNode;
   user: {
     email: string;
@@ -78,7 +79,7 @@ function getSidebarDefaultOpen(): boolean {
   return value?.split("=")[1] !== "false";
 }
 
-export function DashboardShell({ children, user }: DashboardShellProps) {
+export function DashboardShell({ children, user, pilotMode = false }: DashboardShellProps) {
   const { t } = useTranslation("common");
   const pathname = usePathname();
   const contentScrollRef = useRef<HTMLElement>(null);
@@ -90,32 +91,33 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
     contentScroll.scrollLeft = 0;
   }, [pathname]);
 
-  return (
-    <LiveUpgradePlanProvider>
+  const shell = (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-background">
       <a href="#dashboard-main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-xl focus:bg-background focus:p-4">{t("accessibility.skipToContent")}</a>
-      <BillingBanner />
+      {!pilotMode && <BillingBanner />}
       <SidebarProvider
         className="relative min-h-0 flex-1 overflow-hidden"
         defaultOpen={getSidebarDefaultOpen()}
         style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
       >
-        <ReplacementSidebar user={user} />
+        <ReplacementSidebar user={user} pilotMode={pilotMode} />
         <SidebarInset
           ref={contentScrollRef}
           className="@container/content min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain has-data-[layout=fixed]:h-full peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100%-(var(--spacing)*4))]"
         >
           <SiteHeader fixed scrollContainerRef={contentScrollRef} />
           <div className="hidden h-16 shrink-0 border-b md:block" />
-          <DashboardUtilityBar />
+          {!pilotMode && <DashboardUtilityBar />}
           <Main id="dashboard-main-content" tabIndex={-1} className="flex flex-1 flex-col" fixed={pathname === "/messages"}>
             {children}
           </Main>
         </SidebarInset>
       </SidebarProvider>
     </div>
-    </LiveUpgradePlanProvider>
   );
+  return pilotMode
+    ? <UpgradePlanDialogProvider onOpen={() => undefined}>{shell}</UpgradePlanDialogProvider>
+    : <LiveUpgradePlanProvider>{shell}</LiveUpgradePlanProvider>;
 }
 
 function BillingBanner() {
@@ -130,10 +132,12 @@ function BillingBanner() {
   return <BillingPastDueBanner businessId={business.businessId} plan={billing.data.account.plan} subscriptionState={billing.data.account.subscriptionState} permissions={billing.data.permissions} />;
 }
 
-function ReplacementSidebar({ user }: Pick<DashboardShellProps, "user">) {
+function ReplacementSidebar({ user, pilotMode = false }: Pick<DashboardShellProps, "user" | "pilotMode">) {
   const pathname = usePathname();
   const { t } = useTranslation(["nav", "settings", "agent"]);
-  const general: NavigationItem[] = [
+  const general: NavigationItem[] = pilotMode ? [
+    { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
+  ] : [
     { label: t("nav:items.home"), href: "/", icon: HomeIcon },
     { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
     { label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon },
@@ -146,7 +150,9 @@ function ReplacementSidebar({ user }: Pick<DashboardShellProps, "user">) {
     { label: t("agent:sections.services.title"), href: "/agent/services", icon: BlocksIcon },
     { label: t("agent:sections.rules.title"), href: "/agent/rules", icon: WorkflowIcon },
   ];
-  const other: NavigationItem[] = [
+  const other: NavigationItem[] = pilotMode ? [
+    { label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon },
+  ] : [
     { label: t("nav:items.analytics"), href: "/analytics", icon: ChartColumnIncreasingIcon },
     { label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon },
     { label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon },
@@ -157,16 +163,16 @@ function ReplacementSidebar({ user }: Pick<DashboardShellProps, "user">) {
   return (
     <Sidebar className="absolute inset-y-0 h-full" collapsible="icon" variant="sidebar">
       <SidebarHeader>
-        <WorkspaceSwitcher />
+        <WorkspaceSwitcher allowCreate={!pilotMode} />
       </SidebarHeader>
       <SidebarContent>
         <NavigationGroup items={general} pathname={pathname} title={t("nav:sidebar.general")} />
-        <NavigationGroup items={receptionist} pathname={pathname} title={t("nav:sidebar.agent")} />
+        {!pilotMode && <NavigationGroup items={receptionist} pathname={pathname} title={t("nav:sidebar.agent")} />}
         <NavigationGroup items={other} pathname={pathname} title={t("nav:sidebar.other")} />
       </SidebarContent>
       <SidebarFooter>
-        <DashboardSetupGuideCard />
-        <UserMenu user={user} />
+        {!pilotMode && <DashboardSetupGuideCard />}
+        <UserMenu user={user} pilotMode={pilotMode} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -220,15 +226,15 @@ function NavigationGroup({ items, pathname, title }: { items: NavigationItem[]; 
 }
 
 
-function UserMenu({ user }: Pick<DashboardShellProps, "user">) {
+function UserMenu({ user, pilotMode = false }: Pick<DashboardShellProps, "user" | "pilotMode">) {
   const router = useRouter();
   const { i18n } = useTranslation();
   const openUpgradePlanDialog = useOpenUpgradePlanDialog();
   const [signingOut, setSigningOut] = useState(false);
   const businesses = useQuery({ queryKey: ["businesses"], queryFn: () => requestJson<{ businesses: Business[] }>("/api/businesses") });
   const business = selectActiveBusiness(businesses.data?.businesses);
-  const billing = useQuery({ queryKey: ["billing", business?.businessId], enabled: Boolean(business?.businessId), queryFn: () => requestJson<{ account: { plan: string | null } | null; permissions: BillingPermissions; availableCheckoutPlans: Array<"starter" | "pro">; availableCheckoutIntervals: Record<"starter" | "pro", string[]> }>(`/api/billing?businessId=${encodeURIComponent(business!.businessId)}`) });
-  const showUpgradeToPro = billing.data?.permissions.hasCheckoutAccess === true && (billing.data.account?.plan ?? "free_cloud") === "free_cloud" && (billing.data.availableCheckoutPlans ?? []).some(plan => billing.data?.availableCheckoutIntervals[plan].length);
+  const billing = useQuery({ queryKey: ["billing", business?.businessId], enabled: !pilotMode && Boolean(business?.businessId), queryFn: () => requestJson<{ account: { plan: string | null } | null; permissions: BillingPermissions; availableCheckoutPlans: Array<"starter" | "pro">; availableCheckoutIntervals: Record<"starter" | "pro", string[]> }>(`/api/billing?businessId=${encodeURIComponent(business!.businessId)}`) });
+  const showUpgradeToPro = !pilotMode && billing.data?.permissions.hasCheckoutAccess === true && (billing.data.account?.plan ?? "free_cloud") === "free_cloud" && (billing.data.availableCheckoutPlans ?? []).some(plan => billing.data?.availableCheckoutIntervals[plan].length);
   async function signOut() {
     if (signingOut) return;
     setSigningOut(true);
@@ -250,5 +256,5 @@ function UserMenu({ user }: Pick<DashboardShellProps, "user">) {
       router.refresh();
     } finally { setSigningOut(false); }
   }
-  return <NavUser user={{ ...user, avatar: "" }} onSignOut={() => void signOut()} onUpgradeToPro={openUpgradePlanDialog} showUpgradeToPro={showUpgradeToPro} />;
+  return <NavUser showAccount={!pilotMode} user={{ ...user, avatar: "" }} onSignOut={() => void signOut()} onUpgradeToPro={openUpgradePlanDialog} showUpgradeToPro={showUpgradeToPro} />;
 }

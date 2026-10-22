@@ -19,15 +19,15 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", vi.fn(query => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
 afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
-function setup(role = "business_owner") {
+function setup(role = "business_owner", pilotMode = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); clients.push(client);
   client.setQueryData(["businesses"], { businesses: [{ businessId: "business", name: "Tenant name", active: true, role }] });
   client.setQueryData(["billing", "business"], { account: null, permissions: { hasCheckoutAccess: false }, availableCheckoutPlans: [], availableCheckoutIntervals: { starter: [], pro: [] } });
   client.setQueryData(["phone-numbers", "business"], { phoneNumbers: [] });
   client.setQueryData(["setup", "business"], { steps: [] });
-  const content = () => <QueryClientProvider client={client}><DashboardShell user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
+  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
   const view = render(content());
-  return { ...view, navigate(pathname: string) { route.pathname = pathname; view.rerender(content()); } };
+  return { ...view, client, navigate(pathname: string) { route.pathname = pathname; view.rerender(content()); } };
 }
 describe("original shared navigation", () => {
   it("keeps the original group ordering and integrations link", () => {
@@ -56,5 +56,19 @@ describe("original shared navigation", () => {
       view.navigate(href!);
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     }
+  });
+});
+
+describe("pilot navigation boundary",()=>{
+  it("renders only lead/email links and leaves billing queries disabled",()=>{
+    const {client}=setup("business_owner",true);
+    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/leads","/settings/email"]);
+    expect(client.getQueryCache().find({queryKey:["billing","business"],exact:true})?.isActive()??false).toBe(false);
+  });
+  it("does not offer the inherited create-workspace onboarding route",async()=>{
+    setup("business_owner",true);
+    await userEvent.click(screen.getByRole("button",{name:/Tenant name/}));
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem",{name:"sidebar.createBusiness"})).toBeNull();
   });
 });

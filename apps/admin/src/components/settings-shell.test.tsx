@@ -23,3 +23,10 @@ describe("original settings route shell", () => {
     expect(screen.getByRole("link", { name: "sections.widget" }).getAttribute("href")).toBe("/settings/widget");
   });
 });
+
+it("shows only email settings in pilot mode",()=>{
+  route.pathname="/settings/email";
+  render(<SettingsShell pilotMode><p>Email settings content</p></SettingsShell>);
+  expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["/settings/email"]);
+  expect(screen.getByText("Email settings content")).toBeTruthy();
+});

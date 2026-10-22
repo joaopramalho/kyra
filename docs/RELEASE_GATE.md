@@ -36,7 +36,7 @@ Provider tests: 82 passed; fixture compatibility subset: three passed; audit/pro
 
 ## Remaining release requirements
 
-- Verify every allowed admin page/static asset method and authenticated page behavior; API coverage does not claim this separately pending surface.
+- Finish allowed public-auth-page/static-asset method coverage; configured dashboard page behavior is now verified separately below.
 - Keep `pnpm audit --prod --audit-level high` at high/critical zero. Current unchanged lockfile satisfies that gate; residual moderate/low and dev-only findings are in DEV_ADVISORIES.md. Standalone Zapier is excluded and is not declared remediated.
 - Production Compose profile, real Resend in/out, Google OAuth and LLM environment template, DNS/key checklist, and an executed backup/restore rehearsal against an isolated disposable Compose project.
 - Hosted CI must run units and real PostgreSQL pilot integrations with no skipped integration, Gitleaks, strict Semgrep and production audit. Local evidence is not a hosted run. No deployment has occurred; inherited production migration remains explicit LMC opt-in.
@@ -66,3 +66,11 @@ Local evidence: all 81 existing landing unit tests passed unchanged; 11 new arti
 Main CI now runs the artifact regression suite after build, and the landing workflow checks only the actual static output and its HTTP behavior. These are local configuration/probe results, not a hosted CI run or deployment. Allowed authenticated admin pages/assets, production staging with an actual backup/restore rehearsal and hosted no-skip PostgreSQL CI remain required.
 
 Final verification: the unchanged exhaustive API/table test and both historical landing inventory tests passed together (three tests, zero skips/failures; exhaustive runtime 22.06s, original 120s timeout). Strict Semgrep passed 101 rules / 1,794 targets with zero findings/errors; the artifact verifier, HTTP checker, negative-fixture suite and Astro config are confirmed in scanned paths. Existing default ignore/large-file limits remain. The only new exact-rule annotation is the documented unserved negative-script fixture; no parser/rule/exclusion changes were made. Staged Gitleaks passed.
+
+## Configured dashboard pages — verified locally
+
+Actual session verification, canonical active business, active membership and valid LMC configuration are now mandatory before pilot dashboard render. This confines the CLI/onboarding exception to configured pilot tenants; every missing/invalid condition returns 404. No auth boundary, App grant, API allowlist or legacy onboarding state was relaxed. Leads/email navigation and providers omit closed billing/voice/setup/preference flows only in pilot mode, with original legacy component defaults preserved.
+
+PILOT_ADMIN_PAGES.md records the real HTTP test: 21 method/path pairs under four identities (84 requests), three actual database-state denials and an independent positive tenant. The PostgreSQL access guard case and 59 focused component cases passed; the wider admin unit profile passed 925 with 27 existing environment integration exclusions, not hosted integration evidence. Workspace/script/new-test types and full build passed (16 public prerender checks). Browser observation was blocked by its URL policy; no authenticated visual QA is claimed. Full public-auth/static-asset inventory remains pending and is not folded into the existing strict 88-table/238-method API proof.
+
+Final local checkpoint: the exhaustive API/table case, protected-page HTTP case and PostgreSQL guard case passed together (three tests, no skips/failures). The original exhaustive budget is unchanged at 120s; it passed in 36.03s. Strict Semgrep passed 101 rules / 1,796 targets, zero findings/errors, with the new domain guard confirmed in scanned paths. Existing default ignores/large-file limits and exact historical fixture annotations remain unchanged. Staged Gitleaks passed; no new scanner/parser exemption was needed.

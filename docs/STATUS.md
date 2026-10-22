@@ -8,9 +8,11 @@
 - Trusted tenant CLI: initial business/staff creation, services/area/hours/FAQ context/escalation/booking settings, private Google OAuth issuance and calendar selection. Ten setup/configuration integration cases passed without skips; real Google consent remains manual.
 - Public site: six static pages / 18 files, no JS/server/DB/trackers, LMC `[FILL]` details and required attribution. Existing 81 tests, 11 artifact regressions, two unchanged inventory tests, 56 HTTP controls, build, types, lint and desktop/mobile QA passed. Static archive was extracted and revalidated. Strict SAST passed 101 rules / 1,794 targets with zero findings/errors; staged secret scan passed. See STATIC_PUBLIC_SITE.md.
 
+- Configured pilot pages now require fresh verified identity, canonical active business, active membership and valid LMC settings; other states return 404. Real HTTP covers 21 pairs / 88 controls; PostgreSQL guard and 59 focused component cases passed. Admin unit profile: 925 passed / 27 environment integrations excluded. Types and full build passed. Strict SAST passed 101 rules / 1,796 targets with zero findings/errors. Browser observation was blocked; no visual QA claim. See PILOT_ADMIN_PAGES.md.
+
 ## Still required before release
 
-- Allowed admin page/static-asset checks and authenticated pilot-page behavior.
+- Finish allowed public auth-page/static-asset method coverage; configured protected page behavior is verified.
 - Production Compose profile, real-provider environment/checklist and an executed isolated backup/restore rehearsal.
 - Hosted CI with real PostgreSQL integrations and no skipped integration, strict security/dependency gates. Workflow changes are local; no hosted run or deployment has occurred.
 
