@@ -5,9 +5,9 @@ import { config, proxy } from "./proxy";
 
 afterEach(() => vi.unstubAllEnvs());
 
-it("skips known assets but retains proxy checks for application paths with extensions", () => {
+it("covers known assets and application paths with extensions", () => {
   for (const url of ["/locales/en/auth.json", "/brand/logo-icon.svg", "/_next/static/chunk.js", "/favicon.ico"]) {
-    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(false);
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(true);
   }
   for (const url of ["/api/contacts/contact.svg", "/embed.js", "/embed/key.svg", "/en/reset-password/token.txt", "/en/login"]) {
     expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(true);

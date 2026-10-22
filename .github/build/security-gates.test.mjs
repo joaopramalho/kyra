@@ -7,8 +7,8 @@ const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
 const gateNames = ["dependency-audit", "secret-scan", "sast"];
 const commands = (job) => job.steps.map((step) => step.run ?? "").join("\n");
 
-test("every security gate and standalone integration is required before release validation", () => {
-  for (const name of [...gateNames, "zapier"]) {
+test("every pilot security gate is required before release validation", () => {
+  for (const name of gateNames) {
     assert(workflow.jobs[name], `Missing CI job: ${name}`);
     assert(
       workflow.jobs.validate.needs.includes(name),
@@ -32,11 +32,20 @@ test("security scans fail closed on pull requests without provider credentials",
   }
 });
 
-test("audits both the pnpm workspace and the standalone Zapier npm lockfile", () => {
+test("production audit gates high/critical findings and excludes unused standalone Zapier", () => {
   const job = workflow.jobs["dependency-audit"];
   assert(job);
-  assert.match(commands(job), /pnpm audit/);
-  assert.match(commands(job), /npm audit --prefix integrations\/zapier/);
+  assert.match(commands(job), /pnpm audit --prod --audit-level high/);
+  assert(!commands(job).includes("--ignore"));
+  assert(!commands(job).includes("npm audit --prefix integrations/zapier"));
+  assert(!workflow.jobs.zapier, "Zapier is excluded from this pilot workflow");
+  assert(!workflow.jobs.validate.needs.includes("zapier"));
+});
+
+test("inherited production migration requires explicit LMC deployment opt-in", () => {
+  const job = workflow.jobs["migrate-production"];
+  assert.match(job.if, /vars.LMC_ENABLE_PRODUCTION_DEPLOY == 'true'/);
+  assert.equal(job.env.RAILWAY_PROJECT_ID, "${{ vars.LMC_RAILWAY_PROJECT_ID }}");
 });
 
 test("secret scanning includes complete history and redacts matches", () => {

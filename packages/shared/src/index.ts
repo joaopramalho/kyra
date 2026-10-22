@@ -3,6 +3,7 @@ import { z } from "zod";
 export { resolveOpenAiPricing } from "./aiPricing";
 export type { AiPricingRatesUsdPerMillionTokens, VersionedAiPricing } from "./aiPricing";
 export { isMaintenanceMode } from "./maintenance";
+export { isPilotMode, PILOT_WORKER_HEALTH_PATHS, PILOT_ADMIN_ROUTES, pilotAdminRoute } from "./pilot";
 export * from "./assistant";
 export { isCertificationMode, assertCertificationRecipient, assertCertificationOperationAllowed, assertCertificationCalendar, assertCertificationBillingSandbox } from "./certification";
 

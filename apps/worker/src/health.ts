@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+import { isPilotMode, PILOT_WORKER_HEALTH_PATHS } from "@lobbystack/shared";
+
 export type WorkerHealthState = {
   ready: boolean;
   redis: boolean;
@@ -12,8 +14,20 @@ export type ExtraRouteHandler = (request: IncomingMessage, response: ServerRespo
 
 export function startHealthServer(port: number, state: WorkerHealthState, extraRoutes?: ExtraRouteHandler): Server {
   const server = createServer(async (request, response) => {
-    if (extraRoutes && await extraRoutes(request, response)) return;
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (isPilotMode(process.env)) {
+      // Gate before invoking any legacy controller, including authenticated calls.
+      if (!PILOT_WORKER_HEALTH_PATHS.has(path)) {
+        response.writeHead(404, { "cache-control": "no-store" });
+        response.end();
+        return;
+      }
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        response.writeHead(405, { allow: "GET, HEAD", "cache-control": "no-store" });
+        response.end();
+        return;
+      }
+    } else if (extraRoutes && await extraRoutes(request, response)) return;
     if (path === "/health/live" || path === "/healthz") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ ok: true }));
