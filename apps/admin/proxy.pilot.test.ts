@@ -1,3 +1,5 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import { signActionToken } from "../../packages/domain/src/server/lmc/capabilities";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
@@ -55,4 +57,23 @@ it("redirects the post-login root to CRM and enables the gate explicitly outside
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("LMC_PILOT_MODE", "true");
   expect(proxy(request("/api/billing")).status).toBe(404);
+});
+
+it("passes real signed unsubscribe capabilities through the pilot boundary", () => {
+  const token = signActionToken({ tenantId: randomUUID(), leadId: randomUUID(), purpose: "unsubscribe" }, randomBytes(32).toString("hex"));
+  expect(token).toContain(".");
+  for (const method of ["GET", "POST", "OPTIONS"]) {
+    expect(proxy(request(`/api/lmc/unsubscribe/${token}`, method)).status, method).toBe(200);
+  }
+  expect(proxy(request(`/api/lmc/unsubscribe/${token}`, "HEAD")).status).toBe(405);
+  expect(proxy(request(`/api/lmc/unsubscribe/${token}/extra`)).status).toBe(404);
+});
+
+it("does not expose the auth catch-all's legacy OAuth preflight or unsupported HEAD methods", () => {
+  for (const [path, method] of [["/api/auth/get-session", "HEAD"], ["/api/auth/get-session", "OPTIONS"], ["/api/auth/sign-in/email", "OPTIONS"], ["/api/auth/verify-email", "HEAD"]] as const)
+    expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(405);
+});
+
+it("refuses HEAD callbacks before they can consume a calendar OAuth capability", () => {
+  expect(proxy(request("/api/calendar/google/callback?state=opaque", "HEAD")).status).toBe(405);
 });

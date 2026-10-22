@@ -90,3 +90,13 @@ it("fails closed when the limiter store is unavailable", async () => {
   expect(response.status).toBe(503);
   expect(mocks.session).not.toHaveBeenCalled();
 });
+
+it.each(["success", "error"] as const)("returns the pilot callback to the reachable settings page (%s)", async status => {
+  vi.stubEnv("LMC_PILOT_MODE", "true");
+  const state = createCalendarOAuthState({ userId: "user-1", businessId: "business" });
+  const response = await GET(callback(state, status === "success" ? "code=code" : "error=access_denied"));
+  const destination = new URL(response.headers.get("location")!);
+  expect(destination.pathname).toBe("/settings/email");
+  expect(destination.searchParams.get("status")).toBe(status);
+  if (status === "error") expect(mocks.exchange).not.toHaveBeenCalled();
+});

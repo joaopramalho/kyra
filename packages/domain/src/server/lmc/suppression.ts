@@ -1,8 +1,9 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   lmcLeads,
   lmcSuppressions,
   lmcEvents,
+  lmcJobs,
   type DatabaseTransaction,
 } from "@lobbystack/db";
 
@@ -36,6 +37,17 @@ export async function suppressLmcEmail(
       updatedAt: now,
     })
     .where(and(eq(lmcLeads.tenantId, tenantId), eq(lmcLeads.email, email)));
+  // Cancel lead-facing work atomically with consent; already running sends
+  // still recheck suppression while holding the conversation lock.
+  await tx
+    .update(lmcJobs)
+    .set({ status: "cancelled", updatedAt: now })
+    .where(and(
+      eq(lmcJobs.tenantId, tenantId),
+      eq(lmcJobs.status, "pending"),
+      inArray(lmcJobs.leadId, tx.select({ id: lmcLeads.id }).from(lmcLeads).where(and(eq(lmcLeads.tenantId, tenantId), eq(lmcLeads.email, email)))),
+      or(inArray(lmcJobs.kind, ["process", "followup"]), and(eq(lmcJobs.kind, "send"), sql`${lmcJobs.payload}->>'kind' is distinct from 'owner_alert'`)),
+    ));
   await tx
     .insert(lmcEvents)
     .values({

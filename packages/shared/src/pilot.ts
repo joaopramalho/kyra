@@ -21,8 +21,8 @@ const authPostPaths = [
 ];
 
 export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
-  ...authPostPaths.map(path => ({ pattern: `/api/auth/${path}`, match: new RegExp(`^/api/auth/${path}$`), methods: post })),
-  ...["get-session", "verify-email"].map(path => ({ pattern: `/api/auth/${path}`, match: new RegExp(`^/api/auth/${path}$`), methods: apiRead })),
+  ...authPostPaths.map(path => ({ pattern: `/api/auth/${path}`, match: new RegExp(`^/api/auth/${path}$`), methods: ["POST"] })),
+  ...["get-session", "verify-email"].map(path => ({ pattern: `/api/auth/${path}`, match: new RegExp(`^/api/auth/${path}$`), methods: ["GET"] })),
   { pattern: "/api/account", match: /^\/api\/account$/, methods: apiRead },
   { pattern: "/api/businesses", match: /^\/api\/businesses$/, methods: apiRead },
   { pattern: "/api/businesses/switch", match: /^\/api\/businesses\/switch$/, methods: post },
@@ -33,9 +33,9 @@ export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   { pattern: "/api/lmc/settings", match: /^\/api\/lmc\/settings$/, methods: [...apiRead, "PUT"] },
   { pattern: "/api/lmc/settings/capture-token", match: /^\/api\/lmc\/settings\/capture-token$/, methods: post },
   { pattern: "/api/lmc/capture/[token]", match: /^\/api\/lmc\/capture\/[A-Za-z0-9_-]+$/, methods: post },
-  { pattern: "/api/lmc/unsubscribe/[token]", match: /^\/api\/lmc\/unsubscribe\/[A-Za-z0-9_-]+$/, methods: [...apiRead, "POST"] },
+  { pattern: "/api/lmc/unsubscribe/[token]", match: /^\/api\/lmc\/unsubscribe\/[A-Za-z0-9_.-]+$/, methods: ["GET", "POST", "OPTIONS"] },
   { pattern: "/api/webhooks/lmc-email", match: /^\/api\/webhooks\/lmc-email$/, methods: post },
-  { pattern: "/api/calendar/google/callback", match: /^\/api\/calendar\/google\/callback$/, methods: apiRead },
+  { pattern: "/api/calendar/google/callback", match: /^\/api\/calendar\/google\/callback$/, methods: ["GET", "OPTIONS"] },
   ...["/healthz", "/readyz", "/api/health/live", "/api/health/ready"].map(path => ({ pattern: path, match: new RegExp(`^${path}$`), methods: apiRead })),
   { pattern: "/", match: /^\/$/, methods: read },
   { pattern: "/leads", match: /^\/leads$/, methods: read },
