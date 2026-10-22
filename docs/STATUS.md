@@ -2,20 +2,20 @@
 
 ## Done
 
-- Production routing defaults to the pilot boundary; unknown inherited routes return 404. Production denial proof: 164 routes × seven methods, 1,148 probes plus nine controls passed at the previous checkpoint.
-- Current authenticated API audit: **88/88 tables**, **220/231 method/path pairs**, zero observed failures. Exact equality/no-skips/no-failures assertions remain; the gate still fails on 11 uncovered pairs.
-- Real A/B method, session, workspace, capture, opt-out and calendar-capability probes pass. Dotted unsubscribe tokens now work; opt-out cancels queued lead-facing work while preserving owner alerts and other contacts. Calendar returns to reachable pilot settings and rejects HEAD before state consumption.
-- Production dependency gate: zero high/critical; one moderate and one low tracked in DEV_ADVISORIES.md. Static landing compiler dependencies classified; unused standalone Zapier excluded from this CI.
-- Current targeted proxy/calendar tests: 25 passed. Pilot inventory/mutation tests: six passed. Worker API audit, method guards, session/workspace, public capabilities and opt-out queue tests passed. Audit/domain/admin typechecks passed. Email/booking/follow-up regression run: 68 passed without skips. Full build passed, including 16 prerender checks and unchanged embed output. Strict SAST passed in its existing scope (101 rules, 1,758 targets, zero findings/errors).
+- Authenticated API gate passed: **88/88 tables and 238/238 method/path pairs**, no skips/failures. Original exhaustive timeout and strict assertions retained; test passed in 42.24s.
+- Signup, verification, both password-recovery flows, logout and signed webhook proved over real HTTP/PostgreSQL. Cross-tenant state, signature, replay and session-revocation controls passed. Test fixtures stay private; no external email is sent.
+- Production denial proof: 164 inherited routes × seven methods, 1,148 requests plus nine controls passed. Voice controllers remain unchanged outside pilot mode.
+- Providers: 82 tests passed; fixture compatibility: three passed; audit/provider typechecks and full build passed. Strict SAST: 101 rules, 1,761 targets, zero findings/errors in documented scope. Staged secret scan passed.
+- Production dependency gate remains high/critical zero on the unchanged lockfile. Static landing mode and Zapier exclusion are configured; advisory triage is documented.
 
 ## Still required before release
 
-- Complete ten authentication controls and a valid signed webhook HTTP positive control; verify all allowed pages/assets and rerun final release/security checks.
-- Tenant configuration CLI; remove inherited public articles/claims/legal/contact details; production Compose profile and an executed isolated backup/restore rehearsal.
-- Hosted CI with real PostgreSQL integrations and no skipped pilot integration. No hosted run or deployment has been performed.
+- Allowed page/static-asset checks and authenticated pilot-page behavior.
+- Tenant configuration CLI, public-site content cleanup, production Compose profile and an executed isolated backup/restore rehearsal.
+- Hosted CI with real PostgreSQL integrations and no skipped integration. No hosted run or deployment has occurred.
 
 ## Your manual steps
 
-- Supply LMC contact/legal/physical-address details (`[FILL]` until supplied) and obtain legal review before public release.
-- Configure DNS, Resend in/out and webhook signing, Google Calendar OAuth and LLM credentials through the environment template/checklist when staging is ready.
-- Provide an authorized hosting/repository destination and real deployment credentials when the local release gate is ready.
+- Supply LMC contact/legal/physical-address data (`[FILL]` until supplied) and legal review before public release.
+- Configure DNS, Resend in/out/webhook signing, Google Calendar OAuth and LLM keys through the staging template/checklist when ready.
+- Supply an authorized hosting/repository destination and real deployment credentials when the local release gate is ready.

@@ -77,3 +77,10 @@ it("does not expose the auth catch-all's legacy OAuth preflight or unsupported H
 it("refuses HEAD callbacks before they can consume a calendar OAuth capability", () => {
   expect(proxy(request("/api/calendar/google/callback?state=opaque", "HEAD")).status).toBe(405);
 });
+
+it("allows the real password-reset link callback without allowing other auth catch-all paths", () => {
+  expect(proxy(request("/api/auth/reset-password/opaqueRecoveryToken?callbackURL=%2Fen%2Freset-password")).status).toBe(200);
+  for (const method of ["HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+    expect(proxy(request("/api/auth/reset-password/opaqueRecoveryToken", method)).status, method).toBe(405);
+  expect(proxy(request("/api/auth/reset-password/opaqueRecoveryToken/extra")).status).toBe(404);
+});

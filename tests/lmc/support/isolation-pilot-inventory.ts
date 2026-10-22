@@ -11,8 +11,8 @@ export function discoverPilotApiRoutes(
   const routes: AuditRoute[] = [];
   for (const policy of adminPolicy) {
     if (!policy.pattern.startsWith("/api/") && !["/healthz", "/readyz"].includes(policy.pattern)) continue;
-    const sourcePath = policy.pattern.startsWith("/api/auth/") ? "/api/auth/[...all]" : policy.pattern;
-    const handler = discovered.find(route => route.surface === "admin" && route.path === sourcePath);
+    const exact = discovered.find(route => route.surface === "admin" && route.path === policy.pattern);
+    const handler = exact ?? (policy.pattern.startsWith("/api/auth/") ? discovered.find(route => route.surface === "admin" && route.path === "/api/auth/[...all]") : undefined);
     if (!handler) throw new Error(`PILOT_HANDLER_MISSING:admin:${policy.pattern}`);
     const impossible = policy.methods.filter(method => !handler.methods.includes(method));
     if (impossible.length) throw new Error(`PILOT_METHOD_WITHOUT_HANDLER:${policy.pattern}:${impossible.join(",")}`);

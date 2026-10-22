@@ -8,7 +8,7 @@ describe("LMC exhaustive tenant-isolation acceptance", () => {
     const report = await runTenantIsolationAudit();
     expect(report.auditScope).toBe("pilot");
     expect(report.tableInventory.length).toBeGreaterThanOrEqual(88);
-    expect(report.routeInventory.length).toBeGreaterThanOrEqual(231);
+    expect(report.routeInventory.length).toBeGreaterThanOrEqual(238);
     expect([...report.probedTables].sort()).toEqual([...report.tableInventory].sort());
     expect([...report.probedRoutes].sort()).toEqual([...report.routeInventory].sort());
     expect(report.skipped).toEqual([]);

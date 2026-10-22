@@ -1,3 +1,5 @@
+import { probePilotWebhookContext } from "./isolation-pilot-webhook";
+import { probePilotAuthContext } from "./isolation-pilot-auth";
 import { probePilotPublicContext } from "./isolation-pilot-public";
 import { probePilotSessionContext } from "./isolation-pilot-session";
 import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
@@ -60,7 +62,10 @@ export async function runTenantIsolationAudit() {
         // Token-rotation controls revoke the fixture capture URLs; exercise
         // public capabilities first, without relaxing either set of assertions.
         await probePilotPublicContext(context);
+        await probePilotWebhookContext(context);
         await probeEmailMutationContext(context);
+        // Password recovery revokes fixture sessions, so it must run last.
+        await probePilotAuthContext(context);
       },
     );
     const workerHealth = await probePilotWorker(routes.filter(route => route.surface === "worker"));

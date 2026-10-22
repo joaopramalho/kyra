@@ -131,3 +131,9 @@ Inventory the effective concrete admin/worker APIs independently from implemente
 OAuth's existing missing-session error redirect is a safe callback contract when its exact destination is reachable and neither stored capability is consumed; the new probe was refined from an initial generic-API 401 expectation to those stronger callback-specific invariants. Different authenticated users still require 403. No existing committed assertion was removed. Test-only signing keys are generated in a mode-600 WSL overlay outside the repository and are never printed, exported or committed.
 
 Opt-out cancels pending lead-facing jobs in the suppression transaction. Already-running work retains the existing locked send-time suppression check; owner alerts and unrelated contacts remain active. This is an opt-out correction, not a new messaging feature.
+
+## 2026-10-22 — Complete pilot API controls
+
+Add only the GET password-reset callback actually emitted in recovery emails, increasing the method inventory to 238 rather than dropping routes to pass. Discovery resolves exact auth routes before the catch-all. The SDK verification-email sender remains intentionally disabled and receives a valid-input/no-persistence 404 control alongside the successful supported custom sender.
+
+Signed webhook fixtures are loaded from an owner-private file only in test mode. They preserve server-side event registration and signature validation; incoming JSON never supplies a trusted event and no public fixture endpoint exists. Both default in-memory prepare and cross-process fixtures remain tested. Keys, queued codes and capability URLs are never printed or committed. The full API/table gate passes; pages/assets, tenant CLI, site cleanup, staging recovery and hosted CI remain required.

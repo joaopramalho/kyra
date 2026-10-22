@@ -23,6 +23,7 @@ const authPostPaths = [
 export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   ...authPostPaths.map(path => ({ pattern: `/api/auth/${path}`, match: new RegExp(`^/api/auth/${path}$`), methods: ["POST"] })),
   ...["get-session", "verify-email"].map(path => ({ pattern: `/api/auth/${path}`, match: new RegExp(`^/api/auth/${path}$`), methods: ["GET"] })),
+  { pattern: "/api/auth/reset-password/[token]", match: /^\/api\/auth\/reset-password\/[A-Za-z0-9_-]+$/, methods: ["GET"] },
   { pattern: "/api/account", match: /^\/api\/account$/, methods: apiRead },
   { pattern: "/api/businesses", match: /^\/api\/businesses$/, methods: apiRead },
   { pattern: "/api/businesses/switch", match: /^\/api\/businesses\/switch$/, methods: post },
