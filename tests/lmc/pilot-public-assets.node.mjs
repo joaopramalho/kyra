@@ -90,13 +90,32 @@ test("production-default pilot auth displays and every published static asset en
     // Missing/retired assets are denials, never counted as positive controls.
     for(const path of ["/embed.js","/lmc-form.js","/locales/en/billing.json","/brand/unknown.svg"])
       for(const method of methods){const response=await request(path,method);await response.arrayBuffer();check(response.status===404,`CLOSED_ASSET:${method}:${path}:${response.status}`);}
+    // Inventory the actual production build; every inherited non-pilot route
+    // must fail closed before a handler can run, for every supported method.
+    const manifest=JSON.parse(await readFile(join(admin,".next/app-path-routes-manifest.json"),"utf8"));
+    const deniedPaths=[...new Set(Object.values(manifest).flatMap(path=>
+      path.includes("[locale]")?["en","fr"].map(locale=>path.replace("[locale]",locale)):[path]
+    ).map(path=>path.replace(/\[\[?\.\.\.[^\]]+\]\]?/g,"synthetic/path").replace(/\[[^\]]+\]/g,"00000000-0000-4000-8000-000000000001"))
+      .filter(path=>!pilotAdminRoute(path)))].sort();
+    assert(deniedPaths.length>100,"INHERITED_BUILD_ROUTE_INVENTORY_MISSING");
+    for(const path of deniedPaths)for(const method of methods){
+      const response=await request(path,method),body=await response.text();
+      check(response.status===404&&body===""&&response.headers.get("cache-control")?.includes("no-store"),`INHERITED_DENIAL:${method}:${path}:${response.status}`);
+    }
+    const actionControls=[["/leads","POST"],["/api/lmc/settings","PUT"]];
+    for(const [path,method] of actionControls){
+      probes++;
+      const response=await fetch(base+path,{method,redirect:"manual",signal:AbortSignal.timeout(15000),headers:{origin:base,"next-action":"synthetic-action-boundary"}});
+      const body=await response.text();
+      check(response.status===404&&body===""&&response.headers.get("cache-control")?.includes("no-store"),`SERVER_ACTION_DENIAL:${method}:${path}:${response.status}`);
+    }
     const expectedPatterns=PILOT_ADMIN_ROUTES.filter(route=>!route.pattern.startsWith("/api/")&&!["/","/leads","/settings/email","/healthz","/readyz"].includes(route.pattern)).map(route=>route.pattern).sort();
     check(JSON.stringify([...covered].sort())===JSON.stringify(expectedPatterns),"PUBLIC_PATTERN_COVERAGE");
-    const report={environment:"local production Next build; real provider mode; no provider requests",pilotFlag:"unset; production default",authDisplayPaths:paths.length,staticAssets:staticFiles.length,staticExactByteGet:positiveBytes,probes,methods,coveredPatterns:[...covered].sort(),failures,limitations:"Synthetic token display is SSR coverage only; real auth/token mutation is covered by the separate 238-pair PostgreSQL audit. No browser QA or hosted execution claimed."};
+    const report={environment:"local production Next build; real provider mode; no provider requests",pilotFlag:"unset; production default",deniedBuildPaths:deniedPaths.length,deniedMethodProbes:deniedPaths.length*methods.length,serverActionControls:actionControls.length,authDisplayPaths:paths.length,staticAssets:staticFiles.length,staticExactByteGet:positiveBytes,probes,methods,coveredPatterns:[...covered].sort(),failures,limitations:"Synthetic token display is SSR coverage only; real auth/token mutation is covered by the separate 238-pair PostgreSQL audit. No browser QA or hosted execution claimed."};
     await writeFile(join(reportDir,"pilot-public-assets.json"),JSON.stringify(report,null,2)+"\n");
     assert.equal(child.exitCode,null,"OWNED_PRODUCTION_SERVER_EXITED");
     assert.deepEqual(failures,[]);
-    console.log(JSON.stringify({authDisplayPaths:paths.length,staticAssets:staticFiles.length,probes,failures:0}));
+    console.log(JSON.stringify({deniedBuildPaths:deniedPaths.length,deniedMethodProbes:deniedPaths.length*methods.length,serverActionControls:actionControls.length,authDisplayPaths:paths.length,staticAssets:staticFiles.length,probes,failures:0}));
   }finally{
     if(child.exitCode===null){const ended=once(child,"exit");child.kill("SIGTERM");await ended;}
   }
