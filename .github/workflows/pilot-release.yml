@@ -16,8 +16,6 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      PILOT_CI_SUMMARY_FILE: ${{ runner.temp }}/pilot-ci-summary.json
     steps:
     - uses: actions/checkout@v4
       with:
@@ -38,6 +36,8 @@ jobs:
     - run: pnpm --filter @lobbystack/landing pilot:test
     - run: git diff --exit-code -- apps/admin/public/embed/embed.js
     - id: pilot-tests
+      env:
+        PILOT_CI_SUMMARY_FILE: ${{ runner.temp }}/pilot-ci-summary.json
       name: All workspaces and PostgreSQL integration; exact file coverage, no skipped tests
       run: node scripts/pilot-ci.mjs
     - uses: actions/upload-artifact@v4

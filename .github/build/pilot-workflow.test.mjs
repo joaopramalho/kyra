@@ -25,3 +25,13 @@ test("hosted pilot security jobs retain full secret history, strict Semgrep and 
   assert.match(run("dependencies"),/pnpm audit --prod --audit-level high/);
   for(const job of Object.values(workflow.jobs))assert.notEqual(job["continue-on-error"],true);
 });
+
+test("runner-dependent summary paths are resolved in the test step and match the sole artifact path", async () => {
+  const workflow = parse(await readFile(new URL(".github/workflows/pilot-release.yml", root), "utf8"));
+  const job = workflow.jobs.verify;
+  for (const value of Object.values(job.env ?? {})) assert.doesNotMatch(String(value), /\$\{\{[^}]*\brunner\./);
+  const tests = job.steps.find(step => step.id === "pilot-tests");
+  const upload = job.steps.find(step => step.uses?.startsWith("actions/upload-artifact@"));
+  assert.equal(tests.env.PILOT_CI_SUMMARY_FILE, "${{ runner.temp }}/pilot-ci-summary.json");
+  assert.equal(tests.env.PILOT_CI_SUMMARY_FILE, upload.with.path);
+});
