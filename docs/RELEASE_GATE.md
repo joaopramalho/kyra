@@ -89,3 +89,7 @@ PILOT_STAGING.md contains the dedicated prod Compose profile, private real-provi
 ## October 22 patched production build
 
 After Next 16.4.1 / DOMPurify 3.4.17, the same production-default test passed with **21 auth display paths, 148 static paths, 172 inherited build routes denied for all seven methods (1,204 denials), two Server Action denials and 2,417 total probes**, zero failures/skips. Static assets remain automatically inventoried and compared byte-for-byte. The additional inherited-route inventory comes from the actual Next app-path route manifest; no source route is opened and all earlier assertions remain. The first standalone invocation lacked the required local database role environment and failed startup; the successful run loaded that existing private test environment. Neither result claims provider connectivity, hosted execution or browser QA.
+
+## Patched production image recovery
+
+All three production images were rebuilt from the patched Next 16.4.1 / DOMPurify 3.4.17 lockfile at source commit 0160ff2 (pending CI-only work was present). A fresh local project then passed PostgreSQL and private-storage recovery, exact canonical 88-table equality, nonempty preserved migration journal, three RLS checks, 0600 operator-owned backup storage, tampered-dump rejection and confirmed removal of its own containers/volumes. No provider credentials, consumers, external calls, hosted staging or deployment were involved. The earlier pre-refresh images are historical evidence only. Full acceptance and actual hosted CI remain unresolved release gates.

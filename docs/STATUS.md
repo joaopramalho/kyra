@@ -1,25 +1,25 @@
 # Pilot release gate
 
-**Active — local validation only.** No hosted CI run or deployment is claimed. New features remain frozen; voice controllers, applied migrations and database grants remain unchanged.
+**Active; not released.** Feature freeze remains. No hosted CI, deployment, real provider connectivity or authenticated browser QA is claimed.
 
 ## Done locally
 
-- Production-default deny-by-default admin/worker routing; permitted email/CRM/auth/session/capture/unsubscribe/webhook/health/calendar callback only. Marketing is a separate static artifact.
-- Strict isolation: 88-table equality and all 238 API-method combinations, with actual PostgreSQL roles, no skipped/failed probes and the original exhaustive timeout. Protected dashboard pages have 88 additional HTTP controls plus a direct PostgreSQL access-guard case; verified identity, canonical business membership and valid tenant configuration are mandatory.
-- Public authentication/static production-default audit: 21 display paths and 149 static paths, all seven methods, 1,218 probes; exact-byte positives and closed-asset controls. Original tests remain unchanged. See PILOT_PUBLIC_ASSETS.md and PILOT_ADMIN_PAGES.md.
-- Production dependency audit: zero high/critical advisories at the unchanged lockfile checkpoint. Dev-only triage is in DEV_ADVISORIES.md; unused standalone Zapier is excluded from the pilot build.
-- Verified-operator CLI bootstrap, tenant configuration, calendar authorization and inspection; strict private outputs, App/Auth role separation, ownership checks and real PostgreSQL tests. See TENANT_CONFIGURATION.md.
-- Public artifact: six static pages / eighteen files; inherited claims/articles/legal/contact content excluded, required notices preserved and LMC details marked [FILL]. Artifact/tamper/HTTP checks and public desktop/mobile QA passed. See STATIC_PUBLIC_SITE.md.
-- Workspace/script types, full build, sixteen public prerender checks, targeted lint and original proxy tests passed. Strict Semgrep and secret scans remain release gates. The wider admin unit checkpoint passed 925 with 27 existing environment integration exclusions; this is not no-skip hosted integration evidence. Authenticated visual browser QA is not claimed because the browser URL policy denied access.
-
-- Dedicated production Compose profile, real-provider private template/preflight and DNS/key/consent checklist completed. Three production images built; isolated PostgreSQL/local-storage recovery passed with exact 88-table name equality, preserved migration journal, three RLS checks, private 0600 storage, tampered-backup rejection and confirmed cleanup. Twelve configuration tests and strict Semgrep (101 rules / 1,802 targets, zero findings/errors) passed. See PILOT_STAGING.md. No real provider call or HTTPS deployment is claimed.
+- Production-default deny-by-default admin/worker routing, separate static public artifact, strict 88-table/238-method isolation, canonical configured-tenant dashboard guards and operator tenant/calendar CLI. Voice controllers, applied migrations and database grants remain unchanged.
+- Next 16.4.1 / DOMPurify 3.4.17 security refresh: frozen install, full build, workspace/script types, targeted lint and production audit high 0 / critical 0. Remaining lower-severity/development advisories are documented in DEV_ADVISORIES.md.
+- Patched production HTTP build: 2,417 probes, including 21 auth display paths, 148 static assets, 172 inherited routes under seven methods and two Server Action controls; zero failures. See PILOT_PUBLIC_ASSETS.md.
+- Separate public site has six static pages / eighteen files, preserved notices and [FILL] legal/contact details. Dedicated production Compose, real-provider template/preflight, DNS/consent checklist and isolated recovery mechanism are implemented. All three patched production images built; fresh recovery passed all 88 tables, private storage, migration journal, three RLS checks, tampered-backup rejection and owned-resource cleanup.
+- Strict Semgrep: 101 rules / 1,807 targets, zero findings/errors; staged and full-history secret scans passed with unchanged policies. Build-configuration tests passed.
+- Draft dedicated hosted workflow and strict report verifier prepared. Local disposable PostgreSQL/Redis run passed 1,965 workspace and 166 script tests with zero skips. Acceptance attempt: 137 passed / 6 failed / 0 skipped; cleanup passed. This is a failed gate, not no-skip success. Failures include legacy/pilot context mismatch, shared OTP quota and tenant inspection timeout. No test assertion or deadline was relaxed.
 
 ## Still required
 
-- Prepare and execute hosted units plus real PostgreSQL pilot integration with zero skipped integration, Gitleaks, strict Semgrep and production audit. Local checks do not establish hosted success.
+- Resolve all six acceptance failures and validate the complete workflow. A limited CI fixture-context proposal awaits approval after automatic review rejected a broader runner change; the runner has not been changed by that proposal.
+- Execute and inspect actual hosted unit/PostgreSQL, Gitleaks, strict Semgrep and production audit jobs. Local runs do not certify hosted success.
 
 ## Your manual steps
 
-- Supply approved entity, contact, physical address and legal details for [FILL] before release; public pages remain noindex.
-- Configure domain DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys through PILOT_STAGING.md; complete actual calendar consent.
-- Supply an authorized repository/hosting destination and credentials when the local release gate is ready.
+- Connect GitHub and identify the authorized fork account/repository so hosted CI can run.
+- Supply approved entity, contact, physical address and legal details for [FILL]; public pages remain noindex.
+- Configure domain/DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys using PILOT_STAGING.md; approve the hosting destination and complete actual calendar consent before release.
+
+Subsequent tenant diagnosis: the five original setup cases passed unchanged with zero skips on the original dedicated PostgreSQL 18 instance; inspection completed in 986 ms. This does not certify the disposable PostgreSQL 16 context or erase the six failures in the combined gate.
