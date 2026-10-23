@@ -59,3 +59,5 @@ Twelve build/configuration tests passed, zero skips/failures; shell syntax and N
 ## Patched production image recovery
 
 All three production images were rebuilt from the patched Next 16.4.1 / DOMPurify 3.4.17 lockfile at source commit 0160ff2 (pending CI-only work was present). A fresh local project then passed PostgreSQL and private-storage recovery, exact canonical 88-table equality, nonempty preserved migration journal, three RLS checks, 0600 operator-owned backup storage, tampered-dump rejection and confirmed removal of its own containers/volumes. No provider credentials, consumers, external calls, hosted staging or deployment were involved. The earlier pre-refresh images are historical evidence only. Full acceptance and actual hosted CI remain unresolved release gates.
+
+Current gate update: actual [hosted pilot CI](https://github.com/joaopramalho/kyra/actions/runs/39903817220) subsequently passed with no skipped tests; see PILOT_CI.md and RELEASE_GATE.md. This supersedes the earlier hosted-CI pending notes in this historical checkpoint. Provider/DNS/legal/host configuration and actual deployment remain manual as described in STATUS.md.

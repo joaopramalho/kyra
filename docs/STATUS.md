@@ -1,22 +1,17 @@
 # Pilot release gate
 
-**Active — local gates passed; hosted CI not yet verified.** Features remain frozen. No deployment, real provider connectivity or authenticated browser QA is claimed.
+**Pilot engineering gate verified.** Features remain frozen; this is not a deployment or real-provider-connectivity claim.
 
-## Done locally
+## Done
 
-- Production-default admin/worker allowlist; all other routes denied. Separate static public site: six pages / eighteen files, inherited claims excluded, required notices preserved, legal/contact details [FILL].
-- Strict 88-table / 238-method isolation, configured-tenant dashboard guards and verified-operator tenant/calendar CLI. Voice controllers, applied migrations and database grants remain unchanged.
-- Next 16.4.1 / DOMPurify 3.4.17; frozen install, full build, types/lint and production audit high 0 / critical 0. Lower-severity/development triage: DEV_ADVISORIES.md.
-- Complete isolated runner: **2,274 passed, zero failures/skips**, including every original acceptance source; 24 configuration tests passed. Approved fixture contexts preserve all assertions, quotas and deadlines. Separate production test: 2,417 HTTP probes passed. See PILOT_CI.md and RELEASE_GATE.md.
-- Production Compose, provider template/preflight and manual checklist; all three patched images built. Recovery passed exact 88-table equality, migration journal, three RLS checks, private storage, tampered-backup rejection and cleanup. See PILOT_STAGING.md.
-- Final strict Semgrep: 101 rules / 1,808 targets, zero findings/errors; staged secret scan passed. Policies and existing default scan-scope limits remain unchanged.
-
-## Still required
-
-- Execute and inspect actual hosted unit/PostgreSQL, Gitleaks, strict Semgrep and production audit jobs. Local success does not certify hosted execution.
+- Production-default admin/worker allowlist; closed routes return 404. Voice code remains unchanged. Separate static public artifact: six pages / eighteen files, preserved notices and [FILL] details.
+- Strict isolation across 88 application tables and all 238 allowlisted API-method combinations. Configured-tenant dashboard guards and verified-operator tenant/calendar CLI tested.
+- Patched Next 16.4.1 / DOMPurify 3.4.17; build, types/lint, production audit (high 0 / critical 0), strict Semgrep and complete-history Gitleaks passed. Lower-severity/development triage: DEV_ADVISORIES.md.
+- Actual [hosted CI](https://github.com/joaopramalho/kyra/actions/runs/39903817220) passed all five jobs at `bcab842`. Downloaded artifact independently verified **2,274 passed / zero failed / zero skipped**, including all 143 acceptance cases and exact coverage of all 46 original acceptance sources. Local production HTTP checks passed 2,417 probes; the hosted runner also completed its production HTTP test.
+- Three patched production images built; isolated PostgreSQL/storage recovery passed exact 88-table equality, preserved migration journal, three RLS checks, private storage, tampered-backup rejection and cleanup. Production profile/template/checklist: PILOT_STAGING.md.
 
 ## Your manual steps
 
-- Complete the prepared GitHub CLI browser login (or connect GitHub) and confirm the authorized fork account so hosted CI can run.
-- Supply approved entity/contact/physical-address/legal [FILL] details; public pages remain noindex.
-- Configure DNS, Resend sending/receiving/webhook signing, Google OAuth consent, LLM keys and hosting using PILOT_STAGING.md; complete actual calendar consent before release.
+- Supply approved business/entity/contact/physical-address/legal [FILL] details; public pages remain noindex.
+- Configure DNS and real Resend in/out/webhook credentials, Google OAuth consent/calendar and LLM model/key through PILOT_STAGING.md.
+- Choose/configure the production host and separately deploy the static artifact and app/worker profile; verify HTTPS/host headers and real provider connectivity before serving customers. Keep operator secrets and backups private.

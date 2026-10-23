@@ -2,11 +2,20 @@
 
 Lead My Company helps service businesses capture, engage, and convert more leads into booked jobs — automatically, 24/7.
 
-LMC is being built for US home-service contractors, starting with roofing businesses in Florida. The implemented email path includes form/direct/owner-forwarded intake, qualification, calendar-backed estimate booking, owner summaries, human handoff and bounded consented follow-ups. Run the offline demo below; see [STATUS](docs/STATUS.md) for remaining configuration, exhaustive isolation and security work.
+LMC is being built for US home-service contractors, starting with roofing businesses in Florida. The implemented email path includes form/direct/owner-forwarded intake, qualification, calendar-backed estimate booking, owner summaries, human handoff and bounded consented follow-ups. Run the offline demo below; see [STATUS](docs/STATUS.md) for the verified pilot gate and remaining manual deployment setup.
+
+Pilot source: [`joaopramalho/kyra`, branch `lmc/v1`](https://github.com/joaopramalho/kyra/tree/lmc/v1).
 
 ## Local development
 
 Use Linux or WSL2, Node 22.12 or newer and pnpm 10.30.3. The security tests intentionally depend on POSIX permissions and symbolic links.
+
+For a fresh checkout of the pilot:
+
+```sh
+git clone --branch lmc/v1 https://github.com/joaopramalho/kyra.git lead-my-company
+cd lead-my-company
+```
 
 ```sh
 corepack prepare pnpm@10.30.3 --activate
@@ -18,7 +27,7 @@ pnpm typecheck
 pnpm build
 ```
 
-The default test command uses fake collaborators in unit tests and skips explicitly opted-in database tests. It does not send live email or make live voice calls. Do not enter production provider credentials for local tests. The offline email demo constructs fake providers explicitly. Real email adapters are opt-in; the remaining legacy dev voice/SMS/provider entry points still need their full fake-default audit.
+The default test command uses fake collaborators in unit tests and skips explicitly opted-in database tests. It does not send live email or make live voice calls. Do not enter production provider credentials for local tests. The offline email demo constructs fake providers explicitly. Real email adapters are opt-in. Inherited voice/SMS code remains outside the email pilot; its HTTP entry points are closed in production pilot mode.
 
 For integration tests, use an isolated local PostgreSQL database with pgvector and Redis. Never point these tests at production. The repository includes Docker Compose infrastructure:
 
@@ -70,7 +79,24 @@ The existing voice runtime remains intact. Email uses a separate channel adapter
 
 ## Project status and verification
 
-The Linux baseline passes tests, lint, typecheck and build. The recorded baseline dependency audit has unresolved vulnerabilities. The email a–l acceptance workflows pass with fake external providers and PostgreSQL. Rebranding/configuration work, exhaustive tenant isolation and security remediation remain open; the exhaustive acceptance gate is deliberately still red. No production-readiness claim is made.
+The email pilot release gate passed actual [GitHub Actions](https://github.com/joaopramalho/kyra/actions/runs/39903817220): all five required jobs succeeded and the downloaded sanitized artifact independently confirmed 2,274 passed / zero failed / zero skipped, with all 46 original acceptance sources included. The unchanged exhaustive case covers 88 application tables and 238 allowlisted API-method combinations. The gate includes build, types, targeted admin/landing lint, static artifact regressions, Gitleaks, strict Semgrep and the production high/critical dependency threshold. Development and lower-severity advisories remain documented. Real domain/provider/legal/hosting configuration is manual; no production deployment or live-provider readiness is claimed.
+
+For the same complete no-skip runner, use a clean Linux/WSL checkout without private checkout env files and a local Docker daemon. Build first and stop any other admin dev preview while this command owns its test HTTP instances:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+node scripts/pilot-ci.mjs
+```
+
+The runner creates isolated PostgreSQL/Redis, actual runtime-role credentials and fake external providers, then removes its own resources. The ordinary `pnpm test` profile above retains its explicit integration opt-ins; use the pilot runner for the no-skip release proof.
+
+- [Pilot release gate](docs/RELEASE_GATE.md)
+- [Hosted/local CI scope and evidence](docs/PILOT_CI.md)
+- [Production profile and backup/restore rehearsal](docs/PILOT_STAGING.md)
+- [Tenant configuration CLI](docs/TENANT_CONFIGURATION.md)
+- [Separate static public artifact](docs/STATIC_PUBLIC_SITE.md)
+- [Production/development advisory triage](docs/DEV_ADVISORIES.md)
 
 - [Reconnaissance and baseline](docs/RECON.md)
 - [Implementation status](docs/STATUS.md)
