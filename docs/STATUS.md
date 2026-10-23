@@ -22,4 +22,4 @@
 - Supply approved entity, contact, physical address and legal details for [FILL]; public pages remain noindex.
 - Configure domain/DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys using PILOT_STAGING.md; approve the hosting destination and complete actual calendar consent before release.
 
-Subsequent tenant diagnosis: the five original setup cases passed unchanged with zero skips on the original dedicated PostgreSQL 18 instance; inspection completed in 986 ms. This does not certify the disposable PostgreSQL 16 context or erase the six failures in the combined gate.
+Tenant timeout diagnosis: the five original setup cases passed unchanged and without skips both on the original PostgreSQL 18 and a fresh disposable PostgreSQL 16 (inspection 986 ms / 215 ms). The combined run remains failed; its timeout cause is not established. See PILOT_CI.md.
