@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyVitestReport } from "./pilot-ci-report.mjs";
+import { pilotAcceptanceContexts } from "./pilot-ci-contexts.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 if (process.platform !== "linux") throw new Error("PILOT_CI_REQUIRES_LINUX_OR_WSL");
@@ -115,21 +116,39 @@ try {
   const fixture = join(privateRoot, "inbound.json");
   await step("inbound-fixture", process.execPath, ["scripts/security/prepare-pilot-inbound-fixture.mjs", fixture]);
   const httpEnvironment = { ...environment, OTEL_SDK_DISABLED: "true", ADMIN_PORT: String(appPort), APP_BASE_URL: base, AUTH_TRUSTED_ORIGINS: base, LMC_PUBLIC_BASE_URL: base, LMC_PILOT_MODE: "true", LMC_FAKE_INBOUND_FIXTURE_FILE: fixture, LMC_TEST_HTTP_BASE_URL: base, TURNSTILE_SECRET_KEY: "" };
-  phase = "start-owned-http";
-  const fd = openSync(join(privateRoot, "admin.log"), "wx", 0o600);
-  server = spawn(process.execPath, [join(root, "apps/admin/node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", String(appPort)], { cwd: join(root, "apps/admin"), env: httpEnvironment, detached: true, stdio: ["ignore", fd, fd] });
-  closeSync(fd);
-  await waitForHealth(base);
-  phase = "anonymous-http-startup";
-  // Compile/readiness work precedes timed isolation cases; no tenant data or
-  // capability is supplied and none of the auth/callback write endpoints run.
-  for (const [path, status] of [["/en/login", 200], ["/leads", 307], ["/settings/email", 307], ["/api/auth/get-session", 200], ["/api/leads", 401], ["/api/lmc/settings", 401]]) {
-    const response = await fetch(base + path, { redirect: "manual", signal: AbortSignal.timeout(60000) });
-    await response.arrayBuffer();
-    if (response.status !== status) throw new Error("PILOT_CI_ANONYMOUS_STARTUP_BOUNDARY");
+  const contexts = pilotAcceptanceContexts(tracked.filter(path => path.startsWith("tests/lmc/") && path.endsWith(".acceptance.ts")));
+  summary.acceptanceContexts = contexts.map(context => ({ name: context.name, pilot: context.pilot, sourceFiles: context.files.length }));
+  for (const context of contexts) {
+    phase = "context-infrastructure-" + context.name;
+    const contextRedis = "lmc-ci-redis-" + context.name + "-" + token;
+    docker(["run", "-d", "--name", contextRedis, "--label", label, "--publish", "127.0.0.1::6379", "redis:7.4-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541"]);
+    const contextRedisUrl = "redis://127.0.0.1:" + port(contextRedis, "6379/tcp");
+    const contextEnvironment = { ...httpEnvironment, LMC_PILOT_MODE: String(context.pilot), REDIS_URL: contextRedisUrl, REDIS_TEST_URL: contextRedisUrl, LOBBYSTACK_TEST_REDIS_URL: contextRedisUrl };
+    phase = "start-owned-http-" + context.name;
+    const fd = openSync(join(privateRoot, `admin-${context.name}.log`), "wx", 0o600);
+    server = spawn(process.execPath, [join(root, "apps/admin/node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", String(appPort)], { cwd: join(root, "apps/admin"), env: contextEnvironment, detached: true, stdio: ["ignore", fd, fd] });
+    closeSync(fd);
+    await waitForHealth(base);
+    phase = "anonymous-http-startup-" + context.name;
+    // Startup has no tenant identity/capability and never invokes auth writes.
+    const boundaries = [["/en/login", 200], ["/api/auth/get-session", 200], ["/api/leads", 401], ["/api/lmc/settings", 401], ...(context.pilot ? [["/leads", 307], ["/settings/email", 307]] : [])];
+    for (const [path, status] of boundaries) {
+      const response = await fetch(base + path, { redirect: "manual", signal: AbortSignal.timeout(60000) });
+      await response.arrayBuffer();
+      if (response.status !== status) throw new Error("PILOT_CI_ANONYMOUS_STARTUP_BOUNDARY");
+    }
+    try {
+      await vitest("lmc-acceptance-" + context.name, root, context.files, ["--config", "tests/lmc/vitest.config.mts"], contextEnvironment);
+    } finally {
+      if (server.exitCode === null) {
+        const ended = once(server, "exit");
+        process.kill(-server.pid, "SIGTERM");
+        await Promise.race([ended, delay(10000)]);
+        if (server.exitCode === null) { process.kill(-server.pid, "SIGKILL"); await ended; }
+      }
+      server = undefined;
+    }
   }
-  summary.anonymousStartupBoundaries = 6;
-  await vitest("lmc-acceptance", root, tracked.filter(path => path.startsWith("tests/lmc/") && path.endsWith(".acceptance.ts")), ["--config", "tests/lmc/vitest.config.mts"], httpEnvironment);
   await step("production-public-auth-static", process.execPath, ["--test", "tests/lmc/pilot-public-assets.node.mjs"], httpEnvironment);
   if (summary.results.reduce((total, result) => total + result.tests, 0) === 0) throw new Error("PILOT_CI_EMPTY_VALIDATION");
   summary.complete = true;

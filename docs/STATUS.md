@@ -1,25 +1,22 @@
 # Pilot release gate
 
-**Active; not released.** Feature freeze remains. No hosted CI, deployment, real provider connectivity or authenticated browser QA is claimed.
+**Active — local gates passed; hosted CI not yet verified.** Features remain frozen. No deployment, real provider connectivity or authenticated browser QA is claimed.
 
 ## Done locally
 
-- Production-default deny-by-default admin/worker routing, separate static public artifact, strict 88-table/238-method isolation, canonical configured-tenant dashboard guards and operator tenant/calendar CLI. Voice controllers, applied migrations and database grants remain unchanged.
-- Next 16.4.1 / DOMPurify 3.4.17 security refresh: frozen install, full build, workspace/script types, targeted lint and production audit high 0 / critical 0. Remaining lower-severity/development advisories are documented in DEV_ADVISORIES.md.
-- Patched production HTTP build: 2,417 probes, including 21 auth display paths, 148 static assets, 172 inherited routes under seven methods and two Server Action controls; zero failures. See PILOT_PUBLIC_ASSETS.md.
-- Separate public site has six static pages / eighteen files, preserved notices and [FILL] legal/contact details. Dedicated production Compose, real-provider template/preflight, DNS/consent checklist and isolated recovery mechanism are implemented. All three patched production images built; fresh recovery passed all 88 tables, private storage, migration journal, three RLS checks, tampered-backup rejection and owned-resource cleanup.
-- Strict Semgrep: 101 rules / 1,807 targets, zero findings/errors; staged and full-history secret scans passed with unchanged policies. Build-configuration tests passed.
-- Draft dedicated hosted workflow and strict report verifier prepared. Local disposable PostgreSQL/Redis run passed 1,965 workspace and 166 script tests with zero skips. Acceptance attempt: 137 passed / 6 failed / 0 skipped; cleanup passed. This is a failed gate, not no-skip success. Failures include legacy/pilot context mismatch, shared OTP quota and tenant inspection timeout. No test assertion or deadline was relaxed.
+- Production-default admin/worker allowlist; all other routes denied. Separate static public site: six pages / eighteen files, inherited claims excluded, required notices preserved, legal/contact details [FILL].
+- Strict 88-table / 238-method isolation, configured-tenant dashboard guards and verified-operator tenant/calendar CLI. Voice controllers, applied migrations and database grants remain unchanged.
+- Next 16.4.1 / DOMPurify 3.4.17; frozen install, full build, types/lint and production audit high 0 / critical 0. Lower-severity/development triage: DEV_ADVISORIES.md.
+- Complete isolated runner: **2,274 passed, zero failures/skips**, including every original acceptance source; 24 configuration tests passed. Approved fixture contexts preserve all assertions, quotas and deadlines. Separate production test: 2,417 HTTP probes passed. See PILOT_CI.md and RELEASE_GATE.md.
+- Production Compose, provider template/preflight and manual checklist; all three patched images built. Recovery passed exact 88-table equality, migration journal, three RLS checks, private storage, tampered-backup rejection and cleanup. See PILOT_STAGING.md.
+- Final strict Semgrep: 101 rules / 1,808 targets, zero findings/errors; staged secret scan passed. Policies and existing default scan-scope limits remain unchanged.
 
 ## Still required
 
-- Resolve all six acceptance failures and validate the complete workflow. A limited CI fixture-context proposal awaits approval after automatic review rejected a broader runner change; the runner has not been changed by that proposal.
-- Execute and inspect actual hosted unit/PostgreSQL, Gitleaks, strict Semgrep and production audit jobs. Local runs do not certify hosted success.
+- Execute and inspect actual hosted unit/PostgreSQL, Gitleaks, strict Semgrep and production audit jobs. Local success does not certify hosted execution.
 
 ## Your manual steps
 
-- Connect GitHub and identify the authorized fork account/repository so hosted CI can run.
-- Supply approved entity, contact, physical address and legal details for [FILL]; public pages remain noindex.
-- Configure domain/DNS, Resend sending/receiving/webhook signing, Google OAuth consent and LLM keys using PILOT_STAGING.md; approve the hosting destination and complete actual calendar consent before release.
-
-Tenant timeout diagnosis: the five original setup cases passed unchanged and without skips both on the original PostgreSQL 18 and a fresh disposable PostgreSQL 16 (inspection 986 ms / 215 ms). The combined run remains failed; its timeout cause is not established. See PILOT_CI.md.
+- Complete the prepared GitHub CLI browser login (or connect GitHub) and confirm the authorized fork account so hosted CI can run.
+- Supply approved entity/contact/physical-address/legal [FILL] details; public pages remain noindex.
+- Configure DNS, Resend sending/receiving/webhook signing, Google OAuth consent, LLM keys and hosting using PILOT_STAGING.md; complete actual calendar consent before release.
