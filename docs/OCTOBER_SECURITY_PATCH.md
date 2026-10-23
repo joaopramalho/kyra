@@ -1,0 +1,10 @@
+# October 22 production dependency refresh
+
+The refreshed registry audit returned three critical and two high findings against the previous Next 16.3.8 / DOMPurify 3.4.16 graph. The minimum fixed versions reported by the upstream advisories were installed: Next and its aligned ESLint plugin are pinned to 16.4.1; the existing global DOMPurify override is 3.4.17. The lockfile was resolved and installed frozen. No application feature, applied migration, grant, voice controller or scanner policy was changed for this remediation.
+
+- Next: [image-optimization advisory](https://github.com/advisories/GHSA-2464-fhr4-w9xw), [Server Actions advisory](https://github.com/advisories/GHSA-p3m5-59mp-jv5r), [use-cache advisory](https://github.com/advisories/GHSA-673q-mjm6-r5xr), [official 16.4.1 release](https://github.com/vercel/next.js/releases/tag/v16.4.1).
+- DOMPurify: [template/shadow-root advisory](https://github.com/advisories/GHSA-cg2g-xh64-v4q7), [IN_PLACE advisory](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr), [official 3.4.17 release](https://github.com/cure53/DOMPurify/releases/tag/3.4.17).
+
+The new exact-version policy test failed on the old manifests, then passed after the change. The installed-version Next MCP documentation resolver confirmed 16.4.1 and the bundled upgrade documentation was read. Full workspace build, workspace/script types, targeted admin/landing lint and sixteen public prerender checks passed. The refreshed `pnpm audit --prod --audit-level high` returned exit 0, high 0 and critical 0; low/moderate and development-only triage is in DEV_ADVISORIES.md. This gate does not claim every dependency is advisory-free.
+
+The complete no-skip workspace/PostgreSQL/LMC CI runner remains under validation. The existing production image recovery checkpoint used the previous dependency graph: rebuild those runtime images and repeat recovery before treating them as current release artifacts. No hosted run, deployment or authenticated browser QA is claimed by these dependency commands.
