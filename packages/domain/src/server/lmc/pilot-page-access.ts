@@ -19,3 +19,20 @@ export async function resolveLmcPilotPageAccess(context:{database:Database;authD
     return {tenantId};
   });
 }
+
+/** Verified invitees remain on setup-required while their owned pilot workspace is incomplete. */
+export async function isLmcPilotSetupRequired(context:{database:Database;authDatabase:Database},userId:string):Promise<boolean>{
+  const identity=lmcTenantIdentitySchema.shape.userId.safeParse(userId);
+  if(!identity.success)return false;
+  const [user]=await context.authDatabase.select({verified:users.emailVerified,activeBusinessId:users.activeBusinessId}).from(users).where(eq(users.id,identity.data)).limit(1);
+  if(!user?.verified)return false;
+  if(!user.activeBusinessId)return true;
+  return await withBusinessTransaction(context.database,{businessId:user.activeBusinessId,userId:identity.data,actorType:"operator"},async tx=>{
+    try{
+      await requireBusinessMembership(tx,{businessId:user.activeBusinessId!,userId:identity.data,minimumRole:"viewer"});
+      const [settings]=await tx.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,user.activeBusinessId!)).limit(1);
+      return !settings||!lmcBusinessSettingsSchema.safeParse(settings.config).success;
+    }
+    catch(error){if(error instanceof AuthorizationError)return false;throw error;}
+  });
+}

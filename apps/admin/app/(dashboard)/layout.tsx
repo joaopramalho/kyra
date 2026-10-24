@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
 import { isPilotMode } from "@lobbystack/shared";
-import { resolveLmcPilotPageAccess } from "../../../../packages/domain/src/server/lmc/pilot-page-access";
 import { headers } from "next/headers";
-import { eq } from "drizzle-orm";
-import { users } from "@lobbystack/db";
 import { notFound, redirect } from "next/navigation";
 
-import { getActiveOnboardingState, resolveOnboardingRoute } from "@lobbystack/domain";
+import { getActiveOnboardingState, isLmcPilotSetupRequired, resolveLmcPilotPageAccess, resolveOnboardingRoute } from "@lobbystack/domain";
 import { RootDocument, appMetadata } from "@/app/root-document";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { getAuthDatabase, getSession } from "@/lib/auth";
@@ -30,10 +27,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (!access) {
       // A verified new account has no tenant yet; explain manual pilot setup
       // instead of making a legitimate signup appear to have failed.
-      const [account] = await getAuthDatabase().db
-        .select({ verified: users.emailVerified, activeBusinessId: users.activeBusinessId })
-        .from(users).where(eq(users.id, session.user.id)).limit(1);
-      if (account?.verified && !account.activeBusinessId) redirect("/setup-required");
+      if (await isLmcPilotSetupRequired({database:getAppDatabase().db,authDatabase:getAuthDatabase().db}, session.user.id)) redirect("/setup-required");
       // Never weaken the guard for unverified, revoked, foreign or
       // misconfigured workspaces.
       notFound();
