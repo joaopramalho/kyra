@@ -35,6 +35,23 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
       }
       probed.push(`${method} ${path}`);
     }
+    // Verified fresh accounts get an explicit, guarded setup state, not a false 404.
+    await db.admin.db.update(users).set({activeBusinessId:null}).where(eq(users.id,a.ownerId));
+    let unconfigured=await fetch(new URL("/leads",base),{headers:{cookie:cookieA},redirect:"manual"});
+    check(unconfigured.status===307&&new URL(unconfigured.headers.get("location")??"/",base).pathname==="/setup-required","PILOT_NEW_ACCOUNT_SETUP_REDIRECT");
+    await unconfigured.arrayBuffer();
+    unconfigured=await fetch(new URL("/setup-required",base),{headers:{cookie:cookieA},redirect:"manual"});
+    const setupBody=await unconfigured.text();
+    check(unconfigured.status===200&&setupBody.includes("Workspace setup required"),"PILOT_NEW_ACCOUNT_SETUP_PAGE");
+    check(!setupBody.includes(b.ownerId),"PILOT_NEW_ACCOUNT_ISOLATION");
+    unconfigured=await fetch(new URL("/setup-required",base),{redirect:"manual"});
+    check(unconfigured.status===307&&new URL(unconfigured.headers.get("location")??"/",base).pathname==="/en/login","PILOT_SETUP_PAGE_REQUIRES_SESSION");
+    await unconfigured.arrayBuffer();
+    await db.admin.db.update(users).set({activeBusinessId:a.tenantId}).where(eq(users.id,a.ownerId));
+    unconfigured=await fetch(new URL("/setup-required",base),{headers:{cookie:cookieA},redirect:"manual"});
+    check(unconfigured.status===404,"PILOT_CONFIGURED_ACCOUNT_SETUP_PAGE_DENIED");
+    await unconfigured.arrayBuffer();
+
     // The onboarding exception is confined to verified, configured, active members.
     await db.admin.db.update(users).set({emailVerified:false}).where(eq(users.id,a.ownerId));
     let denied=await fetch(new URL("/leads",base),{headers:{cookie:cookieA},redirect:"manual"});

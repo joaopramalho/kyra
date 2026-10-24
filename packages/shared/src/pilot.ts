@@ -40,6 +40,7 @@ export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   ...["/healthz", "/readyz", "/api/health/live", "/api/health/ready"].map(path => ({ pattern: path, match: new RegExp(`^${path}$`), methods: apiRead })),
   { pattern: "/", match: /^\/$/, methods: read },
   { pattern: "/leads", match: /^\/leads$/, methods: read },
+  { pattern: "/setup-required", match: /^\/setup-required$/, methods: read },
   { pattern: "/settings/email", match: /^\/settings\/email$/, methods: read },
   { pattern: "/[locale]/auth-pages", match: /^\/(?:(?:en|fr)\/)?(?:login|signup|forgot-password|reset-password|verify-email|confirm-email-change)$/, methods: read },
   { pattern: "/[locale]/reset-password/[token]", match: /^\/(?:(?:en|fr)\/)?reset-password\/[A-Za-z0-9_.~-]+$/, methods: read },

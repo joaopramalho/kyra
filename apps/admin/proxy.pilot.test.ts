@@ -25,10 +25,10 @@ it("denies inherited routes for every method before CSRF, locale redirects or ma
 });
 
 it("allows concrete pilot actions while refusing other methods on allowed routes", () => {
-  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/callback", "GET"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/settings/email", "GET"]] as const) {
+  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/callback", "GET"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"]] as const) {
     expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(200);
   }
-  for (const [path, method] of [["/api/businesses", "POST"], ["/leads", "POST"], ["/api/leads", "DELETE"], ["/api/auth/get-session", "POST"], ["/healthz", "DELETE"]] as const) {
+  for (const [path, method] of [["/api/businesses", "POST"], ["/leads", "POST"], ["/setup-required", "POST"], ["/api/leads", "DELETE"], ["/api/auth/get-session", "POST"], ["/healthz", "DELETE"]] as const) {
     const response = proxy(request(path, method));
     expect(response.status, `${method} ${path}`).toBe(405);
     expect(response.headers.get("allow")).toBeTruthy();
@@ -38,6 +38,7 @@ it("allows concrete pilot actions while refusing other methods on allowed routes
 
 it("blocks Server Actions and malformed dynamic segments even through allowed paths", () => {
   expect(proxy(request("/leads", "POST", { "next-action": "inherited-action" })).status).toBe(404);
+  expect(proxy(request("/setup-required", "GET", { "next-action": "inherited-action" })).status).toBe(404);
   expect(proxy(request("/api/lmc/settings", "PUT", { "next-action": "inherited-action" })).status).toBe(404);
   for (const path of ["/api/leads/one%2ftwo", "/api/leads/one%5ctwo", "/api/lmc/capture/token%00", "/api/leads//", "/api/lmc/capture/.", "/api/lmc/capture/.."])
     expect(proxy(request(path)).status, path).toBe(404);
