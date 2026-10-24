@@ -5,7 +5,7 @@ import { loadCallRouting, type OnboardingFollowupSender } from "@lobbystack/doma
 import { createQueue, createRedisConnection, createWorkerOptions, enqueueJob, isKnownJobType, jobQueues, type JobEnvelope, type JobQueue } from "@lobbystack/jobs";
 import { createEmbeddingProvider } from "@lobbystack/providers/ai/embeddingProvider";
 import { FirecrawlProvider } from "@lobbystack/providers/crawling/firecrawl";
-import { SmtpEmailProvider } from "@lobbystack/providers/email/smtp";
+import { ResendTransactionalEmailProvider, SmtpEmailProvider } from "@lobbystack/providers/email/smtp";
 import { GoogleCalendarProvider } from "@lobbystack/providers/google/calendar";
 import { PolarBillingProvider } from "@lobbystack/providers/polar/polarBilling";
 import { createStorageProvider } from "@lobbystack/providers/storage/provider";
@@ -25,7 +25,16 @@ import { configureSchedulers } from "./scheduler";
 import { getWorkerSnapshotCache } from "./snapshot-cache";
 import { createLmcEmailRuntime, emailWorkerEnabled } from "./lmcEmail";
 
-function createEmailProvider(): SmtpEmailProvider | undefined {
+function createEmailProvider(): SmtpEmailProvider | ResendTransactionalEmailProvider | undefined {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (apiKey) {
+    console.info("Transactional email provider: Resend HTTPS API.");
+    return new ResendTransactionalEmailProvider({
+      apiKey,
+      from: process.env.EMAIL_FROM ?? "Kyra <no-reply@localhost>",
+      ...(process.env.EMAIL_REPLY_TO ? { replyTo: process.env.EMAIL_REPLY_TO } : {}),
+    });
+  }
   const host = process.env.SMTP_HOST;
   if (!host) {
     console.warn("SMTP_HOST is missing. Authentication email jobs will fail until email delivery is configured.");
