@@ -53,6 +53,7 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     passwordAlgorithm: varchar("password_algorithm", { length: 32 }),
     platformRole: varchar("platform_role", { length: 32 }).default("operator").notNull(),
+    twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
     activeBusinessId: uuid("active_business_id"),
     preferredLocale: varchar("preferred_locale", { length: 8 }).default("en").notNull(),
     ...legacyId,
@@ -111,6 +112,39 @@ export const verifications = pgTable(
     ...timestamps,
   },
   (table) => [index("verifications_identifier_idx").on(table.identifier)],
+);
+
+export const twoFactors = pgTable(
+  "two_factors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    verified: boolean("verified").default(false).notNull(),
+    failedVerificationCount: integer("failed_verification_count").default(0).notNull(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("two_factors_user_unique").on(table.userId)],
+);
+
+export const platformAdminAuditEvents = pgTable(
+  "platform_admin_audit_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    action: varchar("action", { length: 120 }).notNull(),
+    targetType: varchar("target_type", { length: 80 }).notNull(),
+    targetId: text("target_id"),
+    changes: jsonb("changes").$type<Record<string, unknown>>().default({}).notNull(),
+    requestId: uuid("request_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("platform_admin_audit_events_created_idx").on(table.createdAt),
+    index("platform_admin_audit_events_actor_idx").on(table.actorUserId, table.createdAt),
+  ],
 );
 
 export const businesses = pgTable(
@@ -1834,6 +1868,8 @@ export const schema = {
   accounts,
   sessions,
   verifications,
+  twoFactors,
+  platformAdminAuditEvents,
   businesses,
   businessMemberships,
   businessInvitations,

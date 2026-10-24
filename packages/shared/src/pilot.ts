@@ -18,6 +18,7 @@ const authPostPaths = [
   "email-otp/send-verification-otp", "email-otp/verify-email",
   "email-otp/request-password-reset", "email-otp/reset-password",
   "request-password-reset", "reset-password", "send-verification-email",
+  "two-factor/enable", "two-factor/verify-totp", "two-factor/verify-backup-code",
 ];
 
 export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
@@ -37,11 +38,17 @@ export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   { pattern: "/api/lmc/unsubscribe/[token]", match: /^\/api\/lmc\/unsubscribe\/[A-Za-z0-9_.-]+$/, methods: ["GET", "POST", "OPTIONS"] },
   { pattern: "/api/webhooks/lmc-email", match: /^\/api\/webhooks\/lmc-email$/, methods: post },
   { pattern: "/api/calendar/google/callback", match: /^\/api\/calendar\/google\/callback$/, methods: ["GET", "OPTIONS"] },
+  { pattern: "/api/internal/superadmin/overview", match: /^\/api\/internal\/superadmin\/overview$/, methods: apiRead },
+  { pattern: "/api/internal/superadmin/clients", match: /^\/api\/internal\/superadmin\/clients$/, methods: apiRead },
   ...["/healthz", "/readyz", "/api/health/live", "/api/health/ready"].map(path => ({ pattern: path, match: new RegExp(`^${path}$`), methods: apiRead })),
   { pattern: "/", match: /^\/$/, methods: read },
   { pattern: "/leads", match: /^\/leads$/, methods: read },
   { pattern: "/setup-required", match: /^\/setup-required$/, methods: read },
   { pattern: "/settings/email", match: /^\/settings\/email$/, methods: read },
+  { pattern: "/internal", match: /^\/internal$/, methods: read },
+  { pattern: "/internal/clients", match: /^\/internal\/clients$/, methods: read },
+  { pattern: "/internal/mfa", match: /^\/internal\/mfa$/, methods: read },
+  { pattern: "/internal/mfa/setup", match: /^\/internal\/mfa\/setup$/, methods: read },
   { pattern: "/[locale]/auth-pages", match: /^\/(?:(?:en|fr)\/)?(?:login|signup|forgot-password|reset-password|verify-email|confirm-email-change)$/, methods: read },
   { pattern: "/[locale]/reset-password/[token]", match: /^\/(?:(?:en|fr)\/)?reset-password\/[A-Za-z0-9_.~-]+$/, methods: read },
   { pattern: "/favicon.ico", match: /^\/favicon\.ico$/, methods: read },

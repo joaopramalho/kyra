@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { emailOTP } from "better-auth/plugins/email-otp";
+import { twoFactor } from "better-auth/plugins/two-factor";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { runWithAdapter } from "@better-auth/core/context";
@@ -9,7 +10,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { assertDatabaseRole, enqueueOutbox, withBusinessTransaction } from "@lobbystack/db";
-import { accounts, sessions, users, verifications } from "@lobbystack/db";
+import { accounts, sessions, twoFactors, users, verifications } from "@lobbystack/db";
 
 import { getDatabase } from "./databases";
 import { ensureMcpResource, isDisabledOAuthEndpoint, mcpOAuthPlugins, needsMcpResource, oauthProviderSchema, registrationWithApplicationType } from "./oauth-provider";
@@ -241,7 +242,7 @@ function createAuth(adapterDatabase?: Parameters<typeof drizzleAdapter>[0]) {
   return betterAuth({
     database: drizzleAdapter(adapterDatabase ?? database.db, {
       provider: "pg",
-      schema: { user: users, session: sessions, account: accounts, verification: verifications, ...oauthProviderSchema },
+      schema: { user: users, session: sessions, account: accounts, verification: verifications, twoFactor: twoFactors, ...oauthProviderSchema },
     }),
     baseURL: process.env.APP_BASE_URL ?? "http://localhost:3000",
     trustedOrigins: (process.env.AUTH_TRUSTED_ORIGINS ?? process.env.APP_BASE_URL ?? "http://localhost:3000").split(",").map((value) => value.trim()).filter(Boolean),
@@ -256,7 +257,13 @@ function createAuth(adapterDatabase?: Parameters<typeof drizzleAdapter>[0]) {
       // the shared per-path bucket rather than trusting a spoofable value.
       ...(trustedIpHeader ? { ipAddress: { ipAddressHeaders: [trustedIpHeader] } } : {}),
     },
-    plugins: [...mcpOAuthPlugins(), emailOTP({
+    plugins: [...mcpOAuthPlugins(), twoFactor({
+      issuer: "Lead My Company",
+      twoFactorTable: "twoFactor",
+      twoFactorCookieMaxAge: 600,
+      trustDeviceMaxAge: 0,
+      skipVerificationOnEnable: false,
+    }), emailOTP({
       disableSignUp: true,
       storeOTP: "hashed",
       expiresIn: 600,
