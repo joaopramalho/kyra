@@ -48,6 +48,65 @@ export class SmtpEmailProvider {
   }
 }
 
+
+/**
+ * Transactional email over Resend HTTPS. Reuses the SMTP provider's templates
+ * and stable outbox idempotency key, without opening blocked SMTP ports.
+ */
+export class ResendTransactionalEmailProvider {
+  constructor(private readonly config: {
+    apiKey: string;
+    from: string;
+    replyTo?: string;
+    fetch?: typeof fetch;
+  }) {
+    if (!/^re_[A-Za-z0-9_-]{8,}$/.test(config.apiKey)) {
+      throw new Error("RESEND_CONFIGURATION_REQUIRED");
+    }
+  }
+
+  async sendTemplate(input: Parameters<SmtpEmailProvider["sendTemplate"]>[0]): Promise<{ messageId: string }> {
+    assertCertificationRecipient("email", input.to);
+    const email = renderTemplate(input.template, input.subject, input.variables);
+    // An explicit sender must not inherit the application's default reply-to.
+    const replyTo = input.from ? input.replyTo : input.replyTo ?? this.config.replyTo;
+    const payload = {
+      from: input.from ?? this.config.from,
+      to: [input.to],
+      subject: input.subject,
+      text: email.text,
+      ...(email.html ? { html: email.html } : {}),
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    };
+
+    try {
+      const response = await (this.config.fetch ?? fetch)("https://api.resend.com/emails", {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          "Content-Type": "application/json",
+          ...(input.idempotencyKey ? { "Idempotency-Key": createHash("sha256").update(input.idempotencyKey).digest("hex") } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error("EMAIL_PROVIDER_UNAVAILABLE");
+      const result: unknown = await response.json();
+      const messageId = result !== null && typeof result === "object" && "id" in result
+        ? (result as { id: unknown }).id
+        : undefined;
+      if (typeof messageId !== "string" || messageId.length === 0) {
+        throw new Error("EMAIL_PROVIDER_UNAVAILABLE");
+      }
+      return { messageId };
+    } catch {
+      // Do not leak credentials, recipients or provider responses into job logs.
+      throw new Error("EMAIL_PROVIDER_UNAVAILABLE");
+    }
+  }
+}
+
 function renderTemplate(template: TemplateName, subject: string, variables: Record<string, string>): { text: string; html?: string } {
   const text = templateBody(template, variables);
 
