@@ -109,7 +109,12 @@ test("production-default pilot auth displays and every published static asset en
       const body=await response.text();
       check(response.status===404&&body===""&&response.headers.get("cache-control")?.includes("no-store"),`SERVER_ACTION_DENIAL:${method}:${path}:${response.status}`);
     }
-    const expectedPatterns=PILOT_ADMIN_ROUTES.filter(route=>!route.pattern.startsWith("/api/")&&!["/","/leads","/settings/email","/healthz","/readyz"].includes(route.pattern)).map(route=>route.pattern).sort();
+    const authenticatedPagePatterns=new Set([
+      "/", "/leads", "/setup-required", "/settings/email",
+      "/internal", "/internal/clients", "/internal/mfa", "/internal/mfa/setup",
+      "/healthz", "/readyz",
+    ]);
+    const expectedPatterns=PILOT_ADMIN_ROUTES.filter(route=>!route.pattern.startsWith("/api/")&&!authenticatedPagePatterns.has(route.pattern)).map(route=>route.pattern).sort();
     check(JSON.stringify([...covered].sort())===JSON.stringify(expectedPatterns),"PUBLIC_PATTERN_COVERAGE");
     const report={environment:"local production Next build; real provider mode; no provider requests",pilotFlag:"unset; production default",deniedBuildPaths:deniedPaths.length,deniedMethodProbes:deniedPaths.length*methods.length,serverActionControls:actionControls.length,authDisplayPaths:paths.length,staticAssets:staticFiles.length,staticExactByteGet:positiveBytes,probes,methods,coveredPatterns:[...covered].sort(),failures,limitations:"Synthetic token display is SSR coverage only; real auth/token mutation is covered by the separate 238-pair PostgreSQL audit. No browser QA or hosted execution claimed."};
     await writeFile(join(reportDir,"pilot-public-assets.json"),JSON.stringify(report,null,2)+"\n");

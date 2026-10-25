@@ -14,6 +14,7 @@ export async function probePilotAuthContext(context: HttpAuditContext) {
   const temporaryIds: string[] = [], ownedCookies: string[] = [], resetIdentifiers: string[] = [];
   const password = () => `Pilot-${randomUUID()}!9`;
   const initialPassword = password();
+  const adminRequire = createRequire(new URL("../../../apps/admin/package.json", import.meta.url));
   async function consume(response: Response) {
     const cookies = response.headers.getSetCookie().map(value => value.split(";")[0]).filter(Boolean).join("; ");
     if (cookies.includes("session_token=")) ownedCookies.push(cookies);
@@ -81,7 +82,6 @@ export async function probePilotAuthContext(context: HttpAuditContext) {
     await disabled.arrayBuffer();
     check((await db.admin.pool.query("select id from outbox_messages where aggregate_id::text=$1", [temporaryIds[2]])).rowCount === disabledBefore.rowCount, "PILOT_DISABLED_SENDER_QUEUED_EMAIL");
     probed.push("POST /api/auth/send-verification-email");
-    const adminRequire = createRequire(new URL("../../../apps/admin/package.json", import.meta.url));
     const sdk = await import(adminRequire.resolve("better-auth/api")) as { createEmailVerificationToken(secret: string, email: string): Promise<string> };
     const linkToken = await sdk.createEmailVerificationToken(process.env.BETTER_AUTH_SECRET, linkEmail);
     const parts = linkToken.split(".");
@@ -144,9 +144,35 @@ export async function probePilotAuthContext(context: HttpAuditContext) {
     const logoutCookie = login.headers.getSetCookie().map(value => value.split(";")[0]).filter(Boolean).join("; ");
     await consume(login);
     check(login.status === 200 && (await session(logoutCookie))?.user?.id === signupId, "PILOT_AUTH_LOGOUT_POSITIVE_CONTROL");
-    const logout = await request("/api/auth/sign-out", logoutCookie, b.tenantId, "POST", { "x-user-id": b.ownerId }, {});
+
+    const enableMfa = await request("/api/auth/two-factor/enable", logoutCookie, a.tenantId, "POST", { "x-user-id": b.ownerId, "x-actor-type": "system" }, { password: initialPassword, method: "totp" });
+    const enrollment = await enableMfa.json() as { totpURI?: string; backupCodes?: string[] };
+    const secret = enrollment.totpURI ? new URL(enrollment.totpURI).searchParams.get("secret") : null;
+    check(enableMfa.status === 200 && !!secret && (enrollment.backupCodes?.length ?? 0) > 0, `PILOT_AUTH_MFA_ENABLE:${enableMfa.status}`);
+    if (!secret || !enrollment.backupCodes?.[0]) throw new Error("PILOT_AUTH_MFA_CONTROL_MISSING");
+    const authEntry = adminRequire.resolve("better-auth");
+    const authRequire = createRequire(authEntry);
+    const [{ createOTP }, { base32 }] = await Promise.all([
+      import(authRequire.resolve("@better-auth/utils/otp")) as Promise<{ createOTP(secret: string): { totp(): Promise<string> } }>,
+      import(authRequire.resolve("@better-auth/utils/base32")) as Promise<{ base32: { decode(value: string): Uint8Array } }>,
+    ]);
+    const code = await createOTP(new TextDecoder().decode(base32.decode(secret))).totp();
+    const verifyMfa = await request("/api/auth/two-factor/verify-totp", logoutCookie, a.tenantId, "POST", { "x-user-id": b.ownerId, "x-actor-type": "system" }, { code, trustDevice: false });
+    const mfaCookie = verifyMfa.headers.getSetCookie().map(value => value.split(";")[0]).filter(Boolean).join("; ");
+    await consume(verifyMfa);
+    const mfaState = await db.admin.pool.query<{ two_factor_enabled: boolean; verified: boolean }>("select u.two_factor_enabled,t.verified from users u join two_factors t on t.user_id=u.id where u.id=$1", [signupId]);
+    check(verifyMfa.status === 200 && mfaCookie.includes("session_token=") && mfaState.rows[0]?.two_factor_enabled === true && mfaState.rows[0]?.verified === true, `PILOT_AUTH_MFA_TOTP:${verifyMfa.status}`);
+    const backup = await request("/api/auth/two-factor/verify-backup-code", mfaCookie, a.tenantId, "POST", { "x-user-id": b.ownerId, "x-actor-type": "system" }, { code: enrollment.backupCodes[0], trustDevice: false });
+    check(backup.status === 200, `PILOT_AUTH_MFA_BACKUP:${backup.status}`);
+    await backup.arrayBuffer();
+    const mfaReplay = await request("/api/auth/two-factor/verify-backup-code", mfaCookie, a.tenantId, "POST", {}, { code: enrollment.backupCodes[0], trustDevice: false });
+    check(mfaReplay.status === 401, `PILOT_AUTH_MFA_BACKUP_REPLAY:${mfaReplay.status}`);
+    await mfaReplay.arrayBuffer();
+    probed.push("POST /api/auth/two-factor/enable", "POST /api/auth/two-factor/verify-totp", "POST /api/auth/two-factor/verify-backup-code");
+
+    const logout = await request("/api/auth/sign-out", mfaCookie, b.tenantId, "POST", { "x-user-id": b.ownerId }, {});
     await logout.arrayBuffer();
-    check(logout.status === 200 && await session(logoutCookie) === null && (await session(cookieB))?.user?.id === b.ownerId, "PILOT_AUTH_LOGOUT_OTHER_USER_AFFECTED");
+    check(logout.status === 200 && await session(mfaCookie) === null && (await session(cookieB))?.user?.id === b.ownerId, "PILOT_AUTH_LOGOUT_OTHER_USER_AFFECTED");
     probed.push("POST /api/auth/sign-out");
     check(isDeepStrictEqual(foreignCredential, await credential(b.ownerId)), "PILOT_AUTH_FOREIGN_PASSWORD_CHANGED");
     check(isDeepStrictEqual(foreignBefore, await scopedSnapshot(context, "b")), "PILOT_AUTH_FOREIGN_TENANT_CHANGED");

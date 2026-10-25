@@ -1,3 +1,4 @@
+import type * as SuperAdminModule from "@/lib/superadmin";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -6,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/superadmin", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/superadmin")>();
+  const original = await importOriginal<typeof SuperAdminModule>();
   return { ...original, requireSuperAdminSession: mocks.requireSuperAdminSession, listSuperAdminClients: mocks.listSuperAdminClients };
 });
 

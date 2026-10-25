@@ -2,6 +2,7 @@ import { probePilotWebhookContext } from "./isolation-pilot-webhook";
 import { probePilotAuthContext } from "./isolation-pilot-auth";
 import { probePilotPublicContext } from "./isolation-pilot-public";
 import { probePilotSessionContext } from "./isolation-pilot-session";
+import { probePilotSuperAdminContext } from "./isolation-pilot-superadmin";
 import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
 import { probePilotMethodGuards } from "./isolation-pilot-guards";
 import { probePilotWorker } from "./isolation-pilot-worker";
@@ -57,6 +58,7 @@ export async function runTenantIsolationAudit() {
       async (context) => {
         await probePilotMethodGuards(context, routes);
         await probePilotSessionContext(context);
+        await probePilotSuperAdminContext(context);
         await probeAdminHealthContext(context);
         await probeEmailReadContext(context);
         // Token-rotation controls revoke the fixture capture URLs; exercise
