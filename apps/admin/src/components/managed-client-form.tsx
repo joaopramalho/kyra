@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { SuperAdminClientDraft } from "@lobbystack/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Surface } from "@/components/ui/surface";
 import { Textarea } from "@/components/ui/textarea";
 
 const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -56,6 +57,6 @@ export function ManagedClientForm({ initial, tenantId, revision }: { initial?: S
     <div className="sticky bottom-4 flex flex-wrap gap-3 rounded-2xl border border-border bg-background/90 p-3 shadow-lg backdrop-blur"><Button disabled={saving} type="submit">{saving ? "Saving…" : tenantId ? "Save draft" : "Create draft client"}</Button>{tenantId && <Button disabled={saving} onClick={invite} type="button" variant="outline">Invite verified owner</Button>}</div>
   </form>;
 }
-function Section({ title, children }: { title: string; children: React.ReactNode }) { return <section className="space-y-5 rounded-xl border border-border bg-card p-5 sm:p-6"><div className="border-b border-border pb-4"><h2 className="text-lg font-semibold">{title}</h2></div>{children}</section>; }
+function Section({ title, children }: { title: string; children: React.ReactNode }) { return <section><Surface className="space-y-5 p-5 sm:p-6"><div className="border-b border-border pb-4"><h2 className="text-lg font-semibold">{title}</h2></div>{children}</Surface></section>; }
 function Grid({ children }: { children: React.ReactNode }) { return <div className="grid gap-4 md:grid-cols-2">{children}</div>; }
 function L({ label, children }: { label: string; children: React.ReactNode }) { return <label className="space-y-2 text-sm font-medium"><span>{label}</span>{children}</label>; }
