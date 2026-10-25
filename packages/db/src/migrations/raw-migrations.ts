@@ -79,6 +79,7 @@ export const SCHEMA_MIGRATIONS = [
   "0071_lmc_email.sql",
   "0072_system_identity.sql",
   "0073_legacy_tenant_identity.sql",
+  "0074_superadmin_foundation.sql",
 ] as const;
 
 const CONCURRENT_INDEX_DIRECTIVE = /^-- lobbystack:concurrent-index ([a-z][a-z0-9_]*)$/m;

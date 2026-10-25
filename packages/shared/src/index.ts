@@ -310,7 +310,7 @@ export const widgetVisitorIdentitySchema = z.object({
   name: z.string().max(160).optional(),
   email: z.string().email().max(320).optional(),
   phone: z.string().max(32).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type WidgetVisitorIdentity = z.infer<typeof widgetVisitorIdentitySchema>;

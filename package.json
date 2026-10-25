@@ -21,7 +21,7 @@
     "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0",
     "twilio": "^5.12.2",
-    "zod": "^3.24.2"
+    "zod": "^4.6.6"
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -127,7 +127,8 @@
     "test:lmc": "vitest run --config tests/lmc/vitest.config.mts",
     "lmc:demo": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-demo.ts",
     "lmc:tenant": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-tenant.ts",
-    "lmc:tenant-setup": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-tenant-setup.ts"
+    "lmc:tenant-setup": "tsx --tsconfig scripts/tsconfig.json scripts/lmc-tenant-setup.ts",
+    "superadmin:bootstrap": "tsx --tsconfig scripts/tsconfig.json scripts/superadmin-bootstrap.ts"
   },
   "devDependencies": {
     "@types/luxon": "^3.7.1",

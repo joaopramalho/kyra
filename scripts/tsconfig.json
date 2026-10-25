@@ -51,6 +51,7 @@
     "./lmc-demo.ts",
     "./lmc/**/*.ts",
     "./lmc-tenant.ts",
-    "./lmc-tenant-setup.ts"
+    "./lmc-tenant-setup.ts",
+    "./superadmin-bootstrap*.ts"
   ]
 }

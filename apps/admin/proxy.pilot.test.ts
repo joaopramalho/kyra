@@ -25,7 +25,7 @@ it("denies inherited routes for every method before CSRF, locale redirects or ma
 });
 
 it("allows concrete pilot actions while refusing other methods on allowed routes", () => {
-  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/callback", "GET"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"]] as const) {
+  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/two-factor/verify-totp", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/callback", "GET"], ["/api/internal/superadmin/overview", "GET"], ["/api/internal/superadmin/clients", "GET"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"], ["/internal", "GET"], ["/internal/clients", "GET"], ["/internal/mfa", "GET"]] as const) {
     expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(200);
   }
   for (const [path, method] of [["/api/businesses", "POST"], ["/leads", "POST"], ["/setup-required", "POST"], ["/api/leads", "DELETE"], ["/api/auth/get-session", "POST"], ["/healthz", "DELETE"]] as const) {
@@ -34,6 +34,8 @@ it("allows concrete pilot actions while refusing other methods on allowed routes
     expect(response.headers.get("allow")).toBeTruthy();
   }
   expect(proxy(request("/api/leads/lead/reply", "POST", { origin: "https://foreign.invalid" })).status).toBe(403);
+  expect(proxy(request("/api/internal/superadmin/clients", "POST")).status).toBe(405);
+  expect(proxy(request("/internal", "POST", { "next-action": "admin-action" })).status).toBe(404);
 });
 
 it("blocks Server Actions and malformed dynamic segments even through allowed paths", () => {
