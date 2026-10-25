@@ -8,10 +8,11 @@ import { NestedPageSurfaceProvider } from "@/components/page-surface";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
 
-export function SettingsShell({ children }: { children: React.ReactNode }) {
+export function SettingsShell({ children, pilotMode = false }: { children: React.ReactNode; pilotMode?: boolean }) {
   const pathname = usePathname();
   const { t } = useTranslation("settings");
   const items = [
+    { label: t("sections.email"), href: "/settings/email" },
     { label: t("sections.kyra"), href: "/settings/kyra" },
     { label: t("sections.backOffice"), href: "/settings/kyra/back-office" },
     { label: t("sections.usage"), href: "/settings/usage" },
@@ -23,7 +24,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
     { label: t("sections.apiKeys"), href: "/settings/api-keys" },
     { label: t("sections.connectedApps"), href: "/settings/connected-apps" },
     ...(pathname === "/settings/widget" || pathname.startsWith("/settings/widget/") ? [{ label: t("sections.widget"), href: "/settings/widget" }] : []),
-  ];
+  ].filter(item => !pilotMode || item.href === "/settings/email");
   return (
     <section className="flex flex-1 flex-col gap-6">
       <PageHeader title={t("header.title")} />

@@ -1,7 +1,9 @@
+import type * as ContractsModule from "@lobbystack/contracts";
 import { customType } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  foreignKey,
   doublePrecision,
   index,
   integer,
@@ -51,6 +53,7 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     passwordAlgorithm: varchar("password_algorithm", { length: 32 }),
     platformRole: varchar("platform_role", { length: 32 }).default("operator").notNull(),
+    twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
     activeBusinessId: uuid("active_business_id"),
     preferredLocale: varchar("preferred_locale", { length: 8 }).default("en").notNull(),
     ...legacyId,
@@ -109,6 +112,39 @@ export const verifications = pgTable(
     ...timestamps,
   },
   (table) => [index("verifications_identifier_idx").on(table.identifier)],
+);
+
+export const twoFactors = pgTable(
+  "two_factors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    verified: boolean("verified").default(false).notNull(),
+    failedVerificationCount: integer("failed_verification_count").default(0).notNull(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("two_factors_user_unique").on(table.userId)],
+);
+
+export const platformAdminAuditEvents = pgTable(
+  "platform_admin_audit_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    action: varchar("action", { length: 120 }).notNull(),
+    targetType: varchar("target_type", { length: 80 }).notNull(),
+    targetId: text("target_id"),
+    changes: jsonb("changes").$type<Record<string, unknown>>().default({}).notNull(),
+    requestId: uuid("request_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("platform_admin_audit_events_created_idx").on(table.createdAt),
+    index("platform_admin_audit_events_actor_idx").on(table.actorUserId, table.createdAt),
+  ],
 );
 
 export const businesses = pgTable(
@@ -355,7 +391,8 @@ export const contacts = pgTable(
     ...legacyId,
     ...timestamps,
   },
-  (table) => [uniqueIndex("contacts_business_phone_unique").on(table.businessId, table.phone).where(sql`${table.phone} is not null`), index("contacts_business_email_idx").on(table.businessId, table.email)],
+  (table) => [
+    uniqueIndex("contacts_business_id_id_unique").on(table.businessId, table.id),uniqueIndex("contacts_business_phone_unique").on(table.businessId, table.phone).where(sql`${table.phone} is not null`), index("contacts_business_email_idx").on(table.businessId, table.email)],
 );
 
 export const widgetKeys = pgTable(
@@ -593,6 +630,7 @@ export const appointments = pgTable(
     ...timestamps,
   },
   (table) => [
+    uniqueIndex("appointments_business_id_id_unique").on(table.businessId, table.id),
     index("appointments_business_start_idx").on(table.businessId, table.startsAt),
     index("appointments_staff_start_idx").on(table.staffId, table.startsAt),
     index("appointments_business_created_idx").on(table.businessId, table.createdAt),
@@ -1674,7 +1712,84 @@ export const invoices = pgTable(
   ],
 );
 
+export const lmcSettings = pgTable("lmc_settings", {
+  tenantId: uuid("tenant_id").primaryKey().references(() => businesses.id, { onDelete: "cascade" }),
+  config: jsonb("config").$type<ContractsModule.LmcBusinessSettings>().notNull(),
+  captureTokenHash: text("capture_token_hash").notNull(), enabled: boolean("enabled").default(true).notNull(), ...timestamps,
+});
+
+export const lmcLeads = pgTable("lmc_leads", {
+  id: uuid("id").defaultRandom().primaryKey(), tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id"), email: text("email").notNull(), name: text("name"), subject: text("subject").default("").notNull(),
+  status: varchar("status", { length: 32 }).default("new").notNull(), reason: text("reason"),
+  qualification: jsonb("qualification").$type<ContractsModule.LmcQualification>().default({}).notNull(),
+  offeredSlots: jsonb("offered_slots").$type<Array<{ startsAt: string; endsAt: string; serviceId: string; staffId: string }>>().default([]).notNull(),
+  replyTokenHash: text("reply_token_hash").notNull(), consentFollowups: boolean("consent_followups").default(false).notNull(),
+  followupCount: integer("followup_count").default(0).notNull(), followupGeneration: integer("followup_generation").default(0).notNull(),
+  aiPaused: boolean("ai_paused").default(false).notNull(), appointmentId: uuid("appointment_id"),
+  lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }), lastOutboundMessageId: text("last_outbound_message_id"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }), ...timestamps,
+}, table => [
+  uniqueIndex("lmc_leads_tenant_id_unique").on(table.tenantId,table.id),
+  uniqueIndex("lmc_leads_reply_token_unique").on(table.tenantId,table.replyTokenHash),
+  index("lmc_leads_tenant_email_idx").on(table.tenantId,table.email),
+  index("lmc_leads_tenant_status_idx").on(table.tenantId,table.status,table.updatedAt),
+  foreignKey({ columns: [table.tenantId,table.contactId], foreignColumns: [contacts.businessId,contacts.id], name: "lmc_leads_contact_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.tenantId,table.appointmentId], foreignColumns: [appointments.businessId,appointments.id], name: "lmc_leads_appointment_fk" }),
+]);
+
+export const lmcMessages = pgTable("lmc_messages", {
+  id: uuid("id").defaultRandom().primaryKey(), tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }),
+  leadId: uuid("lead_id").notNull(), direction: varchar("direction", { length: 16 }).notNull(), kind: varchar("kind", { length: 32 }).notNull(),
+  messageId: text("message_id").notNull(), providerId: text("provider_id"), toEmail: text("to_email").notNull(),
+  subject: text("subject").notNull(), body: text("body").notNull(), headers: jsonb("headers").$type<Record<string,string>>().default({}).notNull(),
+  status: varchar("status", { length: 16 }).default("queued").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), sentAt: timestamp("sent_at", { withTimezone: true }),
+}, table => [
+  uniqueIndex("lmc_messages_tenant_id_unique").on(table.tenantId,table.id),
+  uniqueIndex("lmc_messages_message_id_unique").on(table.tenantId,table.messageId),
+  uniqueIndex("lmc_messages_provider_id_unique").on(table.tenantId,table.providerId),
+  index("lmc_messages_history_idx").on(table.tenantId,table.leadId,table.createdAt,table.id),
+  foreignKey({ columns: [table.tenantId,table.leadId], foreignColumns: [lmcLeads.tenantId,lmcLeads.id], name: "lmc_messages_lead_fk" }).onDelete("cascade"),
+]);
+
+export const lmcEvents = pgTable("lmc_events", {
+  id: uuid("id").defaultRandom().primaryKey(), tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }), leadId: uuid("lead_id"),
+  type: varchar("type", { length: 160 }).notNull(), externalId: text("external_id"), metadata: jsonb("metadata").$type<Record<string,unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [
+  uniqueIndex("lmc_events_external_id_unique").on(table.tenantId,table.externalId),
+  foreignKey({ columns: [table.tenantId,table.leadId], foreignColumns: [lmcLeads.tenantId,lmcLeads.id], name: "lmc_events_lead_fk" }).onDelete("cascade"),
+]);
+
+export const lmcSuppressions = pgTable("lmc_suppressions", {
+  tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }), email: text("email").notNull(), reason: varchar("reason", { length: 32 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [primaryKey({ columns: [table.tenantId,table.email] })]);
+
+export const lmcRateWindows = pgTable("lmc_rate_windows", {
+  tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }), scopeKey: text("scope_key").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(), count: integer("count").default(0).notNull(),
+}, table => [primaryKey({ columns: [table.tenantId,table.scopeKey,table.windowStart] })]);
+
+export const lmcJobs = pgTable("lmc_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(), tenantId: uuid("tenant_id").notNull().references(() => businesses.id, { onDelete: "cascade" }), leadId: uuid("lead_id").notNull(),
+  kind: varchar("kind", { length: 32 }).notNull(), dedupeKey: text("dedupe_key").notNull(), payload: jsonb("payload").$type<Record<string,unknown>>().notNull(),
+  status: varchar("status", { length: 16 }).default("pending").notNull(), availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+  leasedUntil: timestamp("leased_until", { withTimezone: true }), leaseToken: uuid("lease_token"), attempts: integer("attempts").default(0).notNull(), lastError: text("last_error"), ...timestamps,
+}, table => [
+  uniqueIndex("lmc_jobs_dedupe_unique").on(table.tenantId,table.dedupeKey), index("lmc_jobs_due_idx").on(table.status,table.availableAt,table.tenantId),
+  foreignKey({ columns: [table.tenantId,table.leadId], foreignColumns: [lmcLeads.tenantId,lmcLeads.id], name: "lmc_jobs_lead_fk" }).onDelete("cascade"),
+]);
+
+
 export const allTenantTables = [
+  lmcSettings,
+  lmcLeads,
+  lmcMessages,
+  lmcEvents,
+  lmcSuppressions,
+  lmcRateWindows,
+  lmcJobs,
   businesses,
   businessMemberships,
   businessInvitations,
@@ -1742,10 +1857,19 @@ export const allTenantTables = [
 ] as const;
 
 export const schema = {
+  lmcSettings,
+  lmcLeads,
+  lmcMessages,
+  lmcEvents,
+  lmcSuppressions,
+  lmcRateWindows,
+  lmcJobs,
   users,
   accounts,
   sessions,
   verifications,
+  twoFactors,
+  platformAdminAuditEvents,
   businesses,
   businessMemberships,
   businessInvitations,

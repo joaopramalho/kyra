@@ -20,8 +20,9 @@
     "widget": "Website widget",
     "apiKeys": "API keys",
     "connectedApps": "Connected apps",
-    "kyra": "Kyra",
-    "backOffice": "Back Office"
+    "kyra": "Lead My Company",
+    "backOffice": "Back Office",
+    "email": "Email automation"
   },
   "widget": {
     "title": "Website widget",
@@ -402,7 +403,7 @@
     },
     "telemetry": {
       "label": "Share telemetry data",
-      "description": "Help us improve Kyra by sharing anonymized usage and error data.",
+      "description": "Help us improve Lead My Company by sharing anonymized usage and error data.",
       "saveFailed": "We couldn’t save your telemetry preference. Please try again."
     }
   },
@@ -424,7 +425,7 @@
       "sheetDescription": "Connect a Google Calendar and choose which calendar receives bookings.",
       "connectionSectionTitle": "Connection",
       "connectionSectionDescription": "Connect or reconnect the Google account that should receive bookings.",
-      "privacyNoticeText": "Connecting Google Calendar lets Kyra read your calendar availability and create, update, or delete appointment events on the calendar you select.",
+      "privacyNoticeText": "Connecting Google Calendar lets Lead My Company read your calendar availability and create, update, or delete appointment events on the calendar you select.",
       "privacyPolicyLinkText": "Privacy Policy",
       "calendarSectionTitle": "Calendar settings",
       "calendarSectionDescription": "Choose the calendar to sync and review the latest sync state.",
@@ -802,11 +803,11 @@
       },
       "webhookDisabled": {
         "title": "Webhook endpoint turned off",
-        "description": "When Kyra stops sending events to a webhook endpoint because every delivery failed for about a day."
+        "description": "When Lead My Company stops sending events to a webhook endpoint because every delivery failed for about a day."
       },
       "missedCall": {
         "title": "Missed call",
-        "description": "When Kyra follows up on a call nobody answered."
+        "description": "When Lead My Company follows up on a call nobody answered."
       },
       "emergency": {
         "title": "Emergency reported",
@@ -814,7 +815,7 @@
       },
       "ownerBrief": {
         "title": "Daily owner brief",
-        "description": "Kyra's 6 PM summary, when the Tier 3 automation is on."
+        "description": "Lead My Company's 6 PM summary, when the Tier 3 automation is on."
       }
     },
     "systemIssues": {
@@ -822,7 +823,7 @@
     },
     "smsConsent": {
       "title": "Enable SMS alerts",
-      "description": "Confirm that you want Kyra to send workspace alerts to your verified phone number.",
+      "description": "Confirm that you want Lead My Company to send workspace alerts to your verified phone number.",
       "cancel": "Cancel",
       "accept": "I agree, enable SMS"
     }
@@ -833,7 +834,7 @@
   },
   "apiKeys": {
     "title": "API keys",
-    "description": "Connect tools like Zapier or your own scripts to Kyra. Each key works for this business only.",
+    "description": "Connect tools like Zapier or your own scripts to Lead My Company. Each key works for this business only.",
     "empty": "No API keys yet.",
     "neverUsed": "Never",
     "createdBy": "{{date}} by {{name}}",
@@ -891,7 +892,7 @@
   },
   "webhooks": {
     "title": "Webhooks",
-    "description": "Kyra sends an HTTPS POST to your URL when something happens, such as a finished call or a new booking. Each request is signed so you can check it came from us.",
+    "description": "Lead My Company sends an HTTPS POST to your URL when something happens, such as a finished call or a new booking. Each request is signed so you can check it came from us.",
     "empty": "No webhook endpoints yet.",
     "enabledLabel": "Send events to this endpoint",
     "restricted": {
@@ -925,19 +926,19 @@
     "create": {
       "action": "Add endpoint",
       "title": "Add a webhook endpoint",
-      "description": "Choose where Kyra sends events and which events to send.",
+      "description": "Choose where Lead My Company sends events and which events to send.",
       "submit": "Add endpoint"
     },
     "edit": {
       "action": "Edit",
       "title": "Edit webhook endpoint",
-      "description": "Changes apply to the next event Kyra sends.",
+      "description": "Changes apply to the next event Lead My Company sends.",
       "submit": "Save"
     },
     "delete": {
       "action": "Delete",
       "title": "Delete this endpoint?",
-      "description": "Kyra stops sending events to {{url}} and deletes its delivery log.",
+      "description": "Lead My Company stops sending events to {{url}} and deletes its delivery log.",
       "confirm": "Delete endpoint",
       "done": "Endpoint deleted"
     },
@@ -984,8 +985,8 @@
   },
   "connectedApps": {
     "title": "Connected apps",
-    "description": "AI assistants such as Claude or ChatGPT that someone signed in to Kyra. Each one works for this business only, with the access they approved.",
-    "empty": "No connected apps yet. To connect one, add Kyra in the assistant's settings and sign in.",
+    "description": "AI assistants such as Claude or ChatGPT that someone signed in to Lead My Company. Each one works for this business only, with the access they approved.",
+    "empty": "No connected apps yet. To connect one, add Lead My Company in the assistant's settings and sign in.",
     "neverUsed": "Never",
     "unnamed": "Unnamed app",
     "grantedBy": "{{date}} by {{name}}",
@@ -1025,11 +1026,11 @@
     "saved": "Saved",
     "save": "Save",
     "saving": "Saving…",
-    "loadFailed": "Kyra settings couldn't load",
+    "loadFailed": "Lead My Company settings couldn't load",
     "readOnly": "Only owners and admins can change these settings.",
     "plan": {
       "title": "Your plan",
-      "description": "What Kyra does for this business.",
+      "description": "What Lead My Company does for this business.",
       "backOffice": "Back Office add-on",
       "change": "To change your plan or add Back Office, contact Key 20.",
       "tiers": {
@@ -1040,16 +1041,16 @@
     },
     "missedCalls": {
       "title": "Missed calls",
-      "description": "What Kyra does when a call goes unanswered."
+      "description": "What Lead My Company does when a call goes unanswered."
     },
     "fields": {
       "missedCallTextEnabled": {
         "label": "Text missed callers back",
-        "hint": "Kyra texts within about 30 seconds. Every text includes the opt-out line."
+        "hint": "Lead My Company texts within about 30 seconds. Every text includes the opt-out line."
       },
       "smsAiEnabled": {
-        "label": "Let Kyra reply to texts",
-        "hint": "Kyra collects the problem, the address and a good time, and books or passes it to you. Turn off to answer every text yourself."
+        "label": "Let Lead My Company reply to texts",
+        "hint": "Lead My Company collects the problem, the address and a good time, and books or passes it to you. Turn off to answer every text yourself."
       },
       "photoRequestsEnabled": {
         "label": "Ask for photos",
@@ -1062,11 +1063,11 @@
         "hold": "Wait until we open"
       },
       "voiceCallbackEnabled": {
-        "label": "Kyra calls missed callers back",
-        "hint": "The voice switch. Kyra says she's a virtual receptionist and that the call may be recorded. If she can't reach them, they get a text instead."
+        "label": "Lead My Company calls missed callers back",
+        "hint": "The voice switch. Lead My Company says she's a virtual receptionist and that the call may be recorded. If she can't reach them, they get a text instead."
       },
       "callbackMode": {
-        "label": "When Kyra calls",
+        "label": "When Lead My Company calls",
         "hint": "Ask first waits for the customer to reply YES. Automatic calls within a minute and the greeting tells them so.",
         "askFirst": "Ask first (reply YES)",
         "automatic": "Automatically"
@@ -1078,7 +1079,7 @@
       "contactWindow": {
         "start": "Contact customers from",
         "end": "Until",
-        "hint": "Kyra never calls, and automations never text, outside these hours (your time zone)."
+        "hint": "Lead My Company never calls, and automations never text, outside these hours (your time zone)."
       },
       "emergencyPhone": {
         "label": "On-call phone for emergencies",
@@ -1086,8 +1087,8 @@
       },
       "textBackMessage": {
         "label": "First text (English)",
-        "hint": "Leave empty for Kyra's default. {business} becomes your business name.",
-        "placeholder": "Hi, this is Kyra, the virtual receptionist for {business}. Sorry we missed your call. How can we help?"
+        "hint": "Leave empty for Lead My Company's default. {business} becomes your business name.",
+        "placeholder": "Hi, this is Lead My Company, the virtual receptionist for {business}. Sorry we missed your call. How can we help?"
       },
       "textBackMessageEs": {
         "label": "First text (Spanish)"
@@ -1103,7 +1104,7 @@
     },
     "recent": {
       "title": "Recent missed calls",
-      "description": "The last 100 missed calls and what Kyra did.",
+      "description": "The last 100 missed calls and what Lead My Company did.",
       "empty": "No missed calls yet.",
       "afterHours": "after hours",
       "columns": {
@@ -1118,7 +1119,7 @@
         "awaiting_consent": "Waiting for YES",
         "callback_queued": "Call queued",
         "calling": "Calling",
-        "reached": "Reached by Kyra",
+        "reached": "Reached by Lead My Company",
         "not_reached": "Not reached, texted",
         "handled": "Handled",
         "opted_out": "Opted out",
@@ -1127,7 +1128,7 @@
     },
     "automations": {
       "title": "Automations",
-      "description": "Kyra reaching out on her own. Never outside the contact window, never to anyone who opted out, and at most one automated text per customer per day.",
+      "description": "Lead My Company reaching out on her own. Never outside the contact window, never to anyone who opted out, and at most one automated text per customer per day.",
       "message": "Message",
       "needsTier3": "Needs Tier 3",
       "needsBackOffice": "Needs Back Office",

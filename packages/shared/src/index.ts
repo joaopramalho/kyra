@@ -3,6 +3,7 @@ import { z } from "zod";
 export { resolveOpenAiPricing } from "./aiPricing";
 export type { AiPricingRatesUsdPerMillionTokens, VersionedAiPricing } from "./aiPricing";
 export { isMaintenanceMode } from "./maintenance";
+export { isPilotMode, PILOT_WORKER_HEALTH_PATHS, PILOT_ADMIN_ROUTES, pilotAdminRoute } from "./pilot";
 export * from "./assistant";
 export { isCertificationMode, assertCertificationRecipient, assertCertificationOperationAllowed, assertCertificationCalendar, assertCertificationBillingSandbox } from "./certification";
 
@@ -309,7 +310,7 @@ export const widgetVisitorIdentitySchema = z.object({
   name: z.string().max(160).optional(),
   email: z.string().email().max(320).optional(),
   phone: z.string().max(32).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type WidgetVisitorIdentity = z.infer<typeof widgetVisitorIdentitySchema>;
@@ -428,3 +429,5 @@ export { OPERATOR_SMS_DISCLOSURE_TEXT, OPERATOR_SMS_DISCLOSURE_VERSION } from ".
 export { DASHBOARD_TEST_CALL_WIDGET_ID, PROSPECT_DEMO_WIDGET_ID } from "./testCall";
 
 export * from "./publicApi";
+
+export { brand } from "./brand";

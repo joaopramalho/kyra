@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { connectCalendar } from "@lobbystack/domain";
 import { GoogleCalendarProvider, SecretBox } from "@lobbystack/providers";
-import { assertCertificationRecipient } from "@lobbystack/shared";
+import { assertCertificationRecipient, isPilotMode } from "@lobbystack/shared";
 import { asApiResponse, jsonError, requireApiSession } from "@/lib/api-helpers";
 import { createDomainContext } from "@/lib/domain-context";
 import { verifyCalendarOAuthState } from "@/lib/google-calendar-oauth";
@@ -22,7 +22,8 @@ function provider(): GoogleCalendarProvider {
 }
 
 export async function GET(request: Request) {
-  const destination = (status: "success" | "error") => NextResponse.redirect(new URL(`/integrations?calendar=google&status=${status}`, process.env.APP_BASE_URL ?? request.url));
+  const settingsPath = isPilotMode(process.env) ? "/settings/email" : "/integrations";
+  const destination = (status: "success" | "error") => NextResponse.redirect(new URL(`${settingsPath}?calendar=google&status=${status}`, process.env.APP_BASE_URL ?? request.url));
   try {
     const url = new URL(request.url);
     const code = url.searchParams.get("code");

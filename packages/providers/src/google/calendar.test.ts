@@ -103,3 +103,13 @@ describe("GoogleCalendarProvider", () => {
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain("client");
   });
 });
+
+describe("email calendar event identity",()=>{
+  it("retains event IDs so rescheduling can ignore only its own mirrored event",async()=>{
+    const request=vi.fn().mockResolvedValue(Response.json({timeZone:"America/New_York",items:[{id:"owned-event",start:{dateTime:"2030-01-09T14:00:00Z"},end:{dateTime:"2030-01-09T15:00:00Z"}}]}));
+    vi.stubGlobal("fetch",request);
+    const provider=new GoogleCalendarProvider({clientId:"client",clientSecret:"secret",redirectUri:"https://app.example/oauth"});
+    expect(await provider.getBusyBlocks({accessToken:"access",calendarId:"selected",startsAt:"2030-01-09T00:00:00Z",endsAt:"2030-01-10T00:00:00Z"})).toEqual([{startsAt:"2030-01-09T14:00:00.000Z",endsAt:"2030-01-09T15:00:00.000Z",externalEventId:"owned-event"}]);
+    expect(new URL(String(request.mock.calls[0]?.[0])).searchParams.get("fields")).toContain("items(id,");
+  });
+});

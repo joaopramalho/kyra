@@ -7,7 +7,9 @@
     "contacts": "Contacts",
     "analytics": "Analytics",
     "affiliate": "Affiliate Program",
-    "settings": "Settings"
+    "settings": "Settings",
+    "leads": "Email leads",
+    "emailSettings": "Email automation"
   },
   "search": {
     "placeholder": "Search workspace..."

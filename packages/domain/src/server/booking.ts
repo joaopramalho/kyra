@@ -1,6 +1,8 @@
+import { DateTime } from "luxon";
+import { lmcBookingRulesSchema } from "@lobbystack/contracts";
 import { and, asc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
-import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, closures, contacts, enqueueOutbox, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, closures, contacts, enqueueOutbox, lmcSettings, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
 
 import { computeAvailability } from "../availability";
@@ -105,12 +107,12 @@ function isCalendarFresh(reference: AvailabilityReference, staffId: string, now:
  * Reads only staff-specific conflicts. Call after taking the staff advisory
  * lock so the conflict check reflects the holder of the lock.
  */
-async function staffAvailabilityInTransaction(tx: DatabaseTransaction, reference: AvailabilityReference, input: { staffIds: string[]; ignoreAppointmentId?: string }) {
+async function staffAvailabilityInTransaction(tx: DatabaseTransaction, reference: AvailabilityReference, input: { staffIds: string[]; ignoreAppointmentId?: string; ignoreCalendarEventId?: string }) {
   if (!input.staffIds.length) return [];
   const existing = await tx.select({ staffId: appointments.staffId, startsAt: appointments.startsAt, endsAt: appointments.endsAt }).from(appointments).where(and(eq(appointments.businessId, reference.businessId), ne(appointments.status, "canceled"), input.ignoreAppointmentId ? ne(appointments.id, input.ignoreAppointmentId) : undefined, inArray(appointments.staffId, input.staffIds), lt(appointments.startsAt, reference.endsAt), gt(appointments.endsAt, reference.startsAt)));
   const configured = reference.connections.filter((connection) => connection.selectedCalendarId && input.staffIds.some((id) => !connection.staffId || connection.staffId === id));
   const connectionIds = configured.filter((connection) => connection.status === "connected").map((connection) => connection.id);
-  const busy = connectionIds.length ? await tx.select().from(calendarBusyBlocks).where(and(eq(calendarBusyBlocks.businessId, reference.businessId), inArray(calendarBusyBlocks.connectionId, connectionIds), lt(calendarBusyBlocks.startsAt, reference.endsAt), gt(calendarBusyBlocks.endsAt, reference.startsAt))) : [];
+  const busy = connectionIds.length ? await tx.select().from(calendarBusyBlocks).where(and(eq(calendarBusyBlocks.businessId, reference.businessId), inArray(calendarBusyBlocks.connectionId, connectionIds), lt(calendarBusyBlocks.startsAt, reference.endsAt), gt(calendarBusyBlocks.endsAt, reference.startsAt), input.ignoreCalendarEventId ? or(isNull(calendarBusyBlocks.externalEventId),ne(calendarBusyBlocks.externalEventId,input.ignoreCalendarEventId)) : undefined)) : [];
   const staffByConnection = new Map(reference.connections.map((connection) => [connection.id, connection.staffId]));
   return computeAvailability({
     request: { serviceId: reference.serviceId, startsAt: reference.startsAt.toISOString(), timezone: reference.timezone },
@@ -429,4 +431,69 @@ export async function cancelAppointmentForCaller(
     await recordAppointmentChange(context, { name: "appointment.cancelled", businessId: input.businessId, appointmentId: result.appointmentId, source: "caller" });
   }
   return result;
+}
+
+/** Email callers share canonical hours, staff eligibility, freshness and conflict checks. */
+export async function findEmailAvailabilityInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; serviceId: string; startsAt: string; now: Date; staffId?: string; ignoreAppointmentId?: string },
+) {
+  const reference = await loadAvailabilityReference(tx,input);
+  const [settings] = await tx.select({ config: lmcSettings.config }).from(lmcSettings).where(eq(lmcSettings.tenantId, input.businessId)).limit(1);
+  const rules = lmcBookingRulesSchema.safeParse(settings?.config.bookingRules ?? {});
+  if (!rules.success) return [];
+  const horizon = DateTime.fromJSDate(input.now, { zone: reference.timezone }).startOf("day").plus({ days: rules.data.horizonDays }).toMillis();
+  const starts = reference.startsAt.getTime();
+  if (!Number.isFinite(horizon) || reference.startsAt <= input.now || starts < input.now.getTime() + rules.data.minimumNoticeMinutes * 60_000 || starts >= horizon) return [];
+  const selected = eligibleStaffIds(reference,input.staffId ? [input.staffId] : undefined).filter(id =>
+    reference.connections.some(connection => connection.provider === "google" && connection.status === "connected" && connection.selectedCalendarId && (!connection.staffId || connection.staffId === id))
+    && isCalendarFresh(reference,id,input.now.getTime()));
+  const [ignored] = input.ignoreAppointmentId ? await tx.select({externalId:appointments.calendarExternalId}).from(appointments).where(and(eq(appointments.businessId,input.businessId),eq(appointments.id,input.ignoreAppointmentId))).limit(1) : [];
+  return staffAvailabilityInTransaction(tx,reference,{staffIds:selected,...(input.ignoreAppointmentId?{ignoreAppointmentId:input.ignoreAppointmentId}:{}),...(ignored?.externalId?{ignoreCalendarEventId:ignored.externalId}:{})});
+}
+
+/** No synthetic phone or SMS work: the verified email contact is the canonical appointment contact. */
+export async function bookEmailAppointmentInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; contactId: string; contactEmail: string; serviceId: string; staffId: string; startsAt: string; now: Date },
+): Promise<{ appointmentId: string; startsAt: string; endsAt: string } | null> {
+  const [contact] = await tx.select({id:contacts.id}).from(contacts).where(and(eq(contacts.businessId,input.businessId),eq(contacts.id,input.contactId),eq(contacts.email,input.contactEmail))).limit(1);
+  if (!contact) return null;
+  await lockStaff(tx,input.staffId);
+  const slots = await findEmailAvailabilityInTransaction(tx,input);
+  const slot = slots.find(candidate => candidate.staffId === input.staffId && Date.parse(candidate.startsAt) === Date.parse(input.startsAt));
+  if (!slot) return null;
+  const [business] = await tx.select({timezone:businesses.timezone}).from(businesses).where(eq(businesses.id,input.businessId)).limit(1);
+  if (!business) return null;
+  const [appointment] = await tx.insert(appointments).values({businessId:input.businessId,contactId:input.contactId,staffId:slot.staffId,serviceId:slot.serviceId,
+    startsAt:new Date(slot.startsAt),endsAt:new Date(slot.endsAt),timezone:business.timezone,status:"confirmed",sourceChannel:"email",calendarSyncState:"pending",createdAt:input.now,updatedAt:input.now}).returning({id:appointments.id,revision:appointments.revision});
+  if (!appointment) throw new Error("LMC_APPOINTMENT_CREATE_FAILED");
+  await enqueueOutbox(tx,{topic:"calendar.syncAppointment",businessId:input.businessId,aggregateType:"appointment",aggregateId:appointment.id,dedupeKey:`appointment:${appointment.id}:calendar:create`,payload:{appointmentId:appointment.id}});
+  await enqueueOutbox(tx,{topic:"realtime.publish",businessId:input.businessId,aggregateType:"appointment",aggregateId:appointment.id,dedupeKey:`appointment:${appointment.id}:updated:${appointment.revision}`,payload:{type:"appointment.updated",entityId:appointment.id,revision:appointment.revision}});
+  await tx.insert(auditLogs).values({businessId:input.businessId,eventType:"email.appointment.booked",entityType:"appointment",entityId:appointment.id,payload:{source:"email",contactId:contact.id},createdAt:input.now});
+  await emitWebhookEventInTransaction(tx,{businessId:input.businessId,type:"appointment.booked",resourceId:appointment.id});
+  return {appointmentId:appointment.id,startsAt:slot.startsAt,endsAt:slot.endsAt};
+}
+
+/** Email changes retain canonical calendar/outbox behavior without creating SMS work. */
+export async function rescheduleEmailAppointmentInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; appointmentId: string; contactId: string; contactEmail: string; staffId: string; startsAt: string; now: Date },
+): Promise<{startsAt:string;endsAt:string}|null> {
+  const [initial]=await tx.select({staffId:appointments.staffId}).from(appointments).where(and(eq(appointments.businessId,input.businessId),eq(appointments.id,input.appointmentId),eq(appointments.sourceChannel,"email"))).limit(1);
+  if(!initial)return null;
+  for(const id of [...new Set([initial.staffId,input.staffId])].sort())await lockStaff(tx,id);
+  const [current]=await tx.select().from(appointments).where(and(eq(appointments.businessId,input.businessId),eq(appointments.id,input.appointmentId),eq(appointments.contactId,input.contactId),eq(appointments.sourceChannel,"email"),eq(appointments.status,"confirmed"))).for("update");
+  const [contact]=await tx.select({id:contacts.id}).from(contacts).where(and(eq(contacts.businessId,input.businessId),eq(contacts.id,input.contactId),eq(contacts.email,input.contactEmail))).limit(1);
+  if(!current||!contact||current.staffId!==initial.staffId)return null;
+  const slots=await findEmailAvailabilityInTransaction(tx,{businessId:input.businessId,serviceId:current.serviceId,startsAt:input.startsAt,staffId:input.staffId,now:input.now,ignoreAppointmentId:current.id});
+  const slot=slots.find(item=>item.staffId===input.staffId&&Date.parse(item.startsAt)===Date.parse(input.startsAt));
+  if(!slot)return null;
+  const [updated]=await tx.update(appointments).set({startsAt:new Date(slot.startsAt),endsAt:new Date(slot.endsAt),staffId:slot.staffId,calendarSyncState:"pending",revision:sql`${appointments.revision}+1`,updatedAt:input.now}).where(and(eq(appointments.businessId,input.businessId),eq(appointments.id,current.id))).returning({revision:appointments.revision});
+  if(!updated)throw new Error("LMC_APPOINTMENT_CHANGE_FAILED");
+  await enqueueOutbox(tx,{topic:"calendar.syncAppointment",businessId:input.businessId,aggregateType:"appointment",aggregateId:current.id,dedupeKey:`appointment:${current.id}:calendar:reschedule:${updated.revision}`,payload:{appointmentId:current.id,action:"reschedule"}});
+  await enqueueOutbox(tx,{topic:"realtime.publish",businessId:input.businessId,aggregateType:"appointment",aggregateId:current.id,dedupeKey:`appointment:${current.id}:updated:${updated.revision}`,payload:{type:"appointment.updated",entityId:current.id,revision:updated.revision}});
+  await tx.insert(auditLogs).values({businessId:input.businessId,eventType:"email.appointment.rescheduled",entityType:"appointment",entityId:current.id,payload:{source:"email",contactId:contact.id,startsAt:slot.startsAt},createdAt:input.now});
+  await emitWebhookEventInTransaction(tx,{businessId:input.businessId,type:"appointment.rescheduled",resourceId:current.id});
+  return{startsAt:slot.startsAt,endsAt:slot.endsAt};
 }

@@ -13,7 +13,7 @@ describe("original settings route shell", () => {
     route.pathname = "/settings/usage";
     render(<SettingsShell><p>Settings content</p></SettingsShell>);
     expect(screen.getByRole("heading", { name: "header.title" })).toBeTruthy();
-    const paths = ["kyra", "kyra/back-office", "usage", "plan", "team", "phone-number", "appearance", "notifications", "api-keys", "connected-apps"];
+    const paths = ["email", "kyra", "kyra/back-office", "usage", "plan", "team", "phone-number", "appearance", "notifications", "api-keys", "connected-apps"];
     expect(screen.getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(paths.map(path => `/settings/${path}`));
     expect(screen.getByRole("link", { name: "sections.usage" }).className).toContain("bg-muted");
   });
@@ -22,4 +22,11 @@ describe("original settings route shell", () => {
     render(<SettingsShell><p>Widget content</p></SettingsShell>);
     expect(screen.getByRole("link", { name: "sections.widget" }).getAttribute("href")).toBe("/settings/widget");
   });
+});
+
+it("shows only email settings in pilot mode",()=>{
+  route.pathname="/settings/email";
+  render(<SettingsShell pilotMode><p>Email settings content</p></SettingsShell>);
+  expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["/settings/email"]);
+  expect(screen.getByText("Email settings content")).toBeTruthy();
 });
