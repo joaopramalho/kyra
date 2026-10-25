@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { lmcBusinessSettingsSchema, lmcTenantIdentitySchema } from "@lobbystack/contracts";
-import { lmcSettings, users, withBusinessTransaction, type Database } from "@lobbystack/db";
+import { businesses, lmcSettings, users, withBusinessTransaction, type Database } from "@lobbystack/db";
 import { AuthorizationError, requireBusinessMembership } from "../../authz";
 
 export async function resolveLmcPilotPageAccess(context:{database:Database;authDatabase:Database},userId:string):Promise<{tenantId:string}|null>{
@@ -29,7 +29,9 @@ export async function isLmcPilotSetupRequired(context:{database:Database;authDat
   if(!user.activeBusinessId)return true;
   return await withBusinessTransaction(context.database,{businessId:user.activeBusinessId,userId:identity.data,actorType:"operator"},async tx=>{
     try{
-      await requireBusinessMembership(tx,{businessId:user.activeBusinessId!,userId:identity.data,minimumRole:"viewer"});
+      await requireBusinessMembership(tx,{businessId:user.activeBusinessId!,userId:identity.data,minimumRole:"business_owner"});
+      const [workspace]=await tx.select({status:businesses.status,onboardingStage:businesses.onboardingStage}).from(businesses).where(eq(businesses.id,user.activeBusinessId!)).limit(1);
+      if(workspace?.status!=="draft"||workspace.onboardingStage!=="managed_draft")return false;
       const [settings]=await tx.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,user.activeBusinessId!)).limit(1);
       return !settings||!lmcBusinessSettingsSchema.safeParse(settings.config).success;
     }
