@@ -27,25 +27,39 @@ export default async function InternalLayout({ children }: { children: React.Rea
     }
   }
 
+  const navigation = [
+    { href: "/internal", label: "Overview", icon: LayoutDashboard, active: pathname === "/internal" },
+    { href: "/internal/clients", label: "Clients", icon: Building2, active: pathname.startsWith("/internal/clients") },
+  ];
+
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-950">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/internal" className="flex items-center gap-2 font-semibold">
-            <ShieldCheck className="size-5 text-emerald-600" aria-hidden="true" />
-            Kyra Super Admin
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <Link href="/internal" className="flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <ShieldCheck className="size-5" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold leading-tight">Kyra</span>
+              <span className="block text-xs text-muted-foreground">Super Admin</span>
+            </span>
           </Link>
-          <nav className="flex items-center gap-2 text-sm" aria-label="Internal navigation">
-            <Link className="flex items-center gap-2 rounded-md px-3 py-2 hover:bg-zinc-100" href="/internal">
-              <LayoutDashboard className="size-4" aria-hidden="true" /> Overview
-            </Link>
-            <Link className="flex items-center gap-2 rounded-md px-3 py-2 hover:bg-zinc-100" href="/internal/clients">
-              <Building2 className="size-4" aria-hidden="true" /> Clients
-            </Link>
+          <nav className="flex items-center gap-1 rounded-full border border-border bg-muted/40 p-1 text-sm" aria-label="Internal navigation">
+            {navigation.map((item) => (
+              <Link
+                aria-current={item.active ? "page" : undefined}
+                className={`flex items-center gap-2 rounded-full px-3 py-1.5 font-medium transition-colors ${item.active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground"}`}
+                href={item.href}
+                key={item.href}
+              >
+                <item.icon className="size-4" aria-hidden="true" /> {item.label}
+              </Link>
+            ))}
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:py-10">{children}</main>
     </div>
   );
 }
