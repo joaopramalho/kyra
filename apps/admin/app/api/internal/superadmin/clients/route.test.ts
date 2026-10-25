@@ -12,7 +12,7 @@ vi.mock("@/lib/superadmin", async (importOriginal) => {
 });
 
 import { SuperAdminAccessError } from "@/lib/superadmin";
-import { GET } from "./route";
+import { GET, POST } from "./route";
 
 describe("Super Admin clients API", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -22,6 +22,19 @@ describe("Super Admin clients API", () => {
     const response = await GET(new Request("http://localhost/api/internal/superadmin/clients"));
     expect(response.status).toBe(403);
     expect(mocks.listSuperAdminClients).not.toHaveBeenCalled();
+  });
+
+  it("denies client creation without a privileged session", async () => {
+    mocks.requireSuperAdminSession.mockRejectedValue(new SuperAdminAccessError(403, "Platform administrator access is required."));
+    const response = await POST(new Request("http://localhost/api/internal/superadmin/clients", { method: "POST" }));
+    expect(response.status).toBe(403);
+  });
+
+  it("requires an idempotency key before accepting a creation payload", async () => {
+    mocks.requireSuperAdminSession.mockResolvedValue({ user: { id: "admin" }, session: {} });
+    const response = await POST(new Request("http://localhost/api/internal/superadmin/clients", { method: "POST" }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining("Idempotency-Key") });
   });
 
   it("returns bounded, paginated client records", async () => {

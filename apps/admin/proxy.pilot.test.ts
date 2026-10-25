@@ -25,7 +25,8 @@ it("denies inherited routes for every method before CSRF, locale redirects or ma
 });
 
 it("allows concrete pilot actions while refusing other methods on allowed routes", () => {
-  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/two-factor/verify-totp", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/callback", "GET"], ["/api/internal/superadmin/overview", "GET"], ["/api/internal/superadmin/clients", "GET"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"], ["/internal", "GET"], ["/internal/clients", "GET"], ["/internal/mfa", "GET"]] as const) {
+  const tenant = "11111111-1111-4111-8111-111111111111";
+  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/two-factor/verify-totp", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/callback", "GET"], ["/api/internal/superadmin/overview", "GET"], ["/api/internal/superadmin/clients", "GET"], ["/api/internal/superadmin/clients", "POST"], [`/api/internal/superadmin/clients/${tenant}/draft`, "PUT"], [`/api/internal/superadmin/clients/${tenant}/invite`, "POST"], ["/api/team/accept", "POST"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"], ["/internal", "GET"], ["/internal/clients", "GET"], ["/internal/clients/new", "GET"], [`/internal/clients/${tenant}`, "GET"], ["/en/accept-invite", "GET"], ["/internal/mfa", "GET"]] as const) {
     expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(200);
   }
   for (const [path, method] of [["/api/businesses", "POST"], ["/leads", "POST"], ["/setup-required", "POST"], ["/api/leads", "DELETE"], ["/api/auth/get-session", "POST"], ["/healthz", "DELETE"]] as const) {
@@ -34,7 +35,9 @@ it("allows concrete pilot actions while refusing other methods on allowed routes
     expect(response.headers.get("allow")).toBeTruthy();
   }
   expect(proxy(request("/api/leads/lead/reply", "POST", { origin: "https://foreign.invalid" })).status).toBe(403);
-  expect(proxy(request("/api/internal/superadmin/clients", "POST")).status).toBe(405);
+  expect(proxy(request("/api/internal/superadmin/clients", "DELETE")).status).toBe(405);
+  expect(proxy(request(`/api/internal/superadmin/clients/${tenant}/invite`, "GET")).status).toBe(405);
+  expect(proxy(request(`/api/internal/superadmin/clients/not-a-uuid/draft`, "GET")).status).toBe(404);
   expect(proxy(request("/internal", "POST", { "next-action": "admin-action" })).status).toBe(404);
 });
 
@@ -42,6 +45,7 @@ it("blocks Server Actions and malformed dynamic segments even through allowed pa
   expect(proxy(request("/leads", "POST", { "next-action": "inherited-action" })).status).toBe(404);
   expect(proxy(request("/setup-required", "GET", { "next-action": "inherited-action" })).status).toBe(404);
   expect(proxy(request("/api/lmc/settings", "PUT", { "next-action": "inherited-action" })).status).toBe(404);
+  expect(proxy(request("/internal/clients/new", "POST", { "next-action": "inherited-action" })).status).toBe(404);
   for (const path of ["/api/leads/one%2ftwo", "/api/leads/one%5ctwo", "/api/lmc/capture/token%00", "/api/leads//", "/api/lmc/capture/.", "/api/lmc/capture/.."])
     expect(proxy(request(path)).status, path).toBe(404);
 });

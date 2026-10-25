@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
-import { users } from "@lobbystack/db";
+import { isLmcPilotSetupRequired } from "@lobbystack/domain";
 import { isPilotMode } from "@lobbystack/shared";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { getAuthDatabase, getSession } from "@/lib/auth";
+import { getAppDatabase } from "@/lib/api-helpers";
 import { localizePublicPath } from "@/lib/locale-path";
 import { localeFromRequestHeaders } from "@/lib/locale-request";
 
@@ -18,10 +18,7 @@ export default async function SetupRequiredPage() {
   const session = await getSession(new Headers(requestHeaders));
   if (!session) redirect(localizePublicPath("/login", locale));
 
-  const [account] = await getAuthDatabase().db
-    .select({ verified: users.emailVerified, activeBusinessId: users.activeBusinessId })
-    .from(users).where(eq(users.id, session.user.id)).limit(1);
-  if (!account?.verified || account.activeBusinessId) notFound();
+  if (!await isLmcPilotSetupRequired({ database: getAppDatabase().db, authDatabase: getAuthDatabase().db }, session.user.id)) notFound();
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-background px-6 py-16">

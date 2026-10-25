@@ -80,6 +80,7 @@ export const SCHEMA_MIGRATIONS = [
   "0072_system_identity.sql",
   "0073_legacy_tenant_identity.sql",
   "0074_superadmin_foundation.sql",
+  "0075_superadmin_managed_clients.sql",
 ] as const;
 
 const CONCURRENT_INDEX_DIRECTIVE = /^-- lobbystack:concurrent-index ([a-z][a-z0-9_]*)$/m;

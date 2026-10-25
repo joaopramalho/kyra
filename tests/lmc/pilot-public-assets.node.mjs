@@ -111,7 +111,8 @@ test("production-default pilot auth displays and every published static asset en
     }
     const authenticatedPagePatterns=new Set([
       "/", "/leads", "/setup-required", "/settings/email",
-      "/internal", "/internal/clients", "/internal/mfa", "/internal/mfa/setup",
+      "/internal", "/internal/clients", "/internal/clients/new", "/internal/clients/[tenantId]",
+      "/internal/mfa", "/internal/mfa/setup",
       "/healthz", "/readyz",
     ]);
     const expectedPatterns=PILOT_ADMIN_ROUTES.filter(route=>!route.pattern.startsWith("/api/")&&!authenticatedPagePatterns.has(route.pattern)).map(route=>route.pattern).sort();
