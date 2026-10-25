@@ -147,6 +147,34 @@ export const platformAdminAuditEvents = pgTable(
   ],
 );
 
+export const lmcTenantDrafts = pgTable(
+  "lmc_tenant_drafts",
+  {
+    tenantId: uuid("tenant_id").primaryKey().references(() => businesses.id, { onDelete: "cascade" }),
+    ownerEmail: text("owner_email").notNull(),
+    draft: jsonb("draft").$type<Record<string, unknown>>().notNull(),
+    revision: integer("revision").default(1).notNull(),
+    createdByUserId: uuid("created_by_user_id").notNull().references(() => users.id),
+    updatedByUserId: uuid("updated_by_user_id").notNull().references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [index("lmc_tenant_drafts_owner_email_idx").on(table.ownerEmail)],
+);
+
+export const platformAdminOperations = pgTable(
+  "platform_admin_operations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+    action: varchar("action", { length: 120 }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    requestHash: varchar("request_hash", { length: 64 }).notNull(),
+    response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("platform_admin_operations_actor_action_key_unique").on(table.actorUserId, table.action, table.idempotencyKey)],
+);
+
 export const businesses = pgTable(
   "businesses",
   {
@@ -1870,6 +1898,8 @@ export const schema = {
   verifications,
   twoFactors,
   platformAdminAuditEvents,
+  lmcTenantDrafts,
+  platformAdminOperations,
   businesses,
   businessMemberships,
   businessInvitations,

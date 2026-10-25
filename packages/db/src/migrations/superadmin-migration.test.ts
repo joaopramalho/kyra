@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(fileURLToPath(new URL("../../migrations/0074_superadmin_foundation.sql", import.meta.url)), "utf8");
+const managedClients = readFileSync(fileURLToPath(new URL("../../migrations/0075_superadmin_managed_clients.sql", import.meta.url)), "utf8");
 
 describe("Super Admin foundation migration", () => {
   it("keeps MFA secrets auth-only and audit events system-only", () => {
@@ -28,5 +29,14 @@ describe("Super Admin foundation migration", () => {
     expect(migration).toContain("session_user <> 'lobbystack_system'");
     expect(migration).toContain("A platform administrator already exists.");
     expect(migration).toContain("'platform_admin.bootstrap'");
+  });
+});
+
+describe("managed client migration", () => {
+  it("keeps drafts and idempotency records behind FORCE RLS and the system role", () => {
+    expect(managedClients).toContain("ALTER TABLE public.lmc_tenant_drafts FORCE ROW LEVEL SECURITY");
+    expect(managedClients).toContain("ALTER TABLE public.platform_admin_operations FORCE ROW LEVEL SECURITY");
+    expect(managedClients).toContain("TO lobbystack_system");
+    expect(managedClients).not.toContain("ON public.lmc_tenant_drafts TO lobbystack_app");
   });
 });
