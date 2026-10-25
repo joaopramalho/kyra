@@ -1,3 +1,4 @@
+import type * as ApiHelpersModule from "@/lib/api-helpers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -12,7 +13,7 @@ vi.mock("@lobbystack/domain", () => ({
 }));
 
 vi.mock("@/lib/api-helpers", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api-helpers")>();
+  const original = await importOriginal<typeof ApiHelpersModule>();
   return { ...original, requireApiSession: mocks.requireApiSession };
 });
 
