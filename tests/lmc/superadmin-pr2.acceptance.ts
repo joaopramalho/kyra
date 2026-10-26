@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { acceptInvitation, inviteManagedLmcOwner, isLmcPilotSetupRequired, provisionManagedLmcClient, resolveLmcPilotPageAccess, updateManagedLmcDraft } from "@lobbystack/domain";
-import { businessMemberships, businesses, outboxMessages, platformAdminAuditEvents, platformAdminOperations, users, withBusinessTransaction } from "@lobbystack/db";
+import { acceptInvitation, activateManagedLmcClient, inviteManagedLmcOwner, isLmcPilotSetupRequired, pauseManagedLmcClient, provisionManagedLmcClient, readManagedClientReadiness, resolveLmcPilotPageAccess, updateManagedLmcDraft } from "@lobbystack/domain";
+import { businessHours, businessMemberships, businesses, calendarConnections, lmcSettings, outboxMessages, platformAdminAuditEvents, platformAdminOperations, services, staff, users, withBusinessTransaction } from "@lobbystack/db";
 import { createLmcHarness } from "./support/harness";
 import { openLmcTestDatabase } from "./support/database";
 
@@ -48,5 +48,46 @@ it("provisions two isolated drafts idempotently and grants only each verified in
     await db.admin.db.delete(platformAdminAuditEvents).where(eq(platformAdminAuditEvents.actorUserId,actor));
     for(const id of created)await db.admin.db.delete(businesses).where(eq(businesses.id,id));
     await b.close();await a.close();await db.close();
+  }
+},30000);
+
+it("activates only after the verified owner connects and syncs a writable calendar, then pauses without deleting history",async()=>{
+  const adminFixture=await createLmcHarness({now:"2030-01-09T03:40:00Z"}),ownerFixture=await createLmcHarness({now:"2030-01-09T03:40:00Z"}),db=openLmcTestDatabase();
+  const actor=adminFixture.ownerId,ownerId=ownerFixture.ownerId,created:string[]=[];
+  const environment={senderEmail:"team@example.invalid",emailProviderReady:true};
+  try{
+    await db.admin.db.update(users).set({platformRole:"platform_admin",emailVerified:true,twoFactorEnabled:true}).where(eq(users.id,actor));
+    await db.admin.db.update(users).set({emailVerified:true}).where(eq(users.id,ownerId));
+    const request=draft("activation",`${ownerId}@example.invalid`),context={db:db.app.db};
+    const client=await provisionManagedLmcClient(context,{actorUserId:actor,idempotencyKey:"activation-client",requestId:randomUUID(),draft:request});created.push(client.tenantId);
+    const invitation=await inviteManagedLmcOwner(context,{actorUserId:actor,tenantId:client.tenantId,idempotencyKey:"activation-invite",requestId:randomUUID(),appBaseUrl:"http://localhost:3000"});
+    const [message]=await db.admin.db.select({payload:outboxMessages.payload}).from(outboxMessages).where(and(eq(outboxMessages.businessId,client.tenantId),eq(outboxMessages.aggregateId,invitation.invitationId)));
+    const token=String((message!.payload as {token:string}).token),tokenHash=(await import("node:crypto")).createHash("sha256").update(token).digest("hex");
+    await acceptInvitation({db:db.app.db},{userId:ownerId,tokenHash,verifiedEmail:`${ownerId}@example.invalid`});
+    const before=await readManagedClientReadiness(context,{actorUserId:actor,tenantId:client.tenantId,environment});
+    expect(before.checks).toMatchObject({draft:true,verifiedOwner:true,calendarAuthorized:false,calendarSelected:false,calendarFresh:false,senderConfigured:true});
+    await expect(activateManagedLmcClient(context,{actorUserId:actor,tenantId:client.tenantId,idempotencyKey:"too-early",requestId:randomUUID(),environment})).rejects.toMatchObject({code:"client_not_ready"});
+    const [defaultStaff]=await db.admin.db.select({id:staff.id}).from(staff).where(eq(staff.businessId,client.tenantId)).limit(1);
+    await db.admin.db.insert(calendarConnections).values({businessId:client.tenantId,ownerUserId:ownerId,staffId:defaultStaff!.id,provider:"google",externalAccountId:`${ownerId}@example.invalid`,selectedCalendarId:"primary",encryptedAccessToken:"encrypted-test-token",status:"connected",lastSyncedAt:new Date()});
+    const ready=await readManagedClientReadiness(context,{actorUserId:actor,tenantId:client.tenantId,environment});
+    expect(ready.canActivate).toBe(true);
+    const activated=await activateManagedLmcClient(context,{actorUserId:actor,tenantId:client.tenantId,idempotencyKey:"activate",requestId:randomUUID(),environment});
+    expect(activated).toMatchObject({tenantId:client.tenantId,activated:true,repeated:false});
+    expect(activated.captureToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(await activateManagedLmcClient(context,{actorUserId:actor,tenantId:client.tenantId,idempotencyKey:"activate",requestId:randomUUID(),environment})).toEqual({tenantId:client.tenantId,activated:true,repeated:true});
+    expect((await db.admin.db.select({status:businesses.status,stage:businesses.onboardingStage}).from(businesses).where(eq(businesses.id,client.tenantId)))[0]).toEqual({status:"active",stage:"managed_active"});
+    expect(await db.admin.db.select().from(services).where(eq(services.businessId,client.tenantId))).toHaveLength(1);
+    expect(await db.admin.db.select().from(businessHours).where(eq(businessHours.businessId,client.tenantId))).toHaveLength(1);
+    expect((await db.admin.db.select({enabled:lmcSettings.enabled}).from(lmcSettings).where(eq(lmcSettings.tenantId,client.tenantId)))[0]?.enabled).toBe(true);
+    expect(await resolveLmcPilotPageAccess({database:db.app.db,authDatabase:db.admin.db},ownerId)).toEqual({tenantId:client.tenantId});
+    await pauseManagedLmcClient(context,{actorUserId:actor,tenantId:client.tenantId,idempotencyKey:`pause-${client.tenantId}`,requestId:randomUUID()});
+    expect((await db.admin.db.select({status:businesses.status}).from(businesses).where(eq(businesses.id,client.tenantId)))[0]?.status).toBe("paused");
+    expect((await db.admin.db.select({enabled:lmcSettings.enabled}).from(lmcSettings).where(eq(lmcSettings.tenantId,client.tenantId)))[0]?.enabled).toBe(false);
+    expect(await db.admin.db.select().from(services).where(eq(services.businessId,client.tenantId))).toHaveLength(1);
+  }finally{
+    await db.admin.db.delete(platformAdminOperations).where(eq(platformAdminOperations.actorUserId,actor));
+    await db.admin.db.delete(platformAdminAuditEvents).where(eq(platformAdminAuditEvents.actorUserId,actor));
+    for(const id of created)await db.admin.db.delete(businesses).where(eq(businesses.id,id));
+    await ownerFixture.close();await adminFixture.close();await db.close();
   }
 },30000);
