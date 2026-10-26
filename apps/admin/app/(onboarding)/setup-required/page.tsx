@@ -19,7 +19,7 @@ export default async function SetupRequiredPage() {
   const session = await getSession(new Headers(requestHeaders));
   if (!session) redirect(localizePublicPath("/login", locale));
 
-  if (!await isLmcPilotSetupRequired({ database: getAppDatabase().db, authDatabase: getAuthDatabase().db }, session.user.id)) notFound();
+  if (!await isLmcPilotSetupRequired({ database: getAppDatabase().db, authDatabase: getAuthDatabase().db }, session.user.id)) redirect("/leads");
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-background px-6 py-16">
