@@ -7,6 +7,11 @@ import { openLmcTestDatabase } from "./database";
 import { createLmcHarness } from "./harness";
 
 type Harness = Awaited<ReturnType<typeof createLmcHarness>>;
+// The exhaustive audit intentionally cold-compiles every allowlisted Next.js
+// route. Hosted runners can spend more than 15 seconds compiling a route even
+// when the request itself is healthy; keep the enclosing 120-second audit cap
+// while allowing an individual cold compile to finish deterministically.
+const HTTP_AUDIT_REQUEST_TIMEOUT_MS = 30_000;
 type AuditRequest = (
   path: string,
   cookie?: string,
@@ -75,7 +80,7 @@ export async function withHttpAudit(
         ...extra,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(HTTP_AUDIT_REQUEST_TIMEOUT_MS),
       redirect: "error",
     });
     let response = await send();
@@ -121,7 +126,7 @@ export async function withHttpAudit(
           email: `${h.ownerId}@example.invalid`,
           password,
         }),
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(HTTP_AUDIT_REQUEST_TIMEOUT_MS),
         redirect: "error",
       });
       if (response.status !== 429 || attempt === 2) break;
