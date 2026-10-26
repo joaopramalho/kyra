@@ -3,6 +3,7 @@ import { probePilotAuthContext } from "./isolation-pilot-auth";
 import { probePilotPublicContext } from "./isolation-pilot-public";
 import { probePilotSessionContext } from "./isolation-pilot-session";
 import { probePilotSuperAdminContext } from "./isolation-pilot-superadmin";
+import { probePilotManagedSetupContext } from "./isolation-pilot-managed-setup";
 import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
 import { probePilotMethodGuards } from "./isolation-pilot-guards";
 import { probePilotWorker } from "./isolation-pilot-worker";
@@ -58,6 +59,7 @@ export async function runTenantIsolationAudit() {
       async (context) => {
         await probePilotMethodGuards(context, routes);
         await probePilotSessionContext(context);
+        await probePilotManagedSetupContext(context);
         await probePilotSuperAdminContext(context);
         await probeAdminHealthContext(context);
         await probeEmailReadContext(context);

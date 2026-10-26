@@ -67,6 +67,9 @@ export async function probePilotSuperAdminContext(context: HttpAuditContext) {
       { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, method: "HEAD" },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, method: "PUT" },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/invite", path: `/api/internal/superadmin/clients/${a.tenantId}/invite`, method: "POST" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "GET" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "HEAD" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "POST" },
     ] as const;
     for (const target of managedDenials) {
       const response = await request(target.path, cookieB, b.tenantId, target.method, {
@@ -81,6 +84,7 @@ export async function probePilotSuperAdminContext(context: HttpAuditContext) {
     for (const target of [
       { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, allow: ["GET", "HEAD", "OPTIONS", "PUT"] },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/invite", path: `/api/internal/superadmin/clients/${a.tenantId}/invite`, allow: ["OPTIONS", "POST"] },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, allow: ["GET", "HEAD", "OPTIONS", "POST"] },
     ] as const) {
       const response = await request(target.path, cookieA, a.tenantId, "OPTIONS");
       const allow = (response.headers.get("allow") ?? "").split(/,\s*/);

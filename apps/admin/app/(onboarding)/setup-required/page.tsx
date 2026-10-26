@@ -7,6 +7,7 @@ import { getAuthDatabase, getSession } from "@/lib/auth";
 import { getAppDatabase } from "@/lib/api-helpers";
 import { localizePublicPath } from "@/lib/locale-path";
 import { localeFromRequestHeaders } from "@/lib/locale-request";
+import { ManagedOwnerSetup } from "@/components/managed-owner-setup";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +38,7 @@ export default async function SetupRequiredPage() {
           <p className="text-sm font-medium">Account ID for the pilot administrator</p>
           <code className="mt-2 block break-all text-sm">{session.user.id}</code>
         </div>
-        <p className="mt-5 text-sm text-muted-foreground">
-          If you are running this pilot, complete the tenant bootstrap and Google Calendar setup
-          using the project's operator setup instructions.
-        </p>
+        <ManagedOwnerSetup />
       </div>
     </main>
   );
