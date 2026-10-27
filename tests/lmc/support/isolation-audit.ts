@@ -6,6 +6,7 @@ import { probePilotSuperAdminContext } from "./isolation-pilot-superadmin";
 import { probePilotManagedSetupContext } from "./isolation-pilot-managed-setup";
 import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
 import { probePilotMethodGuards } from "./isolation-pilot-guards";
+import { probePilotDashboardContext } from "./isolation-pilot-dashboard";
 import { probePilotWorker } from "./isolation-pilot-worker";
 import { probeAdminHealthContext } from "./isolation-admin-health";
 import { openLmcTestDatabase } from "./database";
@@ -58,6 +59,7 @@ export async function runTenantIsolationAudit() {
       process.env.LMC_TEST_HTTP_BASE_URL ?? "http://localhost:3000",
       async (context) => {
         await probePilotMethodGuards(context, routes);
+        await probePilotDashboardContext(context);
         await probePilotSessionContext(context);
         await probePilotManagedSetupContext(context);
         await probePilotSuperAdminContext(context);

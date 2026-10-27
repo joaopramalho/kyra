@@ -74,7 +74,7 @@ export async function updateService(
       ...(input.active !== undefined ? { active: input.active } : {}),
       updatedAt: new Date(),
     }).where(and(eq(services.id, input.serviceId), eq(services.businessId, input.businessId))).returning({ id: services.id });
-    if (!service) throw new Error("Service not found.");
+    if (!service) throw Object.assign(new Error("Service not found."), { status: 404 });
     await enqueueOutbox(tx, { topic: "snapshot.refresh", businessId: input.businessId, aggregateType: "service", aggregateId: service.id, dedupeKey: `service:${service.id}:snapshot:${Date.now()}`, payload: { businessId: input.businessId, reason: "service_updated" } });
   });
 }
@@ -86,7 +86,7 @@ export async function deleteService(
   await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
     await requireBusinessAdmin(tx, input);
     const [service] = await tx.update(services).set({ active: false, updatedAt: new Date() }).where(and(eq(services.id, input.serviceId), eq(services.businessId, input.businessId))).returning({ id: services.id });
-    if (!service) throw new Error("Service not found.");
+    if (!service) throw Object.assign(new Error("Service not found."), { status: 404 });
     await enqueueOutbox(tx, { topic: "snapshot.refresh", businessId: input.businessId, aggregateType: "service", aggregateId: service.id, dedupeKey: `service:${service.id}:snapshot:${Date.now()}`, payload: { businessId: input.businessId, reason: "service_disabled" } });
   });
 }

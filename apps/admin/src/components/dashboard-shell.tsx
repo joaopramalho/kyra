@@ -3,6 +3,7 @@
 import Link from "next/link";
 import posthog from "posthog-js";
 import { createBrowserTelemetry } from "@lobbystack/telemetry/browser";
+import type { PilotDashboardCapability } from "@lobbystack/shared";
 import { requestJson } from "@/lib/request-json";
 import { selectActiveBusiness } from "@/lib/active-business";
 import { usePathname, useRouter } from "next/navigation";
@@ -54,6 +55,7 @@ type Business = {
 
 type DashboardShellProps = {
   pilotMode?: boolean;
+  pilotCapabilities?: readonly PilotDashboardCapability[];
   children: React.ReactNode;
   user: {
     email: string;
@@ -79,7 +81,7 @@ function getSidebarDefaultOpen(): boolean {
   return value?.split("=")[1] !== "false";
 }
 
-export function DashboardShell({ children, user, pilotMode = false }: DashboardShellProps) {
+export function DashboardShell({ children, user, pilotMode = false, pilotCapabilities = [] }: DashboardShellProps) {
   const { t } = useTranslation("common");
   const pathname = usePathname();
   const contentScrollRef = useRef<HTMLElement>(null);
@@ -100,7 +102,7 @@ export function DashboardShell({ children, user, pilotMode = false }: DashboardS
         defaultOpen={getSidebarDefaultOpen()}
         style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
       >
-        <ReplacementSidebar user={user} pilotMode={pilotMode} />
+        <ReplacementSidebar user={user} pilotMode={pilotMode} pilotCapabilities={pilotCapabilities} />
         <SidebarInset
           ref={contentScrollRef}
           className="@container/content min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain has-data-[layout=fixed]:h-full peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100%-(var(--spacing)*4))]"
@@ -132,11 +134,13 @@ function BillingBanner() {
   return <BillingPastDueBanner businessId={business.businessId} plan={billing.data.account.plan} subscriptionState={billing.data.account.subscriptionState} permissions={billing.data.permissions} />;
 }
 
-function ReplacementSidebar({ user, pilotMode = false }: Pick<DashboardShellProps, "user" | "pilotMode">) {
+function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }: Pick<DashboardShellProps, "user" | "pilotMode" | "pilotCapabilities">) {
   const pathname = usePathname();
   const { t } = useTranslation(["nav", "settings", "agent"]);
+  const pilotHas = (capability: PilotDashboardCapability) => pilotCapabilities.includes(capability);
   const general: NavigationItem[] = pilotMode ? [
-    { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
+    ...(pilotHas("leads") ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
+    ...(pilotHas("contacts") ? [{ label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon }] : []),
   ] : [
     { label: t("nav:items.home"), href: "/", icon: HomeIcon },
     { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
@@ -144,14 +148,18 @@ function ReplacementSidebar({ user, pilotMode = false }: Pick<DashboardShellProp
     ...(["/messages", "/settings/widget"].some(route => pathname === route || pathname.startsWith(`${route}/`)) ? [{ label: t("nav:items.messages"), href: "/messages", icon: MessageSquareMoreIcon }] : []),
     { label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon },
   ];
-  const receptionist: NavigationItem[] = [
+  const receptionist: NavigationItem[] = pilotMode ? [
+    ...(pilotHas("knowledge") ? [{ label: t("agent:sections.knowledge.title"), href: "/agent/knowledge", icon: BookTextIcon }] : []),
+    ...(pilotHas("services") ? [{ label: t("agent:sections.services.title"), href: "/agent/services", icon: BlocksIcon }] : []),
+  ] : [
     { label: t("agent:sections.basicSettings.title"), href: "/agent", icon: ClipboardCheckIcon },
     { label: t("agent:sections.knowledge.title"), href: "/agent/knowledge", icon: BookTextIcon },
     { label: t("agent:sections.services.title"), href: "/agent/services", icon: BlocksIcon },
     { label: t("agent:sections.rules.title"), href: "/agent/rules", icon: WorkflowIcon },
   ];
   const other: NavigationItem[] = pilotMode ? [
-    { label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon },
+    ...(pilotHas("business_profile") ? [{ label: t("settings:sections.businessProfile"), href: "/settings/business", icon: SettingsIcon }] : []),
+    ...(pilotHas("email_settings") ? [{ label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon }] : []),
   ] : [
     { label: t("nav:items.analytics"), href: "/analytics", icon: ChartColumnIncreasingIcon },
     { label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon },
@@ -167,7 +175,7 @@ function ReplacementSidebar({ user, pilotMode = false }: Pick<DashboardShellProp
       </SidebarHeader>
       <SidebarContent>
         <NavigationGroup items={general} pathname={pathname} title={t("nav:sidebar.general")} />
-        {!pilotMode && <NavigationGroup items={receptionist} pathname={pathname} title={t("nav:sidebar.agent")} />}
+        {receptionist.length > 0 && <NavigationGroup items={receptionist} pathname={pathname} title={t("nav:sidebar.agent")} />}
         <NavigationGroup items={other} pathname={pathname} title={t("nav:sidebar.other")} />
       </SidebarContent>
       <SidebarFooter>

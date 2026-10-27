@@ -14,5 +14,5 @@ describe("LMC exhaustive tenant-isolation acceptance", () => {
     expect(report.skipped).toEqual([]);
     expect(report.failures, report.failures.join("\n")).toEqual([]);
     expect(report.runtimeRoles.every((role) => !role.superuser && !role.bypassRls)).toBe(true);
-  }, 120_000);
+  }, 180_000);
 });

@@ -25,7 +25,7 @@ function setup(role = "business_owner", pilotMode = false) {
   client.setQueryData(["billing", "business"], { account: null, permissions: { hasCheckoutAccess: false }, availableCheckoutPlans: [], availableCheckoutIntervals: { starter: [], pro: [] } });
   client.setQueryData(["phone-numbers", "business"], { phoneNumbers: [] });
   client.setQueryData(["setup", "business"], { steps: [] });
-  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
+  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} pilotCapabilities={pilotMode ? ["leads", "email_settings", "business_profile", "services", "knowledge", "contacts"] : []} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
   const view = render(content());
   return { ...view, client, navigate(pathname: string) { route.pathname = pathname; view.rerender(content()); } };
 }
@@ -60,9 +60,9 @@ describe("original shared navigation", () => {
 });
 
 describe("pilot navigation boundary",()=>{
-  it("renders only lead/email links and leaves billing queries disabled",()=>{
+  it("renders only capability-approved links and leaves billing queries disabled",()=>{
     const {client}=setup("business_owner",true);
-    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/leads","/settings/email"]);
+    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/settings/email"]);
     expect(client.getQueryCache().find({queryKey:["billing","business"],exact:true})?.isActive()??false).toBe(false);
   });
   it("does not offer the inherited create-workspace onboarding route",async()=>{
