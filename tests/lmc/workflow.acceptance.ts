@@ -20,7 +20,8 @@ describe("captured leads are processed and delivered through the durable outbox"
     expect(h.mail.to(h.email)).toHaveLength(1);
     const reply = h.mail.lastTo(h.email);
     expect(reply.text).toMatch(/ZIP/i);
-    expect(reply.text).toMatch(/repair.*replacement/i);
+    expect(reply.text).toContain("roof repair");
+    expect(reply.text).not.toMatch(/roof replacement/i);
     expect(reply.text).toContain("100 Main Street");
     expect(reply.headers["List-Unsubscribe"]).toMatch(/^<https:\/\//);
     expect(reply.replyTo).toMatch(/^reply\+[A-Za-z0-9_-]{43}@inbound\.example\.invalid$/);
@@ -43,6 +44,14 @@ describe("captured leads are processed and delivered through the durable outbox"
     await h.worker.drain();
     expect(h.mail.lastTo(h.email).text).toMatch(/inspection|estimate/i);
     expect(h.mail.lastTo(h.email).text).not.toMatch(/\$\s*\d|\d\s*%/);
+  });
+  it("asks for clarification instead of pausing a low-confidence lead", async () => {
+    h.model.responses.push({ intent: "unknown", confidence: 0.2, qualification: {} });
+    const id = await h.capture("The unit is doing that thing again.");
+    await h.worker.drain();
+    expect(await h.lead(id)).toMatchObject({ status: "qualifying", aiPaused: false, reason: null });
+    expect(h.mail.lastTo(h.email).text).toMatch(/clarify/i);
+    expect(h.mail.to(h.ownerEmail)).toHaveLength(0);
   });
   it("bypasses the model for emergencies and sends the owner the actual history", async () => {
     const id = await h.capture("There is an active leak at my home");

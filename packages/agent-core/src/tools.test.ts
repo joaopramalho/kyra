@@ -34,6 +34,14 @@ describe("createReceptionistTools", () => {
     expect(names).toEqual(["getBusinessHours", "getBusinessServices", "searchKnowledge", "takeMessage"]);
   });
 
+  it("exposes only read-only business intelligence to email reasoning", () => {
+    expect(toolNames({ channel: "email", toolPolicy: "information" })).toEqual([
+      "getBusinessHours",
+      "getBusinessServices",
+      "searchKnowledge",
+    ]);
+  });
+
   it("offers appointment changes only when the call carries the caller's number", () => {
     expect(toolNames({ channel: "web_voice" })).not.toContain("cancelAppointment");
     expect(toolNames({ channel: "voice", callerPhone: "+14165550100" })).toEqual(expect.arrayContaining(["lookupAppointmentForChange", "verifyAppointmentForChange", "cancelAppointment", "rescheduleAppointment"]));

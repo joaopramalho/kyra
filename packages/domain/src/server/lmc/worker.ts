@@ -7,6 +7,7 @@ import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, resc
 import { redactLmcCapabilities } from "./redaction";
 import { listEmailVisitSlots } from "./scheduling";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
+import { buildEmailQualificationPrompt } from "./conversation";
 
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
@@ -86,11 +87,14 @@ export class LmcEmailWorker {
     const isInjection = message.headers["X-LMC-Injection-Detected"]==="true" || injection(`${lead.name ?? ""}\n${message.subject}\n${message.body}`);
     const isConfiguredEscalation = settings.escalation?.keywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase())) ?? false;
     let actions: LmcStructuredAction[] = [];
+    let suggestedReply: string | undefined;
     if (!isEmergency && !isInjection && isConfiguredEscalation) actions=[{type:"handoff",reason:"configured_escalation"}];
     if (!isEmergency && !isInjection && !isConfiguredEscalation) {
       try {
-        actions = (await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
-          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))})).actions;
+        const result = await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
+          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))});
+        actions = result.actions;
+        suggestedReply = result.suggestedReply;
       } catch { actions=[{type:"handoff",reason:"model_unavailable"}]; }
     }
     const proposed={...lead.qualification};
@@ -98,7 +102,7 @@ export class LmcEmailWorker {
     const intentAction=actions.find(action=>action.type==="intent");
     const proposedService=settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===proposed.serviceType?.toLowerCase()));
     let availableSlots:Lead["offeredSlots"]=[];
-    if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
+    if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff"||action.type==="clarify")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
       try{availableSlots=await listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()});}
       catch{actions=[{type:"handoff",reason:"calendar_unavailable"}];}
     }
@@ -111,7 +115,7 @@ export class LmcEmailWorker {
       let qualification={...current.qualification,...(current.name ? {name:current.name} : {})};
       let status=current.appointmentId?"booked":"qualifying", reason: string|null=null, paused=false, alert=false, appointmentId=current.appointmentId;
       let offeredSlots=current.offeredSlots;
-      let text="Please share your ZIP code and whether you need roof repair or roof replacement. Is this a residential or commercial property?";
+      let text="Please share your ZIP code, the service you need, and whether the property is residential or commercial.";
       if (isEmergency) {
         qualification={...qualification,urgency:"emergency"}; status="human_handoff"; reason="emergency"; paused=true; alert=true; text=settings.emergencyText;
       } else if (isInjection) {
@@ -124,13 +128,18 @@ export class LmcEmailWorker {
           qualification={...qualification,...parsed.data};
         }
         const handoff=actions.find(action=>action.type==="handoff");
+        const clarification=actions.find(action=>action.type==="clarify");
         const intent=actions.find(action=>action.type==="intent");
         const requestedService=qualification.serviceType?.toLowerCase();
         const service=requestedService ? settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===requestedService)) : undefined;
         if (qualification.zip && !settings.serviceAreaZips.includes(qualification.zip)) {status="declined";reason="outside_service_area";text="This location is outside our service area. We do not serve that ZIP code.";}
         else if (requestedService && !service) {status="declined";reason="unsupported_service";text="We do not offer the requested service. Our team can help only with our listed services.";}
-        else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown"].includes(intent.intent))) {
+        else if (handoff || (intent?.type==="intent" && ["complaint","complex"].includes(intent.intent))) {
           status="human_handoff";reason=handoff?.type==="handoff" ? handoff.reason : "human_review_required";paused=true;alert=true;text=reason==="configured_escalation" ? settings.escalation!.replyText : "A team member will review your request and reply personally.";
+        } else if(clarification){
+          text=suggestedReply ?? "Could you clarify what you would like help with?";
+        } else if(intent?.type==="intent"&&intent.intent==="question"){
+          text=suggestedReply ?? "Could you clarify your question so I can look up the right business information?";
         } else if(intent?.type==="intent"&&(intent.intent==="cancel"||intent.intent==="reschedule")){
           const [existing]=current.appointmentId&&current.contactId ? await tx.select({id:appointments.id,serviceId:appointments.serviceId}).from(appointments).innerJoin(contacts,and(eq(contacts.businessId,job.tenantId),eq(contacts.id,appointments.contactId),eq(contacts.email,current.email))).where(and(eq(appointments.businessId,job.tenantId),eq(appointments.id,current.appointmentId),eq(appointments.contactId,current.contactId),eq(appointments.sourceChannel,"email"),eq(appointments.status,"confirmed"))).limit(1) : [];
           const chosen=current.offeredSlots.find(slot=>slot.startsAt===intent.requestedSlot&&slot.serviceId===existing?.serviceId);
@@ -162,13 +171,8 @@ export class LmcEmailWorker {
           status="human_handoff";reason="no_verified_calendar_slots";paused=true;alert=true;text="A team member will help arrange an inspection once calendar availability is verified.";
         } else if (intent?.type==="intent" && intent.intent==="wait") {text="Thank you. We will wait for you to contact our office.";}
         else {
-          const questions:string[]=[];
-          if (!qualification.zip) questions.push("What is your ZIP code?");
-          if (!service) questions.push(`Which service do you need: ${settings.services.map(item=>item.name).join(" or ")}? Please tell us whether this is repair or replacement.`);
-          if (!qualification.propertyType) questions.push("Is the property residential or commercial?");
           if (service) qualification.serviceType=service.name;
-          if (!questions.length) questions.push("Thank you. A team member will help arrange an inspection.");
-          text=questions.join(" ");
+          text=buildEmailQualificationPrompt(settings,qualification,Boolean(service));
           if (intent?.type==="intent" && intent.intent==="price") text=`${settings.priceInformation || "We need an inspection to provide an estimate; we cannot quote a price by email."} ${text}`;
         }
       }

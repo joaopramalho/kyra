@@ -1,5 +1,6 @@
-import { EmailChannel, createLmcEmailModel } from "@lobbystack/agent-core";
+import { EmailChannel, createLmcEmailModel, createLmcEmailResponder } from "@lobbystack/agent-core";
 import { LmcEmailWorker } from "@lobbystack/domain";
+import type { DomainContext } from "@lobbystack/domain";
 import {
   FakeLmcEmailModel,
   FakeLmcEmailProvider,
@@ -36,6 +37,7 @@ function wait(signal: AbortSignal): Promise<void> {
 export function createLmcEmailRuntime(input: {
   database: Database;
   dispatcher: Database;
+  domain?: DomainContext;
   environment?: Record<string, string | undefined>;
 }) {
   const environment = input.environment ?? process.env;
@@ -55,7 +57,7 @@ export function createLmcEmailRuntime(input: {
     database: input.database,
     dispatcher: input.dispatcher,
     now: () => new Date(),
-    channel: new EmailChannel(model),
+    channel: new EmailChannel(model, input.domain ? createLmcEmailResponder(input.domain, environment) : undefined),
     mail,
     ...config,
     allowLocalHttp: config.mode === "fake",

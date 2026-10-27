@@ -184,8 +184,8 @@ export async function runLmcDemo(): Promise<LmcDemoReport> {
     requireProof(
       firstReplyMs < 5000 &&
         /ZIP/i.test(first.text) &&
-        /repair/i.test(first.text) &&
-        /replacement/i.test(first.text),
+        /roof repair/i.test(first.text) &&
+        !/roof replacement/i.test(first.text),
       "DEMO_FIRST_REPLY_NOT_PROVEN",
     );
     requireProof(
@@ -199,7 +199,7 @@ export async function runLmcDemo(): Promise<LmcDemoReport> {
     );
     steps.push({
       name: "first_reply",
-      detail: `A threaded reply asked for ZIP and repair versus replacement in ${firstReplyMs} ms.`,
+      detail: `A threaded reply asked for ZIP and the configured roof repair service in ${firstReplyMs} ms.`,
     });
     await h.reply(bookedId, "Roof repair, ZIP 33101, residential homeowner.");
     await h.work();
