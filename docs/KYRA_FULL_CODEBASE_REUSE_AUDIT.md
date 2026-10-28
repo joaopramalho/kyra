@@ -234,3 +234,48 @@ The first implementation slice extends, rather than replaces:
 - existing email authentication, queue, threading, suppression and human-handoff boundaries.
 
 Email receives a read-only tool policy for business hours, services and knowledge. Side-effecting booking/change/message/transfer tools remain withheld; the verified domain workflow still owns them. Voice retains its four-step budget while email may use a larger asynchronous reasoning budget. This is an incremental bridge toward one agent architecture, not a new agent or a claim that the CRM/email persistence consolidation is complete.
+
+## Current implementation status
+
+The email bridge currently provides:
+
+- shared `createReceptionistAgent` reasoning with email-specific untrusted-content instructions;
+- tenant snapshot and conversation-history reuse;
+- read-only business-hours, services, and knowledge tools;
+- structured intent/qualification actions followed by backend validation;
+- clarification instead of terminal low-confidence handoff for routine ambiguity;
+- one qualification question per response;
+- bounded model-provider retries through the durable LMC job queue;
+- privacy-conscious decision and failure metadata in LMC events;
+- existing inbound authentication, suppression, threading, handoff, and outbound idempotency boundaries.
+
+The following are intentionally not yet exposed to the email agent:
+
+- direct booking, cancellation, and rescheduling tools;
+- phone-based appointment-change authorization;
+- voice transfer/hangup controls;
+- arbitrary customer-provided tool arguments;
+- cross-channel conversation-table unification.
+
+These capabilities require an email-specific identity and confirmation contract before exposure. Keeping them behind the existing domain workflow is safer than granting the model direct side effects.
+
+## Operational requirements
+
+- Configure `LMC_EMAIL_WORKER_ENABLED` only for environments with the LMC database, provider credentials, webhook signing secret, receiving domain, and public HTTPS base URL available.
+- Run the worker with the worker database role and retain the dispatcher role separation for due-job discovery.
+- Set `LMC_TEST_DATABASE_URL` and start PostgreSQL for the full LMC acceptance and RLS suites.
+- Treat `email_processing_failed` events and `MODEL_UNAVAILABLE` job errors as operational signals; inspect provider/model health before manually replaying jobs.
+- Do not replay an outbound message after an uncertain provider response without checking provider reconciliation and the persisted idempotency key.
+
+## Rollout and rollback
+
+Roll out the email bridge behind the existing LMC enablement flag, first with fake providers in a non-production environment, then with one tenant and provider-backed acceptance tests. Monitor clarification rate, human-handoff rate, model failure retries, outbound reconciliation events, suppression events, and duplicate-message alarms.
+
+Rollback is configuration-first: disable LMC email processing, leave persisted jobs and messages intact, and route affected leads to the existing human workflow. Code rollback is a revert of the email bridge commits only; do not remove LMC tables, events, or queued-message history during rollback. Re-enable processing only after the failed job and provider states have been reconciled.
+
+## Remaining risks
+
+- Provider delivery still occurs in the send transaction; separating validation/state transition from the external call is a follow-up reliability change.
+- Resend idempotency protects the primary LMC provider path, while SMTP uncertainty requires explicit reconciliation before retry.
+- LMC email persistence remains separate from the original `conversations/messages` model.
+- Full PostgreSQL acceptance, cross-tenant negative tests, and provider smoke tests require the configured test infrastructure and are not replaced by unit tests.
