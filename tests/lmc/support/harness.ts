@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
-import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction } from "@lobbystack/db";
+import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { FakeLmcInboundProvider, SecretBox, createFakeLmcProviders } from "@lobbystack/providers";
 import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent, LmcInboundProvider } from "@lobbystack/contracts";
 import { EmailChannel } from "../../../packages/agent-core/src/channels";
@@ -75,9 +75,9 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
     async work(){
       try {
         const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
-        await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map(block=>({...block,staffId}))});
+        await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map((block:{startsAt:string;endsAt:string;externalEventId?:string})=>({...block,staffId}))});
         const result=await worker.drain();
-        const rows=await scoped(tx=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
+        const rows=await scoped((tx:DatabaseTransaction)=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
         for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
         return result;
       } catch (error) {
