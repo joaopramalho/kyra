@@ -304,7 +304,10 @@ export class LmcEmailWorker {
         await tx.update(lmcMessages).set({status:"queued"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,prepared.message.id),eq(lmcMessages.status,"sending")));
         if(prepared.followupRateWindow) await tx.update(lmcRateWindows).set({count:sql`${lmcRateWindows.count}-1`}).where(and(eq(lmcRateWindows.tenantId,job.tenantId),eq(lmcRateWindows.scopeKey,prepared.followupRateWindow.scopeKey),eq(lmcRateWindows.windowStart,prepared.followupRateWindow.windowStart),sql`${lmcRateWindows.count}>0`));
       });
-      throw error;
+      const code = error instanceof Error && ["INVALID_OUTBOUND_EMAIL", "IDEMPOTENCY_CONFLICT"].includes(error.message)
+        ? error.message
+        : "EMAIL_PROVIDER_UNAVAILABLE";
+      throw new Error(code);
     }
     await this.scoped(job.tenantId,async tx=>{
       const [sent]=await tx.update(lmcMessages).set({status:"sent",providerId:delivery.providerMessageId,sentAt:this.input.now()}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,prepared.message.id),eq(lmcMessages.status,"sending"))).returning({id:lmcMessages.id});

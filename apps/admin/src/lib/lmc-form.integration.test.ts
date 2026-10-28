@@ -74,7 +74,7 @@ enabled("worker completes the form lead process job", async () => {
     );
     if (result.failed !== 0) {
       const error = jobs.find(job => job.lastError)?.lastError;
-      const code = ["EMAIL_PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
+      const code = ["EMAIL_PROVIDER_UNAVAILABLE", "INVALID_OUTBOUND_EMAIL", "IDEMPOTENCY_CONFLICT", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
       throw new Error(`FORM_WORKER_FAILED_${code}`);
     }
     if (!jobs.some(job => job.kind === "process" && job.status === "done" && job.lastError === null)) throw new Error("FORM_PROCESS_JOB_NOT_DONE");
