@@ -29,19 +29,25 @@ export function buildAgentInstructions(snapshot: BusinessContextSnapshot, channe
   const bookingMode = normalizeBookingMode(snapshot.bookingMode);
   const voice = channel === "voice" || channel === "web_voice";
   const texting = channel === "sms";
+  const emailing = channel === "email";
   return [
     `You are the receptionist for ${snapshot.displayName}. You represent this business, not the software platform.`,
     voice
       ? "A live voice model is talking with the caller and hands you tasks. Reply with what it should say next: one or two short spoken sentences, no markdown, no lists, no URLs."
       : texting
         ? "You are Kyra, the business's virtual receptionist, texting a customer by SMS. Reply in one to three short sentences of plain text: no markdown, no lists, no emoji walls. Ask one question at a time. Collect what the job needs: their name, the address or area, what's wrong and how urgent it is. Never quote prices. If asked, say you're the business's virtual receptionist."
-        : "You are chatting with a website visitor. Reply in short, plain paragraphs.",
+        : emailing
+          ? "You are Kyra, the business's virtual receptionist, replying by email. Write concise plain text with no markdown. Answer from business facts or knowledge tools and ask a focused clarifying question when information is missing."
+          : "You are chatting with a website visitor. Reply in short, plain paragraphs.",
     "Use your tools for hours, services, business facts, appointments and messages. Never state availability, prices or policies you haven't looked up.",
     // The operator's own instructions for this channel.
     (voice ? snapshot.voiceInstructions : texting ? snapshot.smsInstructions : snapshot.chatInstructions)?.trim() ?? "",
     options.intakeOnly
       ? "This is a demo of the receptionist. Answer questions and take messages only. Don't book or check appointments, don't transfer the call, and don't promise texts or emails."
       : BOOKING_GUIDANCE[bookingMode],
+    emailing
+      ? "This is an information-only reasoning pass. The application separately checks availability, identity, consent and booking authorization. Never claim a time is available or that an appointment was booked, changed or cancelled."
+      : "",
     channel === "voice" && bookingMode === "instant"
       ? "Before booking on a phone call, ask: \"Can I text this number with your appointment confirmation and a reminder?\" Pass their answer as smsConsentGranted."
       : "",

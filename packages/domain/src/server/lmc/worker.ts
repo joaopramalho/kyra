@@ -1,16 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
-import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
+import { and, asc, eq, or, sql } from "drizzle-orm";
+import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailDecision, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
 import { appointments, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
 import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
 import { redactLmcCapabilities } from "./redaction";
 import { listEmailVisitSlots } from "./scheduling";
-import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
+import { classifyLmcJobFailure, enqueueLmcJob, LMC_JOB_LEASE_MS, LmcJobQueue, type LmcJob, type LmcJobFailureDiagnostic } from "./queue";
+import { buildEmailQualificationPrompt } from "./conversation";
+import { classifyLmcProcessingError } from "./failure";
+import { summarizeLmcActions } from "./observability";
 
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
-type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string; allowLocalHttp?: boolean };
+type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string; allowLocalHttp?: boolean; onJobFailure?: (diagnostic: LmcJobFailureDiagnostic) => void };
+class LmcJobLeaseError extends Error {}
 const terminal = new Set(["opted_out","suppressed","declined","booked"]);
 const processingTerminal = new Set(["opted_out","suppressed","declined"]);
 const injection = (text: string) => /ignore\s+(?:all\s+)?(?:your|previous|system)\s+(?:rules|instructions)|\bsystem\s*:|\b(?:give|apply)\s+\d{1,3}\s*%\s*(?:off|discount)|another\s+tenant/i.test(text);
@@ -25,7 +29,7 @@ export class LmcEmailWorker {
     this.baseUrl = input.baseUrl.replace(/\/$/,"");
     // Validate the mandatory signing secret before the first outbound transaction.
     signActionToken({tenantId:"00000000-0000-4000-8000-000000000000",leadId:"00000000-0000-4000-8000-000000000000",purpose:"unsubscribe"},input.signingSecret);
-    this.queue = new LmcJobQueue({worker:input.database,dispatcher:input.dispatcher,now:input.now});
+    this.queue = new LmcJobQueue({worker:input.database,dispatcher:input.dispatcher,now:input.now,...(input.onJobFailure ? {onFailure:input.onJobFailure} : {})});
   }
 
   /** Bounded work per invocation. The runtime can call this again while work remains. */
@@ -45,7 +49,7 @@ export class LmcEmailWorker {
             else throw new Error("INVALID_JOB_PAYLOAD");
             if (await this.queue.complete(job)) result.completed++;
           } catch (error) {
-            const code = error instanceof Error ? error.message : "LMC_JOB_FAILED";
+            const code = classifyLmcJobFailure(error).code;
             await this.queue.fail(job,code);
             result.failed++;
           }
@@ -61,7 +65,44 @@ export class LmcEmailWorker {
   }
   private async lease(tx: DatabaseTransaction, job: LmcJob) {
     const [current] = await tx.select().from(lmcJobs).where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id))).for("update");
-    if (!current || current.status!=="running" || current.leaseToken!==job.leaseToken || !current.leasedUntil || current.leasedUntil<=this.input.now()) throw new Error("LMC_JOB_FAILED");
+    if (!current || current.status!=="running" || current.leaseToken!==job.leaseToken) throw new LmcJobLeaseError("LMC_JOB_LEASE_LOST");
+    if (!current.leasedUntil || current.leasedUntil<=this.input.now()) throw new LmcJobLeaseError("LMC_JOB_LEASE_EXPIRED");
+  }
+  private leaseFailure(error: unknown) {
+    return error instanceof LmcJobLeaseError;
+  }
+  private async withLeaseHeartbeat<T>(job: LmcJob, work: () => Promise<T>): Promise<T> {
+    let heartbeatError: unknown;
+    let pending = Promise.resolve();
+    const renew = () => {
+      pending = pending.then(async () => {
+        if (!await this.queue.renew(job)) throw new Error("LMC_JOB_LEASE_LOST");
+      }).catch(error => {
+        heartbeatError ??= error;
+      });
+    };
+    const heartbeat = setInterval(renew,LMC_JOB_LEASE_MS/3);
+    heartbeat.unref();
+    let value: T | undefined;
+    let workError: unknown;
+    try {
+      value = await work();
+    } catch (error) {
+      workError = error;
+    } finally {
+      clearInterval(heartbeat);
+    }
+    await pending;
+    if (!heartbeatError) {
+      try {
+        if (!await this.queue.renew(job)) heartbeatError = new Error("LMC_JOB_LEASE_LOST");
+      } catch (error) {
+        heartbeatError = error;
+      }
+    }
+    if (heartbeatError) throw new LmcJobLeaseError("LMC_JOB_LEASE_LOST");
+    if (workError) throw workError;
+    return value as T;
   }
   private async suppressed(tx: DatabaseTransaction, lead: Lead) {
     return (await tx.select({email:lmcSuppressions.email}).from(lmcSuppressions).where(and(eq(lmcSuppressions.tenantId,lead.tenantId),eq(lmcSuppressions.email,lead.email))).limit(1)).length>0;
@@ -86,21 +127,45 @@ export class LmcEmailWorker {
     const isInjection = message.headers["X-LMC-Injection-Detected"]==="true" || injection(`${lead.name ?? ""}\n${message.subject}\n${message.body}`);
     const isConfiguredEscalation = settings.escalation?.keywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase())) ?? false;
     let actions: LmcStructuredAction[] = [];
+    let suggestedReply: string | undefined;
+    let decision: Pick<LmcEmailDecision, "intent" | "confidence"> | undefined;
+    let modelOutcome: "not_called" | "success" = "not_called";
     if (!isEmergency && !isInjection && isConfiguredEscalation) actions=[{type:"handoff",reason:"configured_escalation"}];
     if (!isEmergency && !isInjection && !isConfiguredEscalation) {
       try {
-        actions = (await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
-          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))})).actions;
-      } catch { actions=[{type:"handoff",reason:"model_unavailable"}]; }
+        const result = await this.withLeaseHeartbeat(job,() => this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
+          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))}));
+        actions = result.actions;
+        suggestedReply = result.suggestedReply;
+        decision = result.decision;
+        modelOutcome = "success";
+      } catch (error) {
+        if (this.leaseFailure(error)) throw error;
+        const failureCode = classifyLmcProcessingError(error);
+        if (failureCode) {
+          await this.scoped(job.tenantId, async (tx) => {
+            await tx.insert(lmcEvents).values({
+              tenantId: job.tenantId,
+              leadId: lead.id,
+              type: "email_processing_failed",
+              externalId: `processing-failed:${job.id}:${job.attempts}`,
+              metadata: { messageId: message.id, errorCategory: failureCode, attempt: job.attempts },
+              createdAt: this.input.now(),
+            });
+          });
+          throw new Error(failureCode);
+        }
+        actions=[{type:"handoff",reason:"model_unavailable"}];
+      }
     }
     const proposed={...lead.qualification};
     for(const action of actions)if(action.type==="qualify"&&action.confidence>=settings.confidenceThreshold){const fields=lmcQualificationSchema.safeParse(action.fields);if(fields.success)Object.assign(proposed,fields.data);}
     const intentAction=actions.find(action=>action.type==="intent");
     const proposedService=settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===proposed.serviceType?.toLowerCase()));
     let availableSlots:Lead["offeredSlots"]=[];
-    if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
-      try{availableSlots=await listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()});}
-      catch{actions=[{type:"handoff",reason:"calendar_unavailable"}];}
+    if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff"||action.type==="clarify")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
+      try{availableSlots=await this.withLeaseHeartbeat(job,() => listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()}));}
+      catch(error){if(this.leaseFailure(error))throw error;actions=[{type:"handoff",reason:"calendar_unavailable"}];}
     }
     await this.scoped(job.tenantId,async tx => {
       await this.lease(tx,job);
@@ -111,7 +176,7 @@ export class LmcEmailWorker {
       let qualification={...current.qualification,...(current.name ? {name:current.name} : {})};
       let status=current.appointmentId?"booked":"qualifying", reason: string|null=null, paused=false, alert=false, appointmentId=current.appointmentId;
       let offeredSlots=current.offeredSlots;
-      let text="Please share your ZIP code and whether you need roof repair or roof replacement. Is this a residential or commercial property?";
+      let text="Please share your ZIP code, the service you need, and whether the property is residential or commercial.";
       if (isEmergency) {
         qualification={...qualification,urgency:"emergency"}; status="human_handoff"; reason="emergency"; paused=true; alert=true; text=settings.emergencyText;
       } else if (isInjection) {
@@ -124,13 +189,18 @@ export class LmcEmailWorker {
           qualification={...qualification,...parsed.data};
         }
         const handoff=actions.find(action=>action.type==="handoff");
+        const clarification=actions.find(action=>action.type==="clarify");
         const intent=actions.find(action=>action.type==="intent");
         const requestedService=qualification.serviceType?.toLowerCase();
         const service=requestedService ? settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===requestedService)) : undefined;
         if (qualification.zip && !settings.serviceAreaZips.includes(qualification.zip)) {status="declined";reason="outside_service_area";text="This location is outside our service area. We do not serve that ZIP code.";}
         else if (requestedService && !service) {status="declined";reason="unsupported_service";text="We do not offer the requested service. Our team can help only with our listed services.";}
-        else if (handoff || (intent?.type==="intent" && ["complaint","complex","unknown"].includes(intent.intent))) {
+        else if (handoff || (intent?.type==="intent" && ["complaint","complex"].includes(intent.intent))) {
           status="human_handoff";reason=handoff?.type==="handoff" ? handoff.reason : "human_review_required";paused=true;alert=true;text=reason==="configured_escalation" ? settings.escalation!.replyText : "A team member will review your request and reply personally.";
+        } else if(clarification){
+          text=suggestedReply ?? "Could you clarify what you would like help with?";
+        } else if(intent?.type==="intent"&&intent.intent==="question"){
+          text=suggestedReply ?? "Could you clarify your question so I can look up the right business information?";
         } else if(intent?.type==="intent"&&(intent.intent==="cancel"||intent.intent==="reschedule")){
           const [existing]=current.appointmentId&&current.contactId ? await tx.select({id:appointments.id,serviceId:appointments.serviceId}).from(appointments).innerJoin(contacts,and(eq(contacts.businessId,job.tenantId),eq(contacts.id,appointments.contactId),eq(contacts.email,current.email))).where(and(eq(appointments.businessId,job.tenantId),eq(appointments.id,current.appointmentId),eq(appointments.contactId,current.contactId),eq(appointments.sourceChannel,"email"),eq(appointments.status,"confirmed"))).limit(1) : [];
           const chosen=current.offeredSlots.find(slot=>slot.startsAt===intent.requestedSlot&&slot.serviceId===existing?.serviceId);
@@ -162,13 +232,8 @@ export class LmcEmailWorker {
           status="human_handoff";reason="no_verified_calendar_slots";paused=true;alert=true;text="A team member will help arrange an inspection once calendar availability is verified.";
         } else if (intent?.type==="intent" && intent.intent==="wait") {text="Thank you. We will wait for you to contact our office.";}
         else {
-          const questions:string[]=[];
-          if (!qualification.zip) questions.push("What is your ZIP code?");
-          if (!service) questions.push(`Which service do you need: ${settings.services.map(item=>item.name).join(" or ")}? Please tell us whether this is repair or replacement.`);
-          if (!qualification.propertyType) questions.push("Is the property residential or commercial?");
           if (service) qualification.serviceType=service.name;
-          if (!questions.length) questions.push("Thank you. A team member will help arrange an inspection.");
-          text=questions.join(" ");
+          text=buildEmailQualificationPrompt(settings,qualification,Boolean(service));
           if (intent?.type==="intent" && intent.intent==="price") text=`${settings.priceInformation || "We need an inspection to provide an estimate; we cannot quote a price by email."} ${text}`;
         }
       }
@@ -180,7 +245,7 @@ export class LmcEmailWorker {
         const full=summary.length>45_000 ? `${summary.slice(0,45_000)}\nFull history: ${this.baseUrl}/leads/${lead.id}` : summary;
         await this.outbound(tx,job,current,message,settings,payload.replyToken,full,"owner_alert",true,payload.generation);
       }
-      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"email_processed",externalId:`processed:${job.id}`,metadata:{messageId:message.id,status,reason},createdAt:this.input.now()});
+      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"email_processed",externalId:`processed:${job.id}`,metadata:{messageId:message.id,status,reason,attempt:job.attempts,modelOutcome,...summarizeLmcActions(actions,decision)},createdAt:this.input.now()});
     });
   }
 
@@ -227,23 +292,31 @@ export class LmcEmailWorker {
 
   private async send(job: LmcJob) {
     const payload=lmcSendJobSchema.parse(job.payload);
-    await this.scoped(job.tenantId,async tx=>{
+    const prepared=await (async()=>{
+      let stage="lease";
+      try {
+        return await this.scoped(job.tenantId,async tx=>{
       await this.lease(tx,job);
+      stage="load_records";
       const [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId))).for("update");
       const [message]=await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.id,payload.messageId))).for("update");
       const outgoing=payload.outbound;
+      stage="payload_validation";
       if (!lead || !message || outgoing.tenantId!==job.tenantId || outgoing.leadId!==job.leadId || outgoing.headers["Message-ID"]!==message.messageId || outgoing.text!==message.body || outgoing.to!==message.toEmail || outgoing.subject!==message.subject || outgoing.kind!==message.kind) throw new Error("INVALID_JOB_PAYLOAD");
-      if (message.status!=="queued") return;
+      const staleSending=message.status==="sending"&&job.attempts>1;
+      if (message.status!=="queued"&&!staleSending) return null;
       const owner=message.kind==="owner_alert";
+      stage="settings";
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,job.tenantId)).limit(1);
       const config=settings ? lmcBusinessSettingsSchema.parse(settings.config) : null;
+      stage="recipient_validation";
       const replyPrefix="reply+", replySuffix=`@${this.input.receivingDomain}`;
       const replyToken=outgoing.replyTo.startsWith(replyPrefix) && outgoing.replyTo.endsWith(replySuffix) ? outgoing.replyTo.slice(replyPrefix.length,-replySuffix.length) : "";
       const validRecipient=config && outgoing.from===config.fromEmail && outgoing.to===(owner ? config.ownerEmail : lead.email)
         && (owner ? outgoing.replyTo===config.fromEmail : verifyReplyToken(replyToken,job.tenantId,lead.replyTokenHash));
       if (outgoing.idempotencyKey!==`lmc:${message.id}` || JSON.stringify(outgoing.headers)!==JSON.stringify(message.headers)) throw new Error("INVALID_JOB_PAYLOAD");
       if (!settings?.enabled || !validRecipient || (!owner && (await this.suppressed(tx,lead) || ["suppressed","opted_out"].includes(lead.status) || lead.followupGeneration!==payload.generation || (lead.aiPaused && !payload.allowPaused)))) {
-        await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return;
+        await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return null;
       }
       // Resend expires idempotency keys after 24h. Never repeat an uncertain send beyond a conservative 23h window.
       if(job.attempts>1&&this.input.now().getTime()-message.createdAt.getTime()>23*3_600_000){
@@ -251,29 +324,57 @@ export class LmcEmailWorker {
         await tx.update(lmcLeads).set({status:"human_handoff",reason:"delivery_reconciliation_required",aiPaused:true,followupGeneration:lead.followupGeneration+1,updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
         await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"outbound_reconciliation_required",externalId:`reconcile:${message.id}`,metadata:{messageId:message.id},createdAt:this.input.now()});
         if(!owner&&config)await this.outbound(tx,job,lead,message,config,replyToken,`Delivery to ${lead.email} may already have succeeded. Automatic retry has stopped; review provider logs before retrying.\n\nLast message:\n${message.body}`,"owner_alert",true,lead.followupGeneration+1);
-        return;
+        return null;
       }
+      let followupRateWindow:{scopeKey:string;windowStart:Date}|null=null;
+      stage="followup_policy";
       if(outgoing.kind==="followup"){
         const touch=payload.followupTouch;
         if(!touch||!config?.followups.enabled||!config.followups.dailyCap||touch>config.followups.maxTouches||!lead.consentFollowups||terminal.has(lead.status)||lead.followupCount!==touch-1){
-          await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return;
+          await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return null;
         }
         const now=this.input.now(),windowStart=new Date(Math.floor(now.getTime()/86_400_000)*86_400_000),scopeKey="followup:daily";
+        followupRateWindow={scopeKey,windowStart};
         const [allowance]=await tx.insert(lmcRateWindows).values({tenantId:job.tenantId,scopeKey,windowStart,count:1}).onConflictDoUpdate({target:[lmcRateWindows.tenantId,lmcRateWindows.scopeKey,lmcRateWindows.windowStart],set:{count:sql`${lmcRateWindows.count}+1`},setWhere:sql`${lmcRateWindows.count}<${config.followups.dailyCap}`}).returning({count:lmcRateWindows.count});
         if(!allowance){
           await tx.update(lmcJobs).set({status:"pending",leaseToken:null,leasedUntil:null,attempts:Math.max(0,job.attempts-1),availableAt:new Date(windowStart.getTime()+86_400_000),updatedAt:now}).where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id)));
-          return;
+          return null;
         }
       }
-      const delivery=await this.input.mail.send(outgoing);
-      await tx.update(lmcMessages).set({status:"sent",providerId:delivery.providerMessageId,sentAt:this.input.now()}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));
-      if (!owner) await tx.update(lmcLeads).set({lastOutboundMessageId:message.messageId,...(payload.followupTouch?{followupCount:payload.followupTouch}:{}),updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,lead.id)));
-      if(!owner&&config?.followups.enabled&&config.followups.dailyCap&&lead.consentFollowups&&!lead.aiPaused&&["qualifying","qualified"].includes(lead.status)&&lead.followupGeneration===0){
+      stage="mark_sending";
+      await tx.update(lmcMessages).set({status:"sending"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id),or(eq(lmcMessages.status,"queued"),eq(lmcMessages.status,"sending"))));
+      return {config,lead,message,outgoing,owner,replyToken,followupRateWindow};
+        });
+      } catch (error) {
+        throw new Error(error instanceof Error && ["INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error.message) ? error.message : `EMAIL_SEND_PREPARE_${stage.toUpperCase()}`);
+      }
+    })();
+    if (!prepared) return;
+    let delivery:{providerMessageId:string};
+    try {
+      delivery=await this.input.mail.send(prepared.outgoing);
+    } catch (error) {
+      await this.scoped(job.tenantId,async tx=>{
+        await tx.update(lmcMessages).set({status:"queued"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,prepared.message.id),eq(lmcMessages.status,"sending")));
+        if(prepared.followupRateWindow) await tx.update(lmcRateWindows).set({count:sql`${lmcRateWindows.count}-1`}).where(and(eq(lmcRateWindows.tenantId,job.tenantId),eq(lmcRateWindows.scopeKey,prepared.followupRateWindow.scopeKey),eq(lmcRateWindows.windowStart,prepared.followupRateWindow.windowStart),sql`${lmcRateWindows.count}>0`));
+      });
+      const code = error instanceof Error && ["INVALID_OUTBOUND_EMAIL", "IDEMPOTENCY_CONFLICT"].includes(error.message)
+        ? error.message
+        : "EMAIL_PROVIDER_UNAVAILABLE";
+      throw new Error(code);
+    }
+    await this.scoped(job.tenantId,async tx=>{
+      const [sent]=await tx.update(lmcMessages).set({status:"sent",providerId:delivery.providerMessageId,sentAt:this.input.now()}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,prepared.message.id),eq(lmcMessages.status,"sending"))).returning({id:lmcMessages.id});
+      if(!sent||prepared.owner)return;
+      const [currentLead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId))).for("update");
+      if(!currentLead)return;
+      await tx.update(lmcLeads).set({lastOutboundMessageId:prepared.message.messageId,...(payload.followupTouch?{followupCount:payload.followupTouch}:{}),updatedAt:this.input.now()}).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId)));
+      if(prepared.config?.followups.enabled&&prepared.config.followups.dailyCap&&currentLead.consentFollowups&&!currentLead.aiPaused&&["qualifying","qualified"].includes(currentLead.status)&&currentLead.followupGeneration===0){
         const sentTouch=payload.followupTouch??0,nextTouch=sentTouch+1;
-        const delay=config.followups.delaysHours[nextTouch-1],previous=sentTouch?config.followups.delaysHours[sentTouch-1]:0;
-        if(nextTouch<=config.followups.maxTouches&&delay!==undefined&&previous!==undefined&&delay>previous){
-          const [initial]=await tx.select({id:lmcMessages.id}).from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,lead.id),eq(lmcMessages.direction,"lead"))).orderBy(asc(lmcMessages.createdAt),asc(lmcMessages.id)).limit(1);
-          if(initial)await enqueueLmcJob(tx,{tenantId:job.tenantId,leadId:lead.id,kind:"followup",dedupeKey:`followup:${lead.id}:0:${nextTouch}`,payload:{messageId:initial.id,replyToken,generation:0,touch:nextTouch},availableAt:new Date(this.input.now().getTime()+(delay-previous)*3_600_000)});
+        const delay=prepared.config.followups.delaysHours[nextTouch-1],previous=sentTouch?prepared.config.followups.delaysHours[sentTouch-1]:0;
+        if(nextTouch<=prepared.config.followups.maxTouches&&delay!==undefined&&previous!==undefined&&delay>previous){
+          const [initial]=await tx.select({id:lmcMessages.id}).from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.direction,"lead"))).orderBy(asc(lmcMessages.createdAt),asc(lmcMessages.id)).limit(1);
+          if(initial)await enqueueLmcJob(tx,{tenantId:job.tenantId,leadId:job.leadId,kind:"followup",dedupeKey:`followup:${job.leadId}:0:${nextTouch}`,payload:{messageId:initial.id,replyToken:prepared.replyToken,generation:0,touch:nextTouch},availableAt:new Date(this.input.now().getTime()+(delay-previous)*3_600_000)});
         }
       }
     });

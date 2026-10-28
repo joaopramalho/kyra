@@ -18,7 +18,7 @@ import { DateTime } from "luxon";
 import { z } from "zod";
 
 /** Where the conversation happens. Phone calls know the caller's number. */
-export type AgentChannel = "voice" | "web_voice" | "web_chat" | "sms";
+export type AgentChannel = "voice" | "web_voice" | "web_chat" | "sms" | "email";
 
 /** Live-call controls the agent can use. Only phone calls provide them. */
 export type CallControl = {
@@ -38,6 +38,8 @@ export type AgentToolContext = {
   callControl?: CallControl;
   /** Prospect demos only answer questions and take messages: no booking, no transfers. */
   intakeOnly?: boolean;
+  /** Restricts an orchestration pass to business-information lookups with no side effects. */
+  toolPolicy?: "full" | "information";
 };
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -119,7 +121,13 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
       },
     }),
 
-    takeMessage: tool({
+  };
+
+  // Email side effects are always owned by the verified domain workflow. Even
+  // if a caller forgets the explicit policy, never expose them to the agent.
+  if (context.toolPolicy === "information" || channel === "email") return tools;
+
+  tools.takeMessage = tool({
       description: "Save a message for the team to follow up on: a callback request, a question you couldn't answer, or anything the caller wants passed on. Get their name and a callback number first.",
       inputSchema: z.object({
         message: z.string().describe("What the caller needs, summarized for staff."),
@@ -142,8 +150,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           ...(context.conversationId ? { conversationId: context.conversationId } : {}),
         });
       },
-    }),
-  };
+    });
 
   if (bookingMode === "instant") {
     tools.findAvailability = tool({

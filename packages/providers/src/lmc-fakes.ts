@@ -111,8 +111,8 @@ export class FakeLmcEmailModel implements LmcEmailModel {
     const service = prompt.business.services.find(candidate => [candidate.name,...candidate.aliases].some(name => lower.includes(name.toLowerCase())));
     if (service) qualification.serviceType = service.name;
     else if (/pool/.test(lower)) qualification.serviceType = "pool cleaning";
-    else if (/roof.*replac|replac.*roof/.test(lower)) qualification.serviceType = "roof replacement";
-    else if (/roof.*repair|repair.*roof/.test(lower)) qualification.serviceType = "roof repair";
+    else if (lower.includes("roof") && lower.includes("replac")) qualification.serviceType = "roof replacement";
+    else if (lower.includes("roof") && lower.includes("repair")) qualification.serviceType = "roof repair";
     if (/residential|homeowner|my home|my house/.test(lower)) qualification.propertyType = "residential";
     else if (/commercial|warehouse/.test(lower)) qualification.propertyType = "commercial";
     if (/urgent/.test(lower)) qualification.urgency = "urgent";
@@ -123,6 +123,7 @@ export class FakeLmcEmailModel implements LmcEmailModel {
     else if (/\bbook\b|confirm (?:the|that) (?:slot|time)/.test(lower)) intent = "book";
     else if (/price|how much|cost|quote/.test(lower)) intent = "price";
     else if (/when|availab|what time/.test(lower)) intent = "availability";
+    else if (/\bhours?\b|\bopen\b|parking|payment|do you (?:offer|provide|serve)/.test(lower)) intent = "question";
     else if (/please wait|contact your office|thank you/.test(lower)) intent = "wait";
     const requested = text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})/)?.[0];
     return { intent, confidence: 0.95, qualification, ...(requested && Number.isFinite(Date.parse(requested)) ? { requestedSlot: new Date(requested).toISOString() } : {}) };

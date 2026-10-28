@@ -10,16 +10,16 @@ describe("LMC lead-to-booking acceptance", () => {
   });
   afterEach(async () => { await h?.close(); });
 
-  it("a: captures a web-form lead at 22:40 and promptly asks ZIP and repair versus replacement", async () => {
+  it("a: captures a web-form lead at 22:40 and asks only for configured qualification details", async () => {
     const started = performance.now();
     const lead = await h.capture({ name: "Ana", email: "ana@example.invalid", message: "Can you help with my roof?" });
     await h.work();
     const reply = h.mail.to("ana@example.invalid");
     expect(reply).toHaveLength(1);
     expect(performance.now() - started).toBeLessThan(5_000);
-    expect(reply[0]!.text).toMatch(/ZIP/i);
+    expect(reply[0]!.text.match(/\?/g)).toHaveLength(1);
     expect(reply[0]!.text).toMatch(/repair/i);
-    expect(reply[0]!.text).toMatch(/replacement/i);
+    expect(reply[0]!.text).not.toMatch(/roof replacement/i);
     expect((await h.lead(lead.id)).status).toBe("qualifying");
   });
 
@@ -55,6 +55,19 @@ describe("LMC lead-to-booking acceptance", () => {
     const offered = (await h.lead(lead.id)).offeredSlots;
     expect(offered.length).toBeGreaterThan(0);
     expect(offered.every((slot: string) => h.allowedSlots.includes(slot))).toBe(true);
+    expect(await h.bookings()).toHaveLength(0);
+  });
+
+  it("e: treats booking interest without a selected time as an availability request", async () => {
+    const lead = await h.capture({
+      email: "booking-interest@example.invalid",
+      message: "I want to book roof repair for my residential home in ZIP 33101.",
+    });
+    await h.work();
+    const current = await h.lead(lead.id);
+    expect(current.offeredSlots.length).toBeGreaterThan(0);
+    expect(current).toMatchObject({ status: "qualified", aiPaused: false });
+    expect(h.mail.lastTo("booking-interest@example.invalid").text).toMatch(/Available visit times/i);
     expect(await h.bookings()).toHaveLength(0);
   });
 
