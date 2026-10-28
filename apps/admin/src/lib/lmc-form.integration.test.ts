@@ -64,6 +64,22 @@ enabled("leaves the form lead process job ready for the worker", async () => {
   }
 });
 
+enabled("worker completes the form lead process job", async () => {
+  const scenario = await setupScenario();
+  try {
+    await scenario.retry();
+    const result = await scenario.harness.work();
+    expect(result.failed).toBe(0);
+    expect(
+      await scenario.harness.scoped((tx: DatabaseTransaction) =>
+        tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status, lastError: scenario.lmcJobs.lastError }).from(scenario.lmcJobs),
+      ),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "process", status: "done", lastError: null })]));
+  } finally {
+    await scenario.close();
+  }
+});
+
 enabled("sends a reply for the queued form lead", async () => {
   const scenario = await setupScenario();
   try {
