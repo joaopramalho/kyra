@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createService, listCatalog } from "@lobbystack/domain";
-import { asApiResponse, businessIdFromRequest, readJson, requireApiSession } from "@/lib/api-helpers";
+import { asApiResponse, readJson, requireOperatorBusiness } from "@/lib/api-helpers";
 import { createDomainContext } from "@/lib/domain-context";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +15,7 @@ function requiredString(value: unknown, field: string, maxLength: number): strin
 
 export async function GET(request: Request) {
   try {
-    const session = await requireApiSession(request);
-    const businessId = businessIdFromRequest(request);
-    if (!businessId) throw new Error("A businessId is required.");
+    const { session, businessId } = await requireOperatorBusiness(request, { pilotCapability: "services" });
     const url = new URL(request.url);
     return NextResponse.json(await listCatalog(createDomainContext(), { userId: session.user.id, businessId, ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(url.searchParams.get("limit") ? { limit: Number(url.searchParams.get("limit")) } : {}), ...(url.searchParams.get("offset") ? { offset: Number(url.searchParams.get("offset")) } : {}) }));
   } catch (error) {
@@ -27,12 +25,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireApiSession(request);
+    const { session, businessId } = await requireOperatorBusiness(request, { pilotCapability: "services" });
     const body = await readJson(request);
     if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error("A service object is required.");
     const input = body as Record<string, unknown>;
-    const businessId = typeof input.businessId === "string" ? input.businessId : businessIdFromRequest(request);
-    if (!businessId) throw new Error("A businessId is required.");
+    if (input.businessId !== undefined && input.businessId !== businessId) throw new Error("businessId does not match the active workspace.");
     const durationMinutes = typeof input.durationMinutes === "number" ? input.durationMinutes : Number(input.durationMinutes);
     if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1_440) throw new Error("durationMinutes is invalid.");
     if (input.active !== undefined && typeof input.active !== "boolean") throw new Error("active is invalid.");
