@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+
+import { summarizeVitestFailures } from "./pilot-ci-report";
+
+describe("pilot CI failure summaries", () => {
+  it("returns bounded test identifiers without failure message content", () => {
+    const result = summarizeVitestFailures({
+      testResults: [
+        {
+          name: "/home/runner/work/kyra/tests/lmc/workflow.acceptance.ts",
+          status: "failed",
+          assertionResults: [
+            { fullName: "sends one reply", status: "failed", failureMessages: ["private customer content"] },
+            { fullName: "sends no duplicate", status: "passed", failureMessages: [] },
+          ],
+        },
+      ],
+    }, { root: "/home/runner/work/kyra" });
+
+    expect(result).toEqual([
+      {
+        path: "tests/lmc/workflow.acceptance.ts",
+        tests: [{ title: "sends one reply", status: "failed" }],
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("private customer content");
+  });
+
+  it("limits the number of reported suites and assertions", () => {
+    const report = {
+      testResults: Array.from({ length: 30 }, (_, suite) => ({
+        name: `/repo/test-${suite}.test.ts`,
+        status: "failed",
+        assertionResults: Array.from({ length: 5 }, (_, test) => ({ fullName: `test ${test}`, status: "failed" })),
+      })),
+    };
+
+    const result = summarizeVitestFailures(report, { root: "/repo" });
+
+    expect(result).toHaveLength(20);
+    expect(result.reduce((count: number, suite: { tests: unknown[] }) => count + suite.tests.length, 0)).toBe(100);
+  });
+});

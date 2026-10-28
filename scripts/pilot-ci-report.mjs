@@ -1,5 +1,37 @@
 import { relative, resolve } from "node:path";
 
+const failureSuiteLimit = 20;
+const failureAssertionLimit = 100;
+
+/** Return only bounded, non-content identifiers for a failed Vitest report. */
+export function summarizeVitestFailures(report, { root }) {
+  if (!report || !root || !Array.isArray(report.testResults)) return [];
+  const normalize = file => {
+    if (typeof file !== "string") return "<invalid-test-path>";
+    const path = relative(resolve(root), resolve(root, file)).replaceAll("\\", "/");
+    return !path || path.startsWith("../") ? "<outside-test-root>" : path;
+  };
+  let remaining = failureAssertionLimit;
+  const result = [];
+  for (const file of report.testResults) {
+    if (result.length >= failureSuiteLimit || remaining === 0) break;
+    const tests = Array.isArray(file?.assertionResults)
+      ? file.assertionResults
+          .filter(test => test?.status !== "passed")
+          .slice(0, remaining)
+          .map(test => ({
+            title: typeof test?.fullName === "string" ? test.fullName.slice(0, 300) : "<unnamed-test>",
+            status: typeof test?.status === "string" ? test.status : "unknown",
+          }))
+      : [];
+    if (tests.length > 0) {
+      result.push({ path: normalize(file?.name), tests });
+      remaining -= tests.length;
+    }
+  }
+  return result;
+}
+
 /** Fail closed on skipped integration, omitted files and inconsistent producer metadata. */
 export function verifyVitestReport(report, { root, expectedFiles, allowEmpty = false }) {
   const fail = code => { throw new Error(code); };
