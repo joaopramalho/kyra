@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { businesses, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, withBusinessTransaction } from "@lobbystack/db";
+import { businesses, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { FakeLmcEmailModel, FakeLmcEmailProvider } from "@lobbystack/providers";
 import { EmailChannel } from "../../packages/agent-core/src/channels";
 import { createReplyToken } from "../../packages/domain/src/server/lmc/capabilities";
@@ -52,6 +52,21 @@ describe("captured leads are processed and delivered through the durable outbox"
     expect(await h.lead(id)).toMatchObject({ status: "qualifying", aiPaused: false, reason: null });
     expect(h.mail.lastTo(h.email).text).toMatch(/clarify/i);
     expect(h.mail.to(h.ownerEmail)).toHaveLength(0);
+    expect(await h.scoped((tx: DatabaseTransaction) => tx.select().from(lmcEvents).where(eq(lmcEvents.leadId, id)))).toContainEqual(expect.objectContaining({
+      type: "email_processed",
+      metadata: expect.objectContaining({ modelOutcome: "success", confidence: 0.2, intent: "unknown", actionTypes: expect.arrayContaining(["clarify"]) }),
+    }));
+  });
+  it("records a retryable model failure without fabricating a customer reply", async () => {
+    h.model.analyze = async () => { throw new Error("LMC_MODEL_UNAVAILABLE"); };
+    const id = await h.capture("Can you help with my roof?");
+    await h.worker.drain();
+    expect(h.mail.records).toHaveLength(0);
+    expect(await h.scoped((tx: DatabaseTransaction) => tx.select().from(lmcEvents).where(eq(lmcEvents.leadId, id)))).toContainEqual(expect.objectContaining({
+      type: "email_processing_failed",
+      metadata: expect.objectContaining({ errorCategory: "MODEL_UNAVAILABLE", attempt: 1 }),
+    }));
+    expect(await h.scoped((tx: DatabaseTransaction) => tx.select().from(lmcJobs).where(eq(lmcJobs.leadId, id)))).toContainEqual(expect.objectContaining({ kind: "process", status: "pending", lastError: "MODEL_UNAVAILABLE", attempts: 1 }));
   });
   it("bypasses the model for emergencies and sends the owner the actual history", async () => {
     const id = await h.capture("There is an active leak at my home");
