@@ -40,4 +40,17 @@ describe("pilot CI failure summaries", () => {
     expect(result).toHaveLength(20);
     expect(result.reduce((count: number, suite: { tests: unknown[] }) => count + suite.tests.length, 0)).toBe(100);
   });
+
+  it("extracts bounded codes from suite-level failure fields", () => {
+    const result = summarizeVitestFailures({
+      testResults: [{
+        name: "/repo/tests/lmc/workflow.acceptance.ts",
+        message: "LMC_DATABASE_PERMISSION private details",
+        assertionResults: [{ fullName: "setup", status: "failed", failureMessages: [] }],
+      }],
+    }, { root: "/repo" });
+
+    expect(result[0]?.tests[0]).toMatchObject({ failureCode: "LMC_DATABASE_PERMISSION" });
+    expect(JSON.stringify(result)).not.toContain("private details");
+  });
 });

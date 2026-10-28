@@ -13,6 +13,9 @@ export function summarizeVitestFailures(report, { root }) {
   };
   let remaining = failureAssertionLimit;
   const result = [];
+  const boundedCode = value => typeof value === "string"
+    ? value.match(/\b(?:FORM|LMC|EMAIL|MODEL|CAPTURE|PILOT)_[A-Z0-9_]+\b/)?.[0]
+    : undefined;
   for (const file of report.testResults) {
     if (result.length >= failureSuiteLimit || remaining === 0) break;
     const tests = Array.isArray(file?.assertionResults)
@@ -26,7 +29,7 @@ export function summarizeVitestFailures(report, { root }) {
             status: typeof test?.status === "string" ? test.status : "unknown",
             ...(() => {
               const message = Array.isArray(test?.failureMessages) ? test.failureMessages.find(value => typeof value === "string") : undefined;
-              const failureCode = typeof message === "string" ? message.match(/\b(?:FORM|LMC|EMAIL|MODEL|CAPTURE|PILOT)_[A-Z0-9_]+\b/)?.[0] : undefined;
+              const failureCode = boundedCode(message) ?? boundedCode(file?.message) ?? boundedCode(file?.failureMessage);
               return failureCode ? { failureCode } : {};
             })(),
             ...(Number.isSafeInteger(test?.location?.line) && Number.isSafeInteger(test?.location?.column)
