@@ -81,6 +81,16 @@ export class LmcJobQueue {
     });
   }
 
+  async renew(job: LmcJob): Promise<boolean> {
+    if (!job.leaseToken) return false;
+    const now = this.input.now();
+    return withBusinessTransaction(this.input.worker, { businessId: job.tenantId, actorType: "worker" }, async tx => {
+      const rows = await tx.update(lmcJobs).set({ leasedUntil: new Date(now.getTime()+LMC_JOB_LEASE_MS), updatedAt: now })
+        .where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id),eq(lmcJobs.leaseToken,job.leaseToken!),eq(lmcJobs.status,"running"))).returning({ id: lmcJobs.id });
+      return rows.length === 1;
+    });
+  }
+
   async fail(job: LmcJob, code: string): Promise<boolean> {
     if (!job.leaseToken) return false;
     const now = this.input.now();

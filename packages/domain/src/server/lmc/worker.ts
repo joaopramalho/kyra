@@ -6,7 +6,7 @@ import { signActionToken, verifyReplyToken } from "./capabilities";
 import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
 import { redactLmcCapabilities } from "./redaction";
 import { listEmailVisitSlots } from "./scheduling";
-import { classifyLmcJobFailure, enqueueLmcJob, LmcJobQueue, type LmcJob, type LmcJobFailureDiagnostic } from "./queue";
+import { classifyLmcJobFailure, enqueueLmcJob, LMC_JOB_LEASE_MS, LmcJobQueue, type LmcJob, type LmcJobFailureDiagnostic } from "./queue";
 import { buildEmailQualificationPrompt } from "./conversation";
 import { classifyLmcProcessingError } from "./failure";
 import { summarizeLmcActions } from "./observability";
@@ -14,6 +14,7 @@ import { summarizeLmcActions } from "./observability";
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
 type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string; allowLocalHttp?: boolean; onJobFailure?: (diagnostic: LmcJobFailureDiagnostic) => void };
+class LmcJobLeaseError extends Error {}
 const terminal = new Set(["opted_out","suppressed","declined","booked"]);
 const processingTerminal = new Set(["opted_out","suppressed","declined"]);
 const injection = (text: string) => /ignore\s+(?:all\s+)?(?:your|previous|system)\s+(?:rules|instructions)|\bsystem\s*:|\b(?:give|apply)\s+\d{1,3}\s*%\s*(?:off|discount)|another\s+tenant/i.test(text);
@@ -64,7 +65,44 @@ export class LmcEmailWorker {
   }
   private async lease(tx: DatabaseTransaction, job: LmcJob) {
     const [current] = await tx.select().from(lmcJobs).where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id))).for("update");
-    if (!current || current.status!=="running" || current.leaseToken!==job.leaseToken || !current.leasedUntil || current.leasedUntil<=this.input.now()) throw new Error("LMC_JOB_FAILED");
+    if (!current || current.status!=="running" || current.leaseToken!==job.leaseToken) throw new LmcJobLeaseError("LMC_JOB_LEASE_LOST");
+    if (!current.leasedUntil || current.leasedUntil<=this.input.now()) throw new LmcJobLeaseError("LMC_JOB_LEASE_EXPIRED");
+  }
+  private leaseFailure(error: unknown) {
+    return error instanceof LmcJobLeaseError;
+  }
+  private async withLeaseHeartbeat<T>(job: LmcJob, work: () => Promise<T>): Promise<T> {
+    let heartbeatError: unknown;
+    let pending = Promise.resolve();
+    const renew = () => {
+      pending = pending.then(async () => {
+        if (!await this.queue.renew(job)) throw new Error("LMC_JOB_LEASE_LOST");
+      }).catch(error => {
+        heartbeatError ??= error;
+      });
+    };
+    const heartbeat = setInterval(renew,LMC_JOB_LEASE_MS/3);
+    heartbeat.unref();
+    let value: T | undefined;
+    let workError: unknown;
+    try {
+      value = await work();
+    } catch (error) {
+      workError = error;
+    } finally {
+      clearInterval(heartbeat);
+    }
+    await pending;
+    if (!heartbeatError) {
+      try {
+        if (!await this.queue.renew(job)) heartbeatError = new Error("LMC_JOB_LEASE_LOST");
+      } catch (error) {
+        heartbeatError = error;
+      }
+    }
+    if (heartbeatError) throw new LmcJobLeaseError("LMC_JOB_LEASE_LOST");
+    if (workError) throw workError;
+    return value as T;
   }
   private async suppressed(tx: DatabaseTransaction, lead: Lead) {
     return (await tx.select({email:lmcSuppressions.email}).from(lmcSuppressions).where(and(eq(lmcSuppressions.tenantId,lead.tenantId),eq(lmcSuppressions.email,lead.email))).limit(1)).length>0;
@@ -94,12 +132,13 @@ export class LmcEmailWorker {
     if (!isEmergency && !isInjection && isConfiguredEscalation) actions=[{type:"handoff",reason:"configured_escalation"}];
     if (!isEmergency && !isInjection && !isConfiguredEscalation) {
       try {
-        const result = await this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
-          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))});
+        const result = await this.withLeaseHeartbeat(job,() => this.input.channel.run({channel:"email",tenant:{id:job.tenantId,settings},contact:{id:lead.contactId ?? lead.id,email:lead.email},message:{id:message.id,subject:redactLmcCapabilities(message.subject),text:redactLmcCapabilities(message.body)},
+          history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))}));
         actions = result.actions;
         suggestedReply = result.suggestedReply;
         modelOutcome = "success";
       } catch (error) {
+        if (this.leaseFailure(error)) throw error;
         const failureCode = classifyLmcProcessingError(error);
         if (failureCode) {
           await this.scoped(job.tenantId, async (tx) => {
@@ -123,8 +162,8 @@ export class LmcEmailWorker {
     const proposedService=settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===proposed.serviceType?.toLowerCase()));
     let availableSlots:Lead["offeredSlots"]=[];
     if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff"||action.type==="clarify")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
-      try{availableSlots=await listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()});}
-      catch{actions=[{type:"handoff",reason:"calendar_unavailable"}];}
+      try{availableSlots=await this.withLeaseHeartbeat(job,() => listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()}));}
+      catch(error){if(this.leaseFailure(error))throw error;actions=[{type:"handoff",reason:"calendar_unavailable"}];}
     }
     await this.scoped(job.tenantId,async tx => {
       await this.lease(tx,job);

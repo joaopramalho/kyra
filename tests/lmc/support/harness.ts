@@ -63,7 +63,7 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
   const address=server.address();if(!address||typeof address==="string")throw new Error("TEST_HTTP_START_FAILED");
   const base=`http://127.0.0.1:${address.port}`;
   const allowedSlots=Array.from({length:7},(_,day)=>candidateStartTimes({date:new Date(clock+day*86_400_000).toISOString().slice(0,10),timezone:"America/New_York",hours,durationMinutes:60,now:now()})).flat();
-  const h={captureUrl:`${base}/api/lmc/capture/${captureToken.value}`,tenantId,ownerId,ownerEmail,now,workerDatabase:db.worker.db,dispatcherDatabase:db.dispatcher.db,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,scoped,
+  const h={captureUrl:`${base}/api/lmc/capture/${captureToken.value}`,tenantId,ownerId,ownerEmail,now,workerDatabase:db.worker.db,dispatcherDatabase:db.dispatcher.db,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,jobFailures,scoped,
     async addViewer(){const id=randomUUID();await db.admin.db.insert(users).values({id,email:`${id}@example.invalid`,normalizedEmail:`${id}@example.invalid`});await db.admin.db.insert(businessMemberships).values({businessId:tenantId,userId:id,role:"viewer"});extraUsers.push(id);return id;},
     async setDailyCap(cap:number){await withBusinessTransaction(db.app.db,{businessId:tenantId,userId:ownerId,actorType:"operator"},async tx=>{
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId));if(!settings)throw new Error("SETTINGS_NOT_FOUND");
@@ -116,6 +116,7 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
     async unsubscribe(mail:LmcOutboundEmail){const path=new URL(mail.headers["List-Unsubscribe"]!.slice(1,-1)).pathname;const response=await fetch(`${base}${path}`,{method:"POST",body:"List-Unsubscribe=One-Click"});if(response.status!==200)throw new Error("UNSUBSCRIBE_FAILED");},
     async bounce(id:string){const lead=await h.lead(id),mail=providers.email.records.filter(mail=>mail.leadId===id&&mail.to===lead.email).at(-1)!;await h.deliver({kind:"suppression",id:randomUUID(),tenantId,providerMessageId:mail.providerMessageId,email:lead.email,reason:"bounce"});},
     advanceDays(days:number){clock+=days*86_400_000;},
+    advanceMilliseconds(milliseconds:number){clock+=milliseconds;},
     async close(){server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await db.admin.db.transaction(async tx=>{
       await tx.execute(sql`select id from businesses where id=${tenantId}::uuid for update`);
       await tx.execute(sql`delete from outbox_messages where business_id=${tenantId}::uuid`);

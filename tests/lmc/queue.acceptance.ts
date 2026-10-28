@@ -42,6 +42,16 @@ describe("durable email work queue", () => {
     expect(await queue.complete(originalClaim!)).toBe(false);
     expect(await queue.complete(reclaimed!)).toBe(true);
   });
+  it("renews only the current worker's lease", async () => {
+    await enqueue(a,leadA,"renew");
+    const [job] = await queue.claim(a);
+    expect(job).toBeDefined();
+    now += 61_000;
+    expect(await queue.renew(job!)).toBe(true);
+    expect(await queue.renew({...job!,leaseToken:randomUUID()})).toBe(false);
+    expect(await queue.claim(a)).toEqual([]);
+    expect(await queue.complete(job!)).toBe(true);
+  });
   it("bounds retries, sanitizes errors and dead-letters work after ten failed attempts", async () => {
     await enqueue(a,leadA,"retries");
     for (let attempt=1;attempt<=10;attempt++) {
