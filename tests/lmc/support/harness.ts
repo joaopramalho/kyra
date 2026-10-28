@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
-import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { FakeLmcInboundProvider, SecretBox, createFakeLmcProviders } from "@lobbystack/providers";
 import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent, LmcInboundProvider } from "@lobbystack/contracts";
 import { EmailChannel } from "../../../packages/agent-core/src/channels";
@@ -11,6 +11,7 @@ import { handleLmcCapture, LmcLeadCapture } from "../../../packages/domain/src/s
 import { handleLmcEmailWebhook, handleLmcUnsubscribe, LmcEmailReception } from "../../../packages/domain/src/server/lmc/reception";
 import { LmcHumanReplies } from "../../../packages/domain/src/server/lmc/handoff";
 import { LmcEmailWorker } from "../../../packages/domain/src/server/lmc/worker";
+import { classifyLmcJobFailure, type LmcJobFailureDiagnostic } from "../../../packages/domain/src/server/lmc/queue";
 import { upsertBusyBlocks } from "../../../packages/domain/src/server/calendar";
 import { candidateStartTimes } from "../../../packages/domain/src/server/receptionistActions";
 import { syncAppointmentCalendar } from "../../../apps/worker/src/calendarJobs";
@@ -38,10 +39,11 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
   await db.admin.db.insert(businessHours).values(hours.map(hour=>({...hour,businessId:tenantId})));
   await db.admin.db.insert(calendarConnections).values({id:connectionId,businessId:tenantId,ownerUserId:ownerId,staffId,provider:"google",externalAccountId:`fake-${tenantId}`,selectedCalendarId:calendarId,encryptedAccessToken:box.encrypt("fake-calendar-token"),tokenExpiresAt:new Date("2040-01-01"),lastSyncedAt:now()});
   await db.admin.db.insert(lmcSettings).values({tenantId,captureTokenHash:captureToken.hash,config:{ownerEmail,fromEmail:"team@example.invalid",physicalAddress:"100 Main Street, Miami FL 33101",serviceAreaZips:["33101","33102"],serviceAreaCities:["Miami"],services:[{id:serviceId,name:"roof repair",aliases:["roof replacement"]}],emergencyKeywords:["active leak","storm damage"],emergencyText,priceInformation:"",tone:"professional",confidenceThreshold:0.8,tools:["availability","book","reschedule","cancel","handoff"],followups:{enabled:true,maxTouches:3,delaysHours:[24,48,72],dailyCap:100}}});
+  const jobFailures:LmcJobFailureDiagnostic[]=[];
   const captureService=new LmcLeadCapture({database:db.worker.db,now});
   const reception=new LmcEmailReception({database:db.worker.db,now,receivingDomain:"inbound.example.invalid",signingSecret});
   const human=new LmcHumanReplies({database:db.app.db,now,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret});
-  const worker=new LmcEmailWorker({database:db.worker.db,dispatcher:db.dispatcher.db,now,channel:new EmailChannel(providers.model),mail:providers.email,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret});
+  const worker=new LmcEmailWorker({database:db.worker.db,dispatcher:db.dispatcher.db,now,channel:new EmailChannel(providers.model),mail:providers.email,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret,onJobFailure:diagnostic=>jobFailures.push(diagnostic)});
   const scoped=<T>(fn:Parameters<typeof withBusinessTransaction<T>>[2])=>withBusinessTransaction(db.worker.db,{businessId:tenantId,actorType:"worker"},fn);
   const server=createServer(async(req,res)=>{
     try{
@@ -77,13 +79,22 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
         const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
         await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map((block:{startsAt:string;endsAt:string;externalEventId?:string})=>({...block,staffId}))});
         const result=await worker.drain();
+        if (result.failed || jobFailures.length) {
+          const rows=await scoped((tx:DatabaseTransaction)=>tx.select({kind:lmcJobs.kind,status:lmcJobs.status,lastError:lmcJobs.lastError,attempts:lmcJobs.attempts}).from(lmcJobs).where(eq(lmcJobs.tenantId,tenantId)));
+          const failedRow=rows.find((row:{kind:string;status:string;lastError:string|null;attempts:number})=>row.lastError);
+          const diagnostic=jobFailures[0];
+          const failure=diagnostic ? `${diagnostic.kind.toUpperCase()}_${diagnostic.code}` : failedRow ? `${failedRow.kind.toUpperCase()}_${classifyLmcJobFailure(failedRow.lastError).code}` : "LMC_JOB_FAILED";
+          throw new Error(`LMC_WORKER_${failure}`);
+        }
         const rows=await scoped((tx:DatabaseTransaction)=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
         for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
         return result;
       } catch (error) {
-        const message=error instanceof Error ? error.message : "";
-        if(message.includes("lmc_messages_status_check"))throw new Error("LMC_MESSAGE_STATUS_CONSTRAINT");
-        if(message.includes("permission denied"))throw new Error("LMC_DATABASE_PERMISSION");
+        const classified=classifyLmcJobFailure(error);
+        if (error instanceof Error && /^LMC_WORKER_[A-Z0-9_]+$/.test(error.message))throw new Error(error.message);
+        if(classified.category==="rls")throw new Error("LMC_DATABASE_RLS");
+        if(classified.category==="database")throw new Error(classified.code);
+        if(classified.category==="idempotency")throw new Error("IDEMPOTENCY_CONFLICT");
         throw new Error("LMC_ACCEPTANCE_WORK_FAILED");
       }
     },

@@ -6,14 +6,14 @@ import { signActionToken, verifyReplyToken } from "./capabilities";
 import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
 import { redactLmcCapabilities } from "./redaction";
 import { listEmailVisitSlots } from "./scheduling";
-import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
+import { classifyLmcJobFailure, enqueueLmcJob, LmcJobQueue, type LmcJob, type LmcJobFailureDiagnostic } from "./queue";
 import { buildEmailQualificationPrompt } from "./conversation";
 import { classifyLmcProcessingError } from "./failure";
 import { summarizeLmcActions } from "./observability";
 
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
-type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string; allowLocalHttp?: boolean };
+type WorkerInput = { database: Database; dispatcher: Database; now: () => Date; channel: LmcChannel; mail: LmcEmailTransport; baseUrl: string; receivingDomain: string; signingSecret: string; allowLocalHttp?: boolean; onJobFailure?: (diagnostic: LmcJobFailureDiagnostic) => void };
 const terminal = new Set(["opted_out","suppressed","declined","booked"]);
 const processingTerminal = new Set(["opted_out","suppressed","declined"]);
 const injection = (text: string) => /ignore\s+(?:all\s+)?(?:your|previous|system)\s+(?:rules|instructions)|\bsystem\s*:|\b(?:give|apply)\s+\d{1,3}\s*%\s*(?:off|discount)|another\s+tenant/i.test(text);
@@ -28,7 +28,7 @@ export class LmcEmailWorker {
     this.baseUrl = input.baseUrl.replace(/\/$/,"");
     // Validate the mandatory signing secret before the first outbound transaction.
     signActionToken({tenantId:"00000000-0000-4000-8000-000000000000",leadId:"00000000-0000-4000-8000-000000000000",purpose:"unsubscribe"},input.signingSecret);
-    this.queue = new LmcJobQueue({worker:input.database,dispatcher:input.dispatcher,now:input.now});
+    this.queue = new LmcJobQueue({worker:input.database,dispatcher:input.dispatcher,now:input.now,...(input.onJobFailure ? {onFailure:input.onJobFailure} : {})});
   }
 
   /** Bounded work per invocation. The runtime can call this again while work remains. */
@@ -48,7 +48,7 @@ export class LmcEmailWorker {
             else throw new Error("INVALID_JOB_PAYLOAD");
             if (await this.queue.complete(job)) result.completed++;
           } catch (error) {
-            const code = error instanceof Error ? error.message : "LMC_JOB_FAILED";
+            const code = classifyLmcJobFailure(error).code;
             await this.queue.fail(job,code);
             result.failed++;
           }
