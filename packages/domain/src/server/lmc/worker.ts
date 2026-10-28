@@ -9,6 +9,7 @@ import { listEmailVisitSlots } from "./scheduling";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 import { buildEmailQualificationPrompt } from "./conversation";
 import { classifyLmcProcessingError } from "./failure";
+import { summarizeLmcActions } from "./observability";
 
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
@@ -89,6 +90,7 @@ export class LmcEmailWorker {
     const isConfiguredEscalation = settings.escalation?.keywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase())) ?? false;
     let actions: LmcStructuredAction[] = [];
     let suggestedReply: string | undefined;
+    let modelOutcome: "not_called" | "success" = "not_called";
     if (!isEmergency && !isInjection && isConfiguredEscalation) actions=[{type:"handoff",reason:"configured_escalation"}];
     if (!isEmergency && !isInjection && !isConfiguredEscalation) {
       try {
@@ -96,9 +98,22 @@ export class LmcEmailWorker {
           history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))});
         actions = result.actions;
         suggestedReply = result.suggestedReply;
+        modelOutcome = "success";
       } catch (error) {
         const failureCode = classifyLmcProcessingError(error);
-        if (failureCode) throw new Error(failureCode);
+        if (failureCode) {
+          await this.scoped(job.tenantId, async (tx) => {
+            await tx.insert(lmcEvents).values({
+              tenantId: job.tenantId,
+              leadId: lead.id,
+              type: "email_processing_failed",
+              externalId: `processing-failed:${job.id}:${job.attempts}`,
+              metadata: { messageId: message.id, errorCategory: failureCode, attempt: job.attempts },
+              createdAt: this.input.now(),
+            });
+          });
+          throw new Error(failureCode);
+        }
         actions=[{type:"handoff",reason:"model_unavailable"}];
       }
     }
@@ -189,7 +204,7 @@ export class LmcEmailWorker {
         const full=summary.length>45_000 ? `${summary.slice(0,45_000)}\nFull history: ${this.baseUrl}/leads/${lead.id}` : summary;
         await this.outbound(tx,job,current,message,settings,payload.replyToken,full,"owner_alert",true,payload.generation);
       }
-      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"email_processed",externalId:`processed:${job.id}`,metadata:{messageId:message.id,status,reason},createdAt:this.input.now()});
+      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"email_processed",externalId:`processed:${job.id}`,metadata:{messageId:message.id,status,reason,attempt:job.attempts,modelOutcome,...summarizeLmcActions(actions)},createdAt:this.input.now()});
     });
   }
 
