@@ -73,9 +73,11 @@ enabled("worker completes the form lead process job", async () => {
       tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status, lastError: scenario.lmcJobs.lastError }).from(scenario.lmcJobs),
     );
     if (result.failed !== 0) {
-      const error = jobs.find(job => job.lastError)?.lastError;
+      const failedJob = jobs.find(job => job.lastError);
+      const error = failedJob?.lastError;
       const code = ["EMAIL_PROVIDER_UNAVAILABLE", "INVALID_OUTBOUND_EMAIL", "IDEMPOTENCY_CONFLICT", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
-      throw new Error(`FORM_WORKER_FAILED_${code}`);
+      const kind = failedJob?.kind === "process" || failedJob?.kind === "send" || failedJob?.kind === "followup" ? failedJob.kind.toUpperCase() : "UNKNOWN";
+      throw new Error(`FORM_WORKER_FAILED_${kind}_${code}`);
     }
     if (!jobs.some(job => job.kind === "process" && job.status === "done" && job.lastError === null)) throw new Error("FORM_PROCESS_JOB_NOT_DONE");
   } finally {
