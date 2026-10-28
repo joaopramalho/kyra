@@ -41,7 +41,8 @@ export class EmailChannel implements LmcChannel {
           history: request.history.slice(-20).map(message => ({ role: message.role, text: message.text.slice(0, 4_000) })),
         },
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "LMC_MODEL_UNAVAILABLE") throw error;
       return handoff("model_unavailable");
     }
     const parsed = lmcEmailDecisionSchema.safeParse(raw);

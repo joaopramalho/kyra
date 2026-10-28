@@ -44,6 +44,9 @@ describe("channel boundary", () => {
   it("hands model failures to a human", async () => {
     expect((await new EmailChannel({ analyze: async () => { throw new Error("provider failure"); } }).run(request())).actions).toEqual([{ type: "handoff", reason: "model_unavailable" }]);
   });
+  it("propagates explicitly retryable provider failures to the durable worker", async () => {
+    await expect(new EmailChannel({ analyze: async () => { throw new Error("LMC_MODEL_UNAVAILABLE"); } }).run(request())).rejects.toThrow("LMC_MODEL_UNAVAILABLE");
+  });
   it("treats booking interest without an exact selected slot as availability", async () => {
     const result = await new EmailChannel({ analyze: async () => ({ intent: "book", confidence: 1, qualification: { zip: "33101", serviceType: "roof repair", propertyType: "residential" } }) }).run(request());
     expect(result.actions).toEqual([
