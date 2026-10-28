@@ -111,8 +111,8 @@ export class FakeLmcEmailModel implements LmcEmailModel {
     const service = prompt.business.services.find(candidate => [candidate.name,...candidate.aliases].some(name => lower.includes(name.toLowerCase())));
     if (service) qualification.serviceType = service.name;
     else if (/pool/.test(lower)) qualification.serviceType = "pool cleaning";
-    else if (/roof.*replac|replac.*roof/.test(lower)) qualification.serviceType = "roof replacement";
-    else if (/roof.*repair|repair.*roof/.test(lower)) qualification.serviceType = "roof repair";
+    else if (lower.includes("roof") && lower.includes("replac")) qualification.serviceType = "roof replacement";
+    else if (lower.includes("roof") && lower.includes("repair")) qualification.serviceType = "roof repair";
     if (/residential|homeowner|my home|my house/.test(lower)) qualification.propertyType = "residential";
     else if (/commercial|warehouse/.test(lower)) qualification.propertyType = "commercial";
     if (/urgent/.test(lower)) qualification.urgency = "urgent";
