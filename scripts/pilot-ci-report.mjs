@@ -24,6 +24,11 @@ export function summarizeVitestFailures(report, { root }) {
             assertionIndex,
             title: typeof test?.fullName === "string" ? test.fullName.slice(0, 300) : "<unnamed-test>",
             status: typeof test?.status === "string" ? test.status : "unknown",
+            ...(() => {
+              const message = Array.isArray(test?.failureMessages) ? test.failureMessages.find(value => typeof value === "string") : undefined;
+              const failureCode = typeof message === "string" ? message.match(/\b(?:FORM|LMC|EMAIL|MODEL|CAPTURE|PILOT)_[A-Z0-9_]+\b/)?.[0] : undefined;
+              return failureCode ? { failureCode } : {};
+            })(),
             ...(Number.isSafeInteger(test?.location?.line) && Number.isSafeInteger(test?.location?.column)
               ? { location: { line: test.location.line, column: test.location.column } }
               : {}),

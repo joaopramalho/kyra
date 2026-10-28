@@ -69,12 +69,11 @@ enabled("worker completes the form lead process job", async () => {
   try {
     await scenario.retry();
     const result = await scenario.harness.work();
-    expect(result.failed).toBe(0);
-    expect(
-      await scenario.harness.scoped((tx: DatabaseTransaction) =>
-        tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status, lastError: scenario.lmcJobs.lastError }).from(scenario.lmcJobs),
-      ),
-    ).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "process", status: "done", lastError: null })]));
+    if (result.failed !== 0) throw new Error("FORM_WORKER_FAILED");
+    const jobs = await scenario.harness.scoped((tx: DatabaseTransaction) =>
+      tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status, lastError: scenario.lmcJobs.lastError }).from(scenario.lmcJobs),
+    );
+    if (!jobs.some(job => job.kind === "process" && job.status === "done" && job.lastError === null)) throw new Error("FORM_PROCESS_JOB_NOT_DONE");
   } finally {
     await scenario.close();
   }
@@ -85,11 +84,10 @@ enabled("sends a reply for the queued form lead", async () => {
   try {
     await scenario.retry();
     await scenario.harness.work();
-    expect(
-      scenario.harness.mail.records.filter(
-        (mail: { to: string }) => mail.to === "form@example.invalid",
-      ),
-    ).toHaveLength(1);
+    const replies = scenario.harness.mail.records.filter(
+      (mail: { to: string }) => mail.to === "form@example.invalid",
+    );
+    if (replies.length === 0) throw new Error("FORM_REPLY_NOT_SENT");
   } finally {
     await scenario.close();
   }
@@ -103,8 +101,8 @@ enabled("does not duplicate the queued form lead reply", async () => {
     const replies = scenario.harness.mail.records.filter(
       (mail: { to: string }) => mail.to === "form@example.invalid",
     );
-    expect(replies.length).toBeGreaterThan(0);
-    expect(replies).toHaveLength(1);
+    if (replies.length === 0) throw new Error("FORM_REPLY_NOT_SENT");
+    if (replies.length !== 1) throw new Error("FORM_REPLY_DUPLICATED");
   } finally {
     await scenario.close();
   }
