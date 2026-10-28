@@ -50,6 +50,20 @@ enabled("persists the lead created by the form retry", async () => {
   }
 });
 
+enabled("leaves the form lead process job ready for the worker", async () => {
+  const scenario = await setupScenario();
+  try {
+    await scenario.retry();
+    expect(
+      await scenario.harness.scoped((tx: DatabaseTransaction) =>
+        tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status }).from(scenario.lmcJobs),
+      ),
+    ).toEqual([expect.objectContaining({ kind: "process", status: "pending" })]);
+  } finally {
+    await scenario.close();
+  }
+});
+
 enabled("sends a reply for the queued form lead", async () => {
   const scenario = await setupScenario();
   try {
@@ -96,7 +110,7 @@ enabled("records one assistant message for the queued form lead", async () => {
 });
 
 async function setupScenario() {
-  const { lmcLeads } = await import("@lobbystack/db");
+  const { lmcLeads, lmcJobs } = await import("@lobbystack/db");
   const { createLmcHarness } =
     await import("../../../../tests/lmc/support/harness");
   const harness = await createLmcHarness({ now: "2030-01-09T03:40:00Z" });
@@ -147,6 +161,7 @@ async function setupScenario() {
   return {
     harness,
     lmcLeads,
+    lmcJobs,
     requests,
     get leadId() {
       return leadId;
