@@ -20,7 +20,7 @@ describe("pilot CI failure summaries", () => {
     expect(result).toEqual([
       {
         path: "tests/lmc/workflow.acceptance.ts",
-        tests: [{ title: "sends one reply", status: "failed", location: { line: 42, column: 7 } }],
+        tests: [{ assertionIndex: 0, title: "sends one reply", status: "failed", location: { line: 42, column: 7 } }],
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("private customer content");

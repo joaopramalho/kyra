@@ -17,9 +17,11 @@ export function summarizeVitestFailures(report, { root }) {
     if (result.length >= failureSuiteLimit || remaining === 0) break;
     const tests = Array.isArray(file?.assertionResults)
       ? file.assertionResults
-          .filter(test => test?.status !== "passed")
+          .map((test, assertionIndex) => ({ test, assertionIndex }))
+          .filter(({ test }) => test?.status !== "passed")
           .slice(0, remaining)
-          .map(test => ({
+          .map(({ test, assertionIndex }) => ({
+            assertionIndex,
             title: typeof test?.fullName === "string" ? test.fullName.slice(0, 300) : "<unnamed-test>",
             status: typeof test?.status === "string" ? test.status : "unknown",
             ...(Number.isSafeInteger(test?.location?.line) && Number.isSafeInteger(test?.location?.column)
