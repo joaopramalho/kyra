@@ -8,6 +8,7 @@ import { redactLmcCapabilities } from "./redaction";
 import { listEmailVisitSlots } from "./scheduling";
 import { enqueueLmcJob, LmcJobQueue, type LmcJob } from "./queue";
 import { buildEmailQualificationPrompt } from "./conversation";
+import { classifyLmcProcessingError } from "./failure";
 
 type Lead = typeof lmcLeads.$inferSelect;
 type Message = typeof lmcMessages.$inferSelect;
@@ -95,7 +96,11 @@ export class LmcEmailWorker {
           history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))});
         actions = result.actions;
         suggestedReply = result.suggestedReply;
-      } catch { actions=[{type:"handoff",reason:"model_unavailable"}]; }
+      } catch (error) {
+        const failureCode = classifyLmcProcessingError(error);
+        if (failureCode) throw new Error(failureCode);
+        actions=[{type:"handoff",reason:"model_unavailable"}];
+      }
     }
     const proposed={...lead.qualification};
     for(const action of actions)if(action.type==="qualify"&&action.confidence>=settings.confidenceThreshold){const fields=lmcQualificationSchema.safeParse(action.fields);if(fields.success)Object.assign(proposed,fields.data);}
