@@ -69,10 +69,14 @@ enabled("worker completes the form lead process job", async () => {
   try {
     await scenario.retry();
     const result = await scenario.harness.work();
-    if (result.failed !== 0) throw new Error("FORM_WORKER_FAILED");
     const jobs = await scenario.harness.scoped((tx: DatabaseTransaction) =>
       tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status, lastError: scenario.lmcJobs.lastError }).from(scenario.lmcJobs),
     );
+    if (result.failed !== 0) {
+      const error = jobs.find(job => job.kind === "process")?.lastError;
+      const code = ["EMAIL_PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
+      throw new Error(`FORM_WORKER_FAILED_${code}`);
+    }
     if (!jobs.some(job => job.kind === "process" && job.status === "done" && job.lastError === null)) throw new Error("FORM_PROCESS_JOB_NOT_DONE");
   } finally {
     await scenario.close();
