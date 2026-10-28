@@ -15,12 +15,12 @@ describe("captured leads are processed and delivered through the durable outbox"
   beforeEach(async () => { h=await fixture(); });
   afterEach(async () => { await h?.close(); });
 
-  it("sends an immediate qualification request with footer, secure reply address and no booking claim", async () => {
+  it("sends an immediate single-question qualification request with footer, secure reply address and no booking claim", async () => {
     const id = await h.capture("Can you help with my roof?");
     await h.worker.drain();
     expect(h.mail.to(h.email)).toHaveLength(1);
     const reply = h.mail.lastTo(h.email);
-    expect(reply.text).toMatch(/ZIP/i);
+    expect(reply.text.match(/\?/g)).toHaveLength(1);
     expect(reply.text).toContain("roof repair");
     expect(reply.text).not.toMatch(/roof replacement/i);
     expect(reply.text).toContain("100 Main Street");
@@ -119,12 +119,13 @@ describe("captured leads are processed and delivered through the durable outbox"
   });
   it("releases a reserved follow-up quota slot when delivery fails", async () => {
     await h.enableFollowups();
-    await h.capture("Can you help with my roof?");
+    await h.capture("Can you help with my roof?",true);
     let failFollowup=true;
     const send=h.mail.send.bind(h.mail);
     h.mail.send=async (input:LmcOutboundEmail)=>{ if(input.kind==="followup"&&failFollowup){failFollowup=false;throw new Error("EMAIL_PROVIDER_UNAVAILABLE");} return send(input); };
     await h.worker.drain();
-    expect(await h.scoped((tx:DatabaseTransaction)=>tx.select({count:lmcRateWindows.count}).from(lmcRateWindows))).toEqual([{count:0}]);
+    h.advance(3_600_000); await h.worker.drain();
+    expect(await h.scoped((tx:DatabaseTransaction)=>tx.select({count:lmcRateWindows.count}).from(lmcRateWindows).where(eq(lmcRateWindows.scopeKey,"followup:daily")))).toEqual([{count:0}]);
     h.advance(10_000); await h.worker.drain();
     expect(h.mail.to(h.email)).toHaveLength(2);
   });
@@ -150,8 +151,8 @@ async function fixture() {
   const capture=new LmcLeadCapture({database:db.worker.db,now});
   const worker=new LmcEmailWorker({database:db.worker.db,dispatcher:db.dispatcher.db,now,channel:new EmailChannel(model),mail,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret:"a".repeat(40)});
   const scoped=<T>(fn:Parameters<typeof withBusinessTransaction<T>>[2])=>withBusinessTransaction(db.worker.db,{businessId:tenantId,actorType:"worker"},fn);
-  return {mail,model,worker,email,ownerEmail,emergencyText,scoped,async enableFollowups(){const [settings]=await db.admin.db.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId));if(!settings)throw new Error("missing settings");await db.admin.db.update(lmcSettings).set({config:{...settings.config,followups:{enabled:true,maxTouches:1,delaysHours:[0],dailyCap:1}}}).where(eq(lmcSettings.tenantId,tenantId));},async disable(){await db.admin.db.update(lmcSettings).set({enabled:false}).where(eq(lmcSettings.tenantId,tenantId));},advance(ms:number){clock+=ms;},async capture(message:string){
-    const response=await handleLmcCapture(new Request("https://lmc.example",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:randomUUID(),email,message})}),token.value,capture);
+  return {mail,model,worker,email,ownerEmail,emergencyText,scoped,async enableFollowups(){const [settings]=await db.admin.db.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId));if(!settings)throw new Error("missing settings");await db.admin.db.update(lmcSettings).set({config:{...settings.config,followups:{enabled:true,maxTouches:1,delaysHours:[1],dailyCap:1}}}).where(eq(lmcSettings.tenantId,tenantId));},async disable(){await db.admin.db.update(lmcSettings).set({enabled:false}).where(eq(lmcSettings.tenantId,tenantId));},advance(ms:number){clock+=ms;},async capture(message:string,consentToFollowUp=false){
+    const response=await handleLmcCapture(new Request("https://lmc.example",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:randomUUID(),email,message,consentToFollowUp})}),token.value,capture);
     expect(response.status).toBe(202);
     return (await response.json()).id as string;
   },async lead(id:string){return (await scoped(tx=>tx.select().from(lmcLeads).where(eq(lmcLeads.id,id))))[0];},async close(){await db.admin.db.delete(businesses).where(eq(businesses.id,tenantId));await db.close();}};

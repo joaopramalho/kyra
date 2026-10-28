@@ -51,6 +51,7 @@ export class EmailChannel implements LmcChannel {
     if (decision.confidence < settings.data.confidenceThreshold) {
       return {
         actions: [{ type: "clarify", reason: "ambiguous_request" }],
+        decision: { intent: decision.intent, confidence: decision.confidence },
         ...(await this.suggestReply(request)),
       };
     }
@@ -58,17 +59,19 @@ export class EmailChannel implements LmcChannel {
     // time, the safe operation is a read-only availability lookup.
     const intent = decision.intent === "book" && !decision.requestedSlot ? "availability" : decision.intent;
     const tool = intent in toolForIntent ? toolForIntent[intent as keyof typeof toolForIntent] : undefined;
-    if (tool && !settings.data.tools.includes(tool)) return handoff("tool_not_allowed");
+    const decisionSummary = { intent, confidence: decision.confidence };
+    if (tool && !settings.data.tools.includes(tool)) return { ...handoff("tool_not_allowed"), decision: decisionSummary };
     if (intent === "unknown") {
       return {
         actions: [{ type: "clarify", reason: "ambiguous_request" }],
+        decision: decisionSummary,
         ...(await this.suggestReply(request)),
       };
     }
     return { actions: [
       { type: "qualify", fields: decision.qualification, confidence: decision.confidence },
       { type: "intent", intent, ...(decision.requestedSlot ? { requestedSlot: decision.requestedSlot } : {}) },
-    ], ...(intent === "question" ? await this.suggestReply(request) : {}) };
+    ], decision: decisionSummary, ...(intent === "question" ? await this.suggestReply(request) : {}) };
   }
 
   private async suggestReply(request: LmcChannelRequest): Promise<Pick<LmcChannelResult, "suggestedReply">> {

@@ -60,7 +60,7 @@ describe("initial email and forwarded lead-notification intake", () => {
     expect(h.mail.lastTo(lead.email).headers["In-Reply-To"]).toBe(
       inbound.email.headers["Message-ID"],
     );
-    expect(h.mail.lastTo(lead.email).text).toMatch(/ZIP/i);
+    expect(h.mail.lastTo(lead.email).text.match(/\?/g)).toHaveLength(1);
     await h.reply(lead.id, "Roof repair, ZIP 33101, residential homeowner.");
     await h.work();
     expect((await h.lead(lead.id)).verifiedAt).toBeInstanceOf(Date);

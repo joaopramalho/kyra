@@ -37,6 +37,7 @@ describe("channel boundary", () => {
     const responder = { reply: vi.fn().mockResolvedValue("Which system needs service?") };
     expect(await new EmailChannel({ analyze: async () => ({ intent: "qualification", confidence: 0.2, qualification: {} }) }, responder).run(request())).toEqual({
       actions: [{ type: "clarify", reason: "ambiguous_request" }],
+      decision: { intent: "qualification", confidence: 0.2 },
       suggestedReply: "Which system needs service?",
     });
     expect(responder.reply).toHaveBeenCalledOnce();

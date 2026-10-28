@@ -19,4 +19,11 @@ describe("summarizeLmcActions", () => {
       handoffReason: "configured_escalation",
     });
   });
+
+  it("retains bounded decision metadata when policy reduces the action to clarification", () => {
+    expect(summarizeLmcActions(
+      [{ type: "clarify", reason: "ambiguous_request" }],
+      { intent: "unknown", confidence: 0.2 },
+    )).toEqual({ actionTypes: ["clarify"], intent: "unknown", confidence: 0.2 });
+  });
 });

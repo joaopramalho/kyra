@@ -83,6 +83,8 @@ export type LmcStructuredAction =
 
 export type LmcChannelResult = {
   actions: LmcStructuredAction[];
+  /** Bounded model decision metadata for telemetry; never contains message content. */
+  decision?: Pick<LmcEmailDecision, "intent" | "confidence">;
   /** Optional prose from the shared receptionist agent. The domain layer decides whether it is safe to send. */
   suggestedReply?: string;
 };

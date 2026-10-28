@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
-import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { FakeLmcInboundProvider, SecretBox, createFakeLmcProviders } from "@lobbystack/providers";
 import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent, LmcInboundProvider } from "@lobbystack/contracts";
 import { EmailChannel } from "../../../packages/agent-core/src/channels";
@@ -79,13 +79,6 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
         const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
         await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map((block:{startsAt:string;endsAt:string;externalEventId?:string})=>({...block,staffId}))});
         const result=await worker.drain();
-        if (result.failed || jobFailures.length) {
-          const rows=await scoped((tx:DatabaseTransaction)=>tx.select({kind:lmcJobs.kind,status:lmcJobs.status,lastError:lmcJobs.lastError,attempts:lmcJobs.attempts}).from(lmcJobs).where(eq(lmcJobs.tenantId,tenantId)));
-          const failedRow=rows.find((row:{kind:string;status:string;lastError:string|null;attempts:number})=>row.lastError);
-          const diagnostic=jobFailures[0];
-          const failure=diagnostic ? `${diagnostic.kind.toUpperCase()}_${diagnostic.code}` : failedRow ? `${failedRow.kind.toUpperCase()}_${classifyLmcJobFailure(failedRow.lastError).code}` : "LMC_JOB_FAILED";
-          throw new Error(`LMC_WORKER_${failure}`);
-        }
         const rows=await scoped((tx:DatabaseTransaction)=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
         for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
         return result;

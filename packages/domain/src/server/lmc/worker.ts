@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, or, sql } from "drizzle-orm";
-import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
+import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailDecision, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
 import { appointments, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
 import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
@@ -128,6 +128,7 @@ export class LmcEmailWorker {
     const isConfiguredEscalation = settings.escalation?.keywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase())) ?? false;
     let actions: LmcStructuredAction[] = [];
     let suggestedReply: string | undefined;
+    let decision: Pick<LmcEmailDecision, "intent" | "confidence"> | undefined;
     let modelOutcome: "not_called" | "success" = "not_called";
     if (!isEmergency && !isInjection && isConfiguredEscalation) actions=[{type:"handoff",reason:"configured_escalation"}];
     if (!isEmergency && !isInjection && !isConfiguredEscalation) {
@@ -136,6 +137,7 @@ export class LmcEmailWorker {
           history:history.filter(item=>item.id!==message.id && ["lead","assistant","human"].includes(item.direction)).map(item=>({role:item.direction as "lead"|"assistant"|"human",text:redactLmcCapabilities(item.body)}))}));
         actions = result.actions;
         suggestedReply = result.suggestedReply;
+        decision = result.decision;
         modelOutcome = "success";
       } catch (error) {
         if (this.leaseFailure(error)) throw error;
@@ -243,7 +245,7 @@ export class LmcEmailWorker {
         const full=summary.length>45_000 ? `${summary.slice(0,45_000)}\nFull history: ${this.baseUrl}/leads/${lead.id}` : summary;
         await this.outbound(tx,job,current,message,settings,payload.replyToken,full,"owner_alert",true,payload.generation);
       }
-      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"email_processed",externalId:`processed:${job.id}`,metadata:{messageId:message.id,status,reason,attempt:job.attempts,modelOutcome,...summarizeLmcActions(actions)},createdAt:this.input.now()});
+      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:lead.id,type:"email_processed",externalId:`processed:${job.id}`,metadata:{messageId:message.id,status,reason,attempt:job.attempts,modelOutcome,...summarizeLmcActions(actions,decision)},createdAt:this.input.now()});
     });
   }
 

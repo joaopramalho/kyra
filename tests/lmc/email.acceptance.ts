@@ -17,7 +17,7 @@ describe("LMC lead-to-booking acceptance", () => {
     const reply = h.mail.to("ana@example.invalid");
     expect(reply).toHaveLength(1);
     expect(performance.now() - started).toBeLessThan(5_000);
-    expect(reply[0]!.text).toMatch(/ZIP/i);
+    expect(reply[0]!.text.match(/\?/g)).toHaveLength(1);
     expect(reply[0]!.text).toMatch(/repair/i);
     expect(reply[0]!.text).not.toMatch(/roof replacement/i);
     expect((await h.lead(lead.id)).status).toBe("qualifying");
