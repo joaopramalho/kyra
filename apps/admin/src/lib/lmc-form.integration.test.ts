@@ -37,7 +37,7 @@ enabled("deduplicates the form retry after a lost HTTP acknowledgment", async ()
   }
 });
 
-enabled("processes the one queued lead created by the form retry", async () => {
+enabled("persists the lead created by the form retry", async () => {
   const scenario = await setupScenario();
   try {
     await scenario.retry();
@@ -45,12 +45,31 @@ enabled("processes the one queued lead created by the form retry", async () => {
       email: "form@example.invalid",
       consentFollowups: true,
     });
+  } finally {
+    await scenario.close();
+  }
+});
+
+enabled("sends one reply for the queued form lead", async () => {
+  const scenario = await setupScenario();
+  try {
+    await scenario.retry();
     await scenario.harness.work();
     expect(
       scenario.harness.mail.records.filter(
         (mail: { to: string }) => mail.to === "form@example.invalid",
       ),
     ).toHaveLength(1);
+  } finally {
+    await scenario.close();
+  }
+});
+
+enabled("records one assistant message for the queued form lead", async () => {
+  const scenario = await setupScenario();
+  try {
+    await scenario.retry();
+    await scenario.harness.work();
     expect(
       (await scenario.harness.history(scenario.leadId)).filter(
         (message: { direction: string }) => message.direction === "assistant",
