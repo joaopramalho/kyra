@@ -20,4 +20,12 @@ describe("email qualification prompts", () => {
       true,
     )).toBe("Is the property residential or commercial?");
   });
+
+  it("asks one useful question at a time when several facts are missing", () => {
+    expect(buildEmailQualificationPrompt(
+      { services: [{ id: "00000000-0000-4000-8000-000000000001", name: "HVAC repair", aliases: [] }] },
+      {},
+      false,
+    )).toBe("Which service do you need: HVAC repair?");
+  });
 });

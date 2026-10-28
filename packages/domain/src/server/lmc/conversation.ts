@@ -7,8 +7,8 @@ export function buildEmailQualificationPrompt(
   serviceRecognized: boolean,
 ): string {
   const questions: string[] = [];
-  if (!qualification.zip) questions.push("What is your ZIP code?");
   if (!serviceRecognized) questions.push(`Which service do you need: ${settings.services.map((item) => item.name).join(" or ")}?`);
+  if (!qualification.zip) questions.push("What is your ZIP code?");
   if (!qualification.propertyType) questions.push("Is the property residential or commercial?");
-  return questions.join(" ") || "Could you clarify what you would like help with?";
+  return questions[0] || "Could you clarify what you would like help with?";
 }
