@@ -34,10 +34,8 @@ export async function resolveLmcPilotPageAccess(context:{database:Database;authD
   return withBusinessTransaction(context.database,{businessId:tenantId,userId:identity.data,actorType:"operator"},async tx=>{
     try{await requireBusinessMembership(tx,{businessId:tenantId,userId:identity.data,minimumRole:"viewer"});}
     catch(error){if(error instanceof AuthorizationError)return null;throw error;}
-    const [[settings], [business]] = await Promise.all([
-      tx.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId)).limit(1),
-      tx.select({status:businesses.status}).from(businesses).where(eq(businesses.id,tenantId)).limit(1),
-    ]);
+    const [settings] = await tx.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId)).limit(1);
+    const [business] = await tx.select({status:businesses.status}).from(businesses).where(eq(businesses.id,tenantId)).limit(1);
     if(!settings||!business||!lmcBusinessSettingsSchema.safeParse(settings.config).success)return null;
     // A paused tenant still needs settings access; API roles and scheduling
     // freshness/verification rules continue to govern every actual operation.
