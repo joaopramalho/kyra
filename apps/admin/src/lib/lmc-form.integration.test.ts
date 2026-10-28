@@ -50,7 +50,7 @@ enabled("persists the lead created by the form retry", async () => {
   }
 });
 
-enabled("sends one reply for the queued form lead", async () => {
+enabled("sends a reply for the queued form lead", async () => {
   const scenario = await setupScenario();
   try {
     await scenario.retry();
@@ -60,6 +60,21 @@ enabled("sends one reply for the queued form lead", async () => {
         (mail: { to: string }) => mail.to === "form@example.invalid",
       ),
     ).toHaveLength(1);
+  } finally {
+    await scenario.close();
+  }
+});
+
+enabled("does not duplicate the queued form lead reply", async () => {
+  const scenario = await setupScenario();
+  try {
+    await scenario.retry();
+    await scenario.harness.work();
+    const replies = scenario.harness.mail.records.filter(
+      (mail: { to: string }) => mail.to === "form@example.invalid",
+    );
+    expect(replies.length).toBeGreaterThan(0);
+    expect(replies).toHaveLength(1);
   } finally {
     await scenario.close();
   }
