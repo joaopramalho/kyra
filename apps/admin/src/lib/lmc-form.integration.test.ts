@@ -75,7 +75,7 @@ enabled("worker completes the form lead process job", async () => {
     if (result.failed !== 0) {
       const failedJob = jobs.find(job => job.lastError);
       const error = failedJob?.lastError;
-      const code = ["EMAIL_PROVIDER_UNAVAILABLE", "EMAIL_SEND_PREPARE_FAILED", "INVALID_OUTBOUND_EMAIL", "IDEMPOTENCY_CONFLICT", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
+      const code = ["EMAIL_PROVIDER_UNAVAILABLE", "EMAIL_SEND_PREPARE_LEASE", "EMAIL_SEND_PREPARE_LOAD_RECORDS", "EMAIL_SEND_PREPARE_PAYLOAD_VALIDATION", "EMAIL_SEND_PREPARE_SETTINGS", "EMAIL_SEND_PREPARE_RECIPIENT_VALIDATION", "EMAIL_SEND_PREPARE_FOLLOWUP_POLICY", "EMAIL_SEND_PREPARE_MARK_SENDING", "INVALID_OUTBOUND_EMAIL", "IDEMPOTENCY_CONFLICT", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
       const kind = failedJob?.kind === "process" || failedJob?.kind === "send" || failedJob?.kind === "followup" ? failedJob.kind.toUpperCase() : "UNKNOWN";
       throw new Error(`FORM_WORKER_FAILED_${kind}_${code}`);
     }

@@ -252,18 +252,23 @@ export class LmcEmailWorker {
   private async send(job: LmcJob) {
     const payload=lmcSendJobSchema.parse(job.payload);
     const prepared=await (async()=>{
+      let stage="lease";
       try {
         return await this.scoped(job.tenantId,async tx=>{
       await this.lease(tx,job);
+      stage="load_records";
       const [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId))).for("update");
       const [message]=await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.id,payload.messageId))).for("update");
       const outgoing=payload.outbound;
+      stage="payload_validation";
       if (!lead || !message || outgoing.tenantId!==job.tenantId || outgoing.leadId!==job.leadId || outgoing.headers["Message-ID"]!==message.messageId || outgoing.text!==message.body || outgoing.to!==message.toEmail || outgoing.subject!==message.subject || outgoing.kind!==message.kind) throw new Error("INVALID_JOB_PAYLOAD");
       const staleSending=message.status==="sending"&&job.attempts>1;
       if (message.status!=="queued"&&!staleSending) return null;
       const owner=message.kind==="owner_alert";
+      stage="settings";
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,job.tenantId)).limit(1);
       const config=settings ? lmcBusinessSettingsSchema.parse(settings.config) : null;
+      stage="recipient_validation";
       const replyPrefix="reply+", replySuffix=`@${this.input.receivingDomain}`;
       const replyToken=outgoing.replyTo.startsWith(replyPrefix) && outgoing.replyTo.endsWith(replySuffix) ? outgoing.replyTo.slice(replyPrefix.length,-replySuffix.length) : "";
       const validRecipient=config && outgoing.from===config.fromEmail && outgoing.to===(owner ? config.ownerEmail : lead.email)
@@ -281,6 +286,7 @@ export class LmcEmailWorker {
         return null;
       }
       let followupRateWindow:{scopeKey:string;windowStart:Date}|null=null;
+      stage="followup_policy";
       if(outgoing.kind==="followup"){
         const touch=payload.followupTouch;
         if(!touch||!config?.followups.enabled||!config.followups.dailyCap||touch>config.followups.maxTouches||!lead.consentFollowups||terminal.has(lead.status)||lead.followupCount!==touch-1){
@@ -294,11 +300,12 @@ export class LmcEmailWorker {
           return null;
         }
       }
+      stage="mark_sending";
       await tx.update(lmcMessages).set({status:"sending"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id),or(eq(lmcMessages.status,"queued"),eq(lmcMessages.status,"sending"))));
       return {config,lead,message,outgoing,owner,replyToken,followupRateWindow};
         });
       } catch (error) {
-        throw new Error(error instanceof Error && ["INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error.message) ? error.message : "EMAIL_SEND_PREPARE_FAILED");
+        throw new Error(error instanceof Error && ["INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error.message) ? error.message : `EMAIL_SEND_PREPARE_${stage.toUpperCase()}`);
       }
     })();
     if (!prepared) return;
