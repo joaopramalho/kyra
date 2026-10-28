@@ -73,12 +73,19 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
       return await response.json() as {id:string};
     },
     async work(){
-      const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
-      await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map(block=>({...block,staffId}))});
-      const result=await worker.drain();
-      const rows=await scoped(tx=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
-      for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
-      return result;
+      try {
+        const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
+        await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map(block=>({...block,staffId}))});
+        const result=await worker.drain();
+        const rows=await scoped(tx=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
+        for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
+        return result;
+      } catch (error) {
+        const message=error instanceof Error ? error.message : "";
+        if(message.includes("lmc_messages_status_check"))throw new Error("LMC_MESSAGE_STATUS_CONSTRAINT");
+        if(message.includes("permission denied"))throw new Error("LMC_DATABASE_PERMISSION");
+        throw new Error("LMC_ACCEPTANCE_WORK_FAILED");
+      }
     },
     async lead(id:string){const [lead]=await scoped(tx=>tx.select().from(lmcLeads).where(eq(lmcLeads.id,id)));if(!lead)throw new Error("LEAD_NOT_FOUND");return{...lead,offeredSlots:lead.offeredSlots.map(slot=>slot.startsAt)};},
     async bookings(){return(await scoped(tx=>tx.select({startsAt:appointments.startsAt,contactEmail:contacts.email}).from(appointments).innerJoin(contacts,eq(contacts.id,appointments.contactId)).where(and(eq(appointments.businessId,tenantId),ne(appointments.status,"canceled"))))).map(row=>({...row,startsAt:row.startsAt.toISOString()}));},
