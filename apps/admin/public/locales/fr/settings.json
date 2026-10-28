@@ -22,7 +22,45 @@
     "connectedApps": "Applications connectées",
     "kyra": "Lead My Company",
     "backOffice": "Back Office",
-    "email": "Automatisation e-mail"
+    "email": "Automatisation e-mail",
+    "businessProfile": "Entreprise"
+  },
+  "businessProfile": {
+    "title": "Profil de l’entreprise",
+    "description": "Gardez à jour l’identité utilisée par Kyra et dans les communications avec les clients.",
+    "unavailable": "Aucun espace d’entreprise actif n’est disponible.",
+    "saved": "Profil de l’entreprise enregistré.",
+    "save": "Enregistrer le profil",
+    "saving": "Enregistrement…",
+    "readOnly": "Seuls un propriétaire ou un administrateur peuvent modifier ce profil.",
+    "fields": {
+      "name": "Nom de l’entreprise",
+      "timezone": "Fuseau horaire IANA",
+      "type": "Catégorie d’entreprise",
+      "website": "Site Web"
+    }
+  },
+  "businessHours": {
+    "title": "Heures d’ouverture",
+    "description": "Ces heures déterminent les disponibilités et les réponses que Kyra donne aux clients.",
+    "saved": "Heures d’ouverture enregistrées.",
+    "save": "Enregistrer les heures",
+    "saving": "Enregistrement…",
+    "open": "Ouvert",
+    "closed": "Fermé",
+    "to": "à",
+    "enabled": "Ouvert le {{day}}",
+    "opens": "Heure d’ouverture le {{day}}",
+    "closes": "Heure de fermeture le {{day}}",
+    "days": {
+      "0": "Dimanche",
+      "1": "Lundi",
+      "2": "Mardi",
+      "3": "Mercredi",
+      "4": "Jeudi",
+      "5": "Vendredi",
+      "6": "Samedi"
+    }
   },
   "widget": {
     "title": "Widget de site web",

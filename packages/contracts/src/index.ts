@@ -306,3 +306,4 @@ export function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown): T {
 export * from "./lmc";
 
 export * from "./lmc-tenant-config";
+export * from "./superadmin";

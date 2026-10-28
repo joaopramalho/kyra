@@ -20,10 +20,25 @@ export async function enqueueLmcJob(tx: DatabaseTransaction, input: NewLmcJob): 
   return existing.id;
 }
 
-const failureCodes = new Set(["EMAIL_PROVIDER_UNAVAILABLE","MODEL_UNAVAILABLE","CALENDAR_UNAVAILABLE","INVALID_JOB_PAYLOAD","LMC_JOB_FAILED"]);
+export type LmcJobFailureCategory = "database" | "rls" | "processing" | "sending" | "idempotency" | "unknown";
+export type LmcJobFailureDiagnostic = { kind: string; code: string; category: LmcJobFailureCategory; attempts: number; terminal: boolean };
+const failureCodes = new Set(["EMAIL_PROVIDER_UNAVAILABLE","EMAIL_SEND_PREPARE_LEASE","EMAIL_SEND_PREPARE_LOAD_RECORDS","EMAIL_SEND_PREPARE_PAYLOAD_VALIDATION","EMAIL_SEND_PREPARE_SETTINGS","EMAIL_SEND_PREPARE_RECIPIENT_VALIDATION","EMAIL_SEND_PREPARE_FOLLOWUP_POLICY","EMAIL_SEND_PREPARE_MARK_SENDING","INVALID_OUTBOUND_EMAIL","IDEMPOTENCY_CONFLICT","MODEL_UNAVAILABLE","CALENDAR_UNAVAILABLE","INVALID_JOB_PAYLOAD","LMC_DATABASE_PERMISSION","LMC_DATABASE_RLS","LMC_DATABASE_CONSTRAINT","LMC_JOB_FAILED"]);
+
+export function classifyLmcJobFailure(value: unknown): { code: string; category: LmcJobFailureCategory } {
+  const message = typeof value === "string" ? value : value instanceof Error ? value.message : "";
+  if (/row[- ]level security|rls policy/i.test(message)) return { code: "LMC_DATABASE_RLS", category: "rls" };
+  if (/permission denied/i.test(message)) return { code: "LMC_DATABASE_PERMISSION", category: "database" };
+  if (/duplicate|unique constraint|idempotency/i.test(message)) return { code: "IDEMPOTENCY_CONFLICT", category: "idempotency" };
+  if (/constraint|violates .*check|violates .*foreign key/i.test(message)) return { code: "LMC_DATABASE_CONSTRAINT", category: "database" };
+  if (failureCodes.has(message)) {
+    const category: LmcJobFailureCategory = message.startsWith("EMAIL_") || message === "INVALID_OUTBOUND_EMAIL" ? "sending" : message === "IDEMPOTENCY_CONFLICT" ? "idempotency" : message === "LMC_DATABASE_RLS" ? "rls" : message.startsWith("LMC_DATABASE_") ? "database" : message === "MODEL_UNAVAILABLE" || message === "INVALID_JOB_PAYLOAD" ? "processing" : "unknown";
+    return { code: message, category };
+  }
+  return { code: "LMC_JOB_FAILED", category: "unknown" };
+}
 
 export class LmcJobQueue {
-  constructor(private readonly input: { worker: Database; dispatcher: Database; now: () => Date }) {}
+  constructor(private readonly input: { worker: Database; dispatcher: Database; now: () => Date; onFailure?: (diagnostic: LmcJobFailureDiagnostic) => void }) {}
 
   async dueTenants(limit = 50): Promise<string[]> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("INVALID_QUEUE_LIMIT");
@@ -66,16 +81,29 @@ export class LmcJobQueue {
     });
   }
 
+  async renew(job: LmcJob): Promise<boolean> {
+    if (!job.leaseToken) return false;
+    const now = this.input.now();
+    return withBusinessTransaction(this.input.worker, { businessId: job.tenantId, actorType: "worker" }, async tx => {
+      const rows = await tx.update(lmcJobs).set({ leasedUntil: new Date(now.getTime()+LMC_JOB_LEASE_MS), updatedAt: now })
+        .where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id),eq(lmcJobs.leaseToken,job.leaseToken!),eq(lmcJobs.status,"running"))).returning({ id: lmcJobs.id });
+      return rows.length === 1;
+    });
+  }
+
   async fail(job: LmcJob, code: string): Promise<boolean> {
     if (!job.leaseToken) return false;
     const now = this.input.now();
     const dead = job.attempts >= LMC_MAX_JOB_ATTEMPTS;
-    return withBusinessTransaction(this.input.worker, { businessId: job.tenantId, actorType: "worker" }, async tx => {
+    const classified = classifyLmcJobFailure(code);
+    const updated = await withBusinessTransaction(this.input.worker, { businessId: job.tenantId, actorType: "worker" }, async tx => {
       const rows = await tx.update(lmcJobs).set({ status: dead ? "failed" : "pending", leasedUntil: null, leaseToken: null,
         availableAt: dead ? now : new Date(now.getTime()+Math.min(3_600_000,2**job.attempts*1_000)),
-        lastError: failureCodes.has(code) ? code : "LMC_JOB_FAILED", updatedAt: now })
+        lastError: classified.code, updatedAt: now })
         .where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id),eq(lmcJobs.leaseToken,job.leaseToken!),eq(lmcJobs.status,"running"))).returning({ id: lmcJobs.id });
       return rows.length === 1;
     });
+    if (updated) this.input.onFailure?.({ kind: job.kind, code: classified.code, category: classified.category, attempts: job.attempts, terminal: dead });
+    return updated;
   }
 }

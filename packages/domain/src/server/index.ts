@@ -32,6 +32,8 @@ export * from "./sms";
 export * from "./snapshotCache";
 export * from "./storage";
 export * from "./tenancy";
+export * from "./superadmin-managed-clients";
+export * from "./lmc/pilot-page-access";
 export * from "./voice";
 export * from "./usage";
 export * from "./unitEconomics";

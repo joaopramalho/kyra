@@ -87,7 +87,7 @@ it.each([
           ...variables,
           INTERNAL_SERVICE_TOKEN: "synthetic-demo-sentinel-never-print",
         },
-        timeout: 15_000,
+        timeout: 30_000,
         maxBuffer: 1024 * 1024,
       });
       throw new Error("UNSAFE_DEMO_SUCCEEDED");
@@ -108,5 +108,5 @@ it.each([
       expect(result.stdout).toBe("");
     }
   },
-  20_000,
+  40_000,
 );

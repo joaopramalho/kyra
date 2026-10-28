@@ -22,7 +22,7 @@ function provider(): GoogleCalendarProvider {
 }
 
 export async function GET(request: Request) {
-  const settingsPath = isPilotMode(process.env) ? "/settings/email" : "/integrations";
+  const settingsPath = isPilotMode(process.env) ? "/setup-required" : "/integrations";
   const destination = (status: "success" | "error") => NextResponse.redirect(new URL(`${settingsPath}?calendar=google&status=${status}`, process.env.APP_BASE_URL ?? request.url));
   try {
     const url = new URL(request.url);

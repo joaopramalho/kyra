@@ -61,6 +61,54 @@ export async function probePilotSuperAdminContext(context: HttpAuditContext) {
       if (validOptions) probed.push(`OPTIONS ${route}`);
     }
 
+    const managedDenials = [
+      { pattern: "/api/internal/superadmin/clients", path: "/api/internal/superadmin/clients", method: "POST" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, method: "GET" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, method: "HEAD" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, method: "PUT" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/invite", path: `/api/internal/superadmin/clients/${a.tenantId}/invite`, method: "POST" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "GET" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "HEAD" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "POST" },
+    ] as const;
+    for (const target of managedDenials) {
+      const response = await request(target.path, cookieB, b.tenantId, target.method, {
+        "x-user-id": a.ownerId,
+        "x-actor-type": "system",
+      }, ["POST", "PUT"].includes(target.method) ? {} : undefined);
+      check(response.status === 403, `PILOT_SUPERADMIN_MANAGED_DENIAL:${target.method}:${target.pattern}:${response.status}`);
+      await response.arrayBuffer();
+      if (response.status === 403) probed.push(`${target.method} ${target.pattern}`);
+    }
+
+    for (const target of [
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, allow: ["GET", "HEAD", "OPTIONS", "PUT"] },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/invite", path: `/api/internal/superadmin/clients/${a.tenantId}/invite`, allow: ["OPTIONS", "POST"] },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, allow: ["GET", "HEAD", "OPTIONS", "POST"] },
+    ] as const) {
+      const response = await request(target.path, cookieA, a.tenantId, "OPTIONS");
+      const allow = (response.headers.get("allow") ?? "").split(/,\s*/);
+      const valid = response.status === 204 && target.allow.every((method) => allow.includes(method)) && await response.text() === "";
+      check(valid, `PILOT_SUPERADMIN_MANAGED_OPTIONS:${target.pattern}:${response.status}`);
+      if (valid) probed.push(`OPTIONS ${target.pattern}`);
+    }
+
+    const invitationPreview = await request("/api/team/accept");
+    const previewBody = await invitationPreview.json() as { invitation?: unknown };
+    check(invitationPreview.status === 200 && previewBody.invitation === null, `PILOT_INVITATION_PREVIEW:${invitationPreview.status}`);
+    if (invitationPreview.status === 200 && previewBody.invitation === null) probed.push("GET /api/team/accept");
+
+    const invitationAccept = await request("/api/team/accept", "", "", "POST", {}, { token: "synthetic-invalid" });
+    check(invitationAccept.status === 401, `PILOT_INVITATION_ANONYMOUS_ACCEPT:${invitationAccept.status}`);
+    await invitationAccept.arrayBuffer();
+    if (invitationAccept.status === 401) probed.push("POST /api/team/accept");
+
+    const invitationOptions = await request("/api/team/accept", "", "", "OPTIONS");
+    const invitationAllow = (invitationOptions.headers.get("allow") ?? "").split(/,\s*/);
+    const validInvitationOptions = invitationOptions.status === 204 && ["GET", "POST", "OPTIONS"].every((method) => invitationAllow.includes(method)) && await invitationOptions.text() === "";
+    check(validInvitationOptions, `PILOT_INVITATION_OPTIONS:${invitationOptions.status}`);
+    if (validInvitationOptions) probed.push("OPTIONS /api/team/accept");
+
     check(isDeepStrictEqual(foreignBefore, await scopedSnapshot(context, "b")), "PILOT_SUPERADMIN_CHANGED_FOREIGN_TENANT");
   } finally {
     await db.admin.pool.query(

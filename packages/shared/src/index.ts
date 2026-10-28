@@ -4,6 +4,12 @@ export { resolveOpenAiPricing } from "./aiPricing";
 export type { AiPricingRatesUsdPerMillionTokens, VersionedAiPricing } from "./aiPricing";
 export { isMaintenanceMode } from "./maintenance";
 export { isPilotMode, PILOT_WORKER_HEALTH_PATHS, PILOT_ADMIN_ROUTES, pilotAdminRoute } from "./pilot";
+export {
+  hasPilotDashboardCapability,
+  pilotDashboardCapabilityForPath,
+  pilotDashboardCapabilityIds,
+  type PilotDashboardCapability,
+} from "./pilot-dashboard";
 export * from "./assistant";
 export { isCertificationMode, assertCertificationRecipient, assertCertificationOperationAllowed, assertCertificationCalendar, assertCertificationBillingSandbox } from "./certification";
 

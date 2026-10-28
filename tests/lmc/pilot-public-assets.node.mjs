@@ -50,7 +50,7 @@ test("production-default pilot auth displays and every published static asset en
     const staticFiles=[
       {path:"/favicon.ico",file:join(admin,"public/brand/lmc-logo.svg")},
       ...["lmc-logo","logo-icon","logo-wordmark"].map(name=>({path:`/brand/${name}.svg`,file:join(admin,`public/brand/${name}.svg`)})),
-      ...["en","fr"].flatMap(locale=>["common","auth","onboarding","lmc","nav","settings","agent","widget"].map(ns=>({path:`/locales/${locale}/${ns}.json`,file:join(admin,`public/locales/${locale}/${ns}.json`)}))),
+      ...["en","fr"].flatMap(locale=>["common","auth","onboarding","lmc","nav","settings","agent","contacts","knowledge","widget"].map(ns=>({path:`/locales/${locale}/${ns}.json`,file:join(admin,`public/locales/${locale}/${ns}.json`)}))),
       ...(await files(join(admin,".next/static"))).map(name=>({path:"/_next/static/"+name,file:join(admin,".next/static",name)})),
     ];
     assert(staticFiles.length>20,"NEXT_BUILD_ASSETS_MISSING");
@@ -110,8 +110,9 @@ test("production-default pilot auth displays and every published static asset en
       check(response.status===404&&body===""&&response.headers.get("cache-control")?.includes("no-store"),`SERVER_ACTION_DENIAL:${method}:${path}:${response.status}`);
     }
     const authenticatedPagePatterns=new Set([
-      "/", "/leads", "/setup-required", "/settings/email",
-      "/internal", "/internal/clients", "/internal/mfa", "/internal/mfa/setup",
+      "/", "/leads", "/contacts", "/contacts/[contactId]", "/agent/knowledge", "/agent/services", "/setup-required", "/settings/email", "/settings/business",
+      "/internal", "/internal/clients", "/internal/clients/new", "/internal/clients/[tenantId]",
+      "/internal/mfa", "/internal/mfa/setup",
       "/healthz", "/readyz",
     ]);
     const expectedPatterns=PILOT_ADMIN_ROUTES.filter(route=>!route.pattern.startsWith("/api/")&&!authenticatedPagePatterns.has(route.pattern)).map(route=>route.pattern).sort();

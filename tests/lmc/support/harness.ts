@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
-import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction } from "@lobbystack/db";
+import { appointments, businesses, businessHours, businessMemberships, calendarConnections, contacts, lmcEvents, lmcLeads, lmcMessages, lmcSettings, services, staff, users, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { FakeLmcInboundProvider, SecretBox, createFakeLmcProviders } from "@lobbystack/providers";
 import type { LmcCaptureInput, LmcOutboundEmail, LmcProviderEvent, LmcInboundProvider } from "@lobbystack/contracts";
 import { EmailChannel } from "../../../packages/agent-core/src/channels";
@@ -11,6 +11,7 @@ import { handleLmcCapture, LmcLeadCapture } from "../../../packages/domain/src/s
 import { handleLmcEmailWebhook, handleLmcUnsubscribe, LmcEmailReception } from "../../../packages/domain/src/server/lmc/reception";
 import { LmcHumanReplies } from "../../../packages/domain/src/server/lmc/handoff";
 import { LmcEmailWorker } from "../../../packages/domain/src/server/lmc/worker";
+import { classifyLmcJobFailure, type LmcJobFailureDiagnostic } from "../../../packages/domain/src/server/lmc/queue";
 import { upsertBusyBlocks } from "../../../packages/domain/src/server/calendar";
 import { candidateStartTimes } from "../../../packages/domain/src/server/receptionistActions";
 import { syncAppointmentCalendar } from "../../../apps/worker/src/calendarJobs";
@@ -38,10 +39,11 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
   await db.admin.db.insert(businessHours).values(hours.map(hour=>({...hour,businessId:tenantId})));
   await db.admin.db.insert(calendarConnections).values({id:connectionId,businessId:tenantId,ownerUserId:ownerId,staffId,provider:"google",externalAccountId:`fake-${tenantId}`,selectedCalendarId:calendarId,encryptedAccessToken:box.encrypt("fake-calendar-token"),tokenExpiresAt:new Date("2040-01-01"),lastSyncedAt:now()});
   await db.admin.db.insert(lmcSettings).values({tenantId,captureTokenHash:captureToken.hash,config:{ownerEmail,fromEmail:"team@example.invalid",physicalAddress:"100 Main Street, Miami FL 33101",serviceAreaZips:["33101","33102"],serviceAreaCities:["Miami"],services:[{id:serviceId,name:"roof repair",aliases:["roof replacement"]}],emergencyKeywords:["active leak","storm damage"],emergencyText,priceInformation:"",tone:"professional",confidenceThreshold:0.8,tools:["availability","book","reschedule","cancel","handoff"],followups:{enabled:true,maxTouches:3,delaysHours:[24,48,72],dailyCap:100}}});
+  const jobFailures:LmcJobFailureDiagnostic[]=[];
   const captureService=new LmcLeadCapture({database:db.worker.db,now});
   const reception=new LmcEmailReception({database:db.worker.db,now,receivingDomain:"inbound.example.invalid",signingSecret});
   const human=new LmcHumanReplies({database:db.app.db,now,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret});
-  const worker=new LmcEmailWorker({database:db.worker.db,dispatcher:db.dispatcher.db,now,channel:new EmailChannel(providers.model),mail:providers.email,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret});
+  const worker=new LmcEmailWorker({database:db.worker.db,dispatcher:db.dispatcher.db,now,channel:new EmailChannel(providers.model),mail:providers.email,baseUrl:"https://lmc.example",receivingDomain:"inbound.example.invalid",signingSecret,onJobFailure:diagnostic=>jobFailures.push(diagnostic)});
   const scoped=<T>(fn:Parameters<typeof withBusinessTransaction<T>>[2])=>withBusinessTransaction(db.worker.db,{businessId:tenantId,actorType:"worker"},fn);
   const server=createServer(async(req,res)=>{
     try{
@@ -61,7 +63,7 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
   const address=server.address();if(!address||typeof address==="string")throw new Error("TEST_HTTP_START_FAILED");
   const base=`http://127.0.0.1:${address.port}`;
   const allowedSlots=Array.from({length:7},(_,day)=>candidateStartTimes({date:new Date(clock+day*86_400_000).toISOString().slice(0,10),timezone:"America/New_York",hours,durationMinutes:60,now:now()})).flat();
-  const h={captureUrl:`${base}/api/lmc/capture/${captureToken.value}`,tenantId,ownerId,ownerEmail,now,workerDatabase:db.worker.db,dispatcherDatabase:db.dispatcher.db,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,scoped,
+  const h={captureUrl:`${base}/api/lmc/capture/${captureToken.value}`,tenantId,ownerId,ownerEmail,now,workerDatabase:db.worker.db,dispatcherDatabase:db.dispatcher.db,appDatabase:db.app.db,emergencyText,allowedSlots,mail:providers.email,model:providers.model,calendar:providers.calendar,jobFailures,scoped,
     async addViewer(){const id=randomUUID();await db.admin.db.insert(users).values({id,email:`${id}@example.invalid`,normalizedEmail:`${id}@example.invalid`});await db.admin.db.insert(businessMemberships).values({businessId:tenantId,userId:id,role:"viewer"});extraUsers.push(id);return id;},
     async setDailyCap(cap:number){await withBusinessTransaction(db.app.db,{businessId:tenantId,userId:ownerId,actorType:"operator"},async tx=>{
       const [settings]=await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId));if(!settings)throw new Error("SETTINGS_NOT_FOUND");
@@ -73,11 +75,21 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
       return await response.json() as {id:string};
     },
     async work(){
-      const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
-      await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map(block=>({...block,staffId}))});
-      await worker.drain();
-      const rows=await scoped(tx=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
-      for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
+      try {
+        const blocks=await providers.calendar.getBusyBlocks({accessToken:"fake-only",calendarId,startsAt:now().toISOString(),endsAt:new Date(clock+90*86_400_000).toISOString()});
+        await upsertBusyBlocks({db:db.worker.db},{businessId:tenantId,connectionId,calendarId,markSynced:true,syncStartedAt:now(),blocks:blocks.map((block:{startsAt:string;endsAt:string;externalEventId?:string})=>({...block,staffId}))});
+        const result=await worker.drain();
+        const rows=await scoped((tx:DatabaseTransaction)=>tx.select({id:appointments.id}).from(appointments).where(and(eq(appointments.businessId,tenantId),eq(appointments.calendarSyncState,"pending"))));
+        for(const row of rows)await syncAppointmentCalendar({domain:{db:db.worker.db},calendar:providers.calendar},{businessId:tenantId,appointmentId:row.id});
+        return result;
+      } catch (error) {
+        const classified=classifyLmcJobFailure(error);
+        if (error instanceof Error && /^LMC_WORKER_[A-Z0-9_]+$/.test(error.message))throw new Error(error.message);
+        if(classified.category==="rls")throw new Error("LMC_DATABASE_RLS");
+        if(classified.category==="database")throw new Error(classified.code);
+        if(classified.category==="idempotency")throw new Error("IDEMPOTENCY_CONFLICT");
+        throw new Error("LMC_ACCEPTANCE_WORK_FAILED");
+      }
     },
     async lead(id:string){const [lead]=await scoped(tx=>tx.select().from(lmcLeads).where(eq(lmcLeads.id,id)));if(!lead)throw new Error("LEAD_NOT_FOUND");return{...lead,offeredSlots:lead.offeredSlots.map(slot=>slot.startsAt)};},
     async bookings(){return(await scoped(tx=>tx.select({startsAt:appointments.startsAt,contactEmail:contacts.email}).from(appointments).innerJoin(contacts,eq(contacts.id,appointments.contactId)).where(and(eq(appointments.businessId,tenantId),ne(appointments.status,"canceled"))))).map(row=>({...row,startsAt:row.startsAt.toISOString()}));},
@@ -97,6 +109,7 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
     async unsubscribe(mail:LmcOutboundEmail){const path=new URL(mail.headers["List-Unsubscribe"]!.slice(1,-1)).pathname;const response=await fetch(`${base}${path}`,{method:"POST",body:"List-Unsubscribe=One-Click"});if(response.status!==200)throw new Error("UNSUBSCRIBE_FAILED");},
     async bounce(id:string){const lead=await h.lead(id),mail=providers.email.records.filter(mail=>mail.leadId===id&&mail.to===lead.email).at(-1)!;await h.deliver({kind:"suppression",id:randomUUID(),tenantId,providerMessageId:mail.providerMessageId,email:lead.email,reason:"bounce"});},
     advanceDays(days:number){clock+=days*86_400_000;},
+    advanceMilliseconds(milliseconds:number){clock+=milliseconds;},
     async close(){server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await db.admin.db.transaction(async tx=>{
       await tx.execute(sql`select id from businesses where id=${tenantId}::uuid for update`);
       await tx.execute(sql`delete from outbox_messages where business_id=${tenantId}::uuid`);

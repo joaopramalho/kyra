@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
-import { isPilotMode } from "@lobbystack/shared";
-import { resolveLmcPilotPageAccess } from "../../../../packages/domain/src/server/lmc/pilot-page-access";
+import {
+  hasPilotDashboardCapability,
+  isPilotMode,
+  pilotDashboardCapabilityForPath,
+  type PilotDashboardCapability,
+} from "@lobbystack/shared";
 import { headers } from "next/headers";
-import { eq } from "drizzle-orm";
-import { users } from "@lobbystack/db";
 import { notFound, redirect } from "next/navigation";
 
-import { getActiveOnboardingState, resolveOnboardingRoute } from "@lobbystack/domain";
+import { getActiveOnboardingState, isLmcPilotSetupRequired, resolveLmcPilotPageAccess, resolveOnboardingRoute } from "@lobbystack/domain";
 import { RootDocument, appMetadata } from "@/app/root-document";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { getAuthDatabase, getSession } from "@/lib/auth";
@@ -25,19 +27,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await getSession(new Headers(requestHeaders));
   if (!session) redirect(localizePublicPath("/login", locale));
   const pilotMode = isPilotMode(process.env);
+  let pilotCapabilities: PilotDashboardCapability[] = [];
   if (pilotMode) {
     const access = await resolveLmcPilotPageAccess({database:getAppDatabase().db,authDatabase:getAuthDatabase().db},session.user.id);
     if (!access) {
       // A verified new account has no tenant yet; explain manual pilot setup
       // instead of making a legitimate signup appear to have failed.
-      const [account] = await getAuthDatabase().db
-        .select({ verified: users.emailVerified, activeBusinessId: users.activeBusinessId })
-        .from(users).where(eq(users.id, session.user.id)).limit(1);
-      if (account?.verified && !account.activeBusinessId) redirect("/setup-required");
+      if (await isLmcPilotSetupRequired({database:getAppDatabase().db,authDatabase:getAuthDatabase().db}, session.user.id)) redirect("/setup-required");
       // Never weaken the guard for unverified, revoked, foreign or
       // misconfigured workspaces.
       notFound();
     }
+    const pathname = requestHeaders.get(PATHNAME_HEADER) ?? "/";
+    const requiredCapability = pilotDashboardCapabilityForPath(pathname);
+    if (!requiredCapability || !hasPilotDashboardCapability(access.capabilities, requiredCapability)) notFound();
+    pilotCapabilities = access.capabilities;
   } else {
     const onboarding = await getActiveOnboardingState(getAppDatabase().db, session.user.id);
     if (onboarding.stage !== "complete") redirect(resolveOnboardingRoute(onboarding.stage));
@@ -46,6 +50,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <RootDocument locale={locale} localeSource={source} namespaces={routeNamespaces(requestHeaders.get(PATHNAME_HEADER) ?? "/")}>
       <DashboardShell
         pilotMode={pilotMode}
+        pilotCapabilities={pilotCapabilities}
         user={{
           email: session.user.email ?? "",
           name: session.user.name ?? session.user.email ?? "",

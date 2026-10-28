@@ -4,6 +4,7 @@ import { businesses, lmcSettings, users } from "@lobbystack/db";
 import { withHttpAudit } from "./support/isolation-http";
 
 it("serves configured pilot pages without voice onboarding or closed links, and denies every unsupported page method",async()=>{
+  let expectedPageProbes: string[] = [];
   const result=await withHttpAudit(process.env.LMC_TEST_HTTP_BASE_URL??"http://localhost:3000",async context=>{
     const {db,a,b,base,cookieA,cookieB,check,probed}=context;
     for(const fixture of [a,b]){
@@ -12,7 +13,9 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
     }
     const methods=["GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS"];
     const identities=[{label:"anonymous",cookie:"",own:null},{label:"a",cookie:cookieA,own:a},{label:"b",cookie:cookieB,own:b},{label:"forged",cookie:"",own:null}];
-    for(const path of ["/","/leads","/settings/email"])for(const method of methods){
+    const pages=["/","/leads","/contacts",`/contacts/${a.tenantId}`,"/agent/knowledge","/agent/services","/settings/business","/settings/email"];
+    expectedPageProbes=pages.flatMap(path=>methods.map(method=>`${method} ${path}`));
+    for(const path of pages)for(const method of methods){
       for(const identity of identities){
         const response=await fetch(new URL(path,base),{method,redirect:"manual",signal:AbortSignal.timeout(15000),headers:{...(identity.cookie?{cookie:identity.cookie}:{}),"x-user-id":b.ownerId,"x-business-id":b.tenantId,"x-tenant-id":b.tenantId,"x-actor-type":"system"}});
         const body=await response.text(),location=response.headers.get("location");
@@ -26,7 +29,8 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
           check(response.status===200&&!location,`PILOT_PAGE_CONFIGURED_ACCESS:${path}:${identity.label}:${method}:${response.status}`);
           if(method==="GET"&&response.status===200){
             const links=[...body.matchAll(/<a\b[^>]*\bhref="([^"]+)"/g)].map(match=>match[1]!);
-            check(links.includes("/leads")&&links.includes("/settings/email")&&links.every(link=>["#dashboard-main-content","/leads","/settings/email"].includes(link)),`PILOT_PAGE_CLOSED_LINK:${path}:${identity.label}`);
+            const allowedLinks=["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/settings/email"];
+            check(links.includes("/leads")&&links.includes("/settings/email")&&links.includes("/agent/knowledge")&&links.every(link=>allowedLinks.includes(link)),`PILOT_PAGE_CLOSED_LINK:${path}:${identity.label}`);
             const foreign=identity.own===a?b:a;
             check(body.includes(`${identity.own.ownerId}@example.invalid`)&&!body.includes(`${foreign.ownerId}@example.invalid`),`PILOT_PAGE_CANONICAL_IDENTITY:${path}:${identity.label}`);
           }
@@ -73,5 +77,5 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
     }
   });
   expect(result.failures).toEqual([]);
-  expect([...result.probed].sort()).toEqual(["/","/leads","/settings/email"].flatMap(path=>["GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS"].map(method=>`${method} ${path}`)).sort());
+  expect([...result.probed].sort()).toEqual(expectedPageProbes.sort());
 },120000);

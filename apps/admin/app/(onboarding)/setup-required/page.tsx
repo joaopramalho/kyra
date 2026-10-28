@@ -1,12 +1,13 @@
-import { eq } from "drizzle-orm";
-import { users } from "@lobbystack/db";
+import { isLmcPilotSetupRequired } from "@lobbystack/domain";
 import { isPilotMode } from "@lobbystack/shared";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { getAuthDatabase, getSession } from "@/lib/auth";
+import { getAppDatabase } from "@/lib/api-helpers";
 import { localizePublicPath } from "@/lib/locale-path";
 import { localeFromRequestHeaders } from "@/lib/locale-request";
+import { ManagedOwnerSetup } from "@/components/managed-owner-setup";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,7 @@ export default async function SetupRequiredPage() {
   const session = await getSession(new Headers(requestHeaders));
   if (!session) redirect(localizePublicPath("/login", locale));
 
-  const [account] = await getAuthDatabase().db
-    .select({ verified: users.emailVerified, activeBusinessId: users.activeBusinessId })
-    .from(users).where(eq(users.id, session.user.id)).limit(1);
-  if (!account?.verified || account.activeBusinessId) notFound();
+  if (!await isLmcPilotSetupRequired({ database: getAppDatabase().db, authDatabase: getAuthDatabase().db }, session.user.id)) notFound();
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-background px-6 py-16">
@@ -40,10 +38,7 @@ export default async function SetupRequiredPage() {
           <p className="text-sm font-medium">Account ID for the pilot administrator</p>
           <code className="mt-2 block break-all text-sm">{session.user.id}</code>
         </div>
-        <p className="mt-5 text-sm text-muted-foreground">
-          If you are running this pilot, complete the tenant bootstrap and Google Calendar setup
-          using the project's operator setup instructions.
-        </p>
+        <ManagedOwnerSetup />
       </div>
     </main>
   );

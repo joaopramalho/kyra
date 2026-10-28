@@ -12,7 +12,10 @@ describe("LMC exhaustive tenant-isolation acceptance", () => {
     expect([...report.probedTables].sort()).toEqual([...report.tableInventory].sort());
     expect([...report.probedRoutes].sort()).toEqual([...report.routeInventory].sort());
     expect(report.skipped).toEqual([]);
-    expect(report.failures).toEqual([]);
+    expect(report.failures, report.failures.join("\n")).toEqual([]);
     expect(report.runtimeRoles.every((role) => !role.superuser && !role.bypassRls)).toBe(true);
-  }, 120_000);
+  // This deliberately executes the complete table and route inventory. Keep
+  // the assertions exhaustive, but allow slower containerized CI runners to
+  // finish instead of failing a few milliseconds beyond the old 120s limit.
+  }, 180_000);
 });

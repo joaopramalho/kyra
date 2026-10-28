@@ -31,7 +31,14 @@ export async function probePilotMethodGuards(context: HttpAuditContext, routes: 
     const policy = PILOT_ADMIN_ROUTES.find(policy => policy.pattern === route.path);
     if (!policy) throw new Error(`UNCLASSIFIED_PILOT_GUARD:${route.path}`);
     const token = route.path.includes("/unsubscribe/") ? "payload.signature" : new URL(a.captureUrl).pathname.split("/").at(-1)!;
-    const path = route.path.replace("[leadId]", one.id).replace("[token]", token);
+    const path = route.path
+      .replace("[leadId]", one.id)
+      .replace("[contactId]", one.id)
+      .replace("[serviceId]", one.id)
+      .replace("[documentId]", one.id)
+      .replace("[snippetId]", one.id)
+      .replace("[tenantId]", a.tenantId)
+      .replace("[token]", token);
     for (const method of route.methods.filter(method => !policy.methods.includes(method))) {
       const id = `${method} ${route.path}`;
       const attempts = [

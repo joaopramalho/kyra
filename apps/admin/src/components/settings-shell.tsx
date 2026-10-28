@@ -13,6 +13,7 @@ export function SettingsShell({ children, pilotMode = false }: { children: React
   const { t } = useTranslation("settings");
   const items = [
     { label: t("sections.email"), href: "/settings/email" },
+    { label: t("sections.businessProfile"), href: "/settings/business" },
     { label: t("sections.kyra"), href: "/settings/kyra" },
     { label: t("sections.backOffice"), href: "/settings/kyra/back-office" },
     { label: t("sections.usage"), href: "/settings/usage" },
@@ -24,7 +25,7 @@ export function SettingsShell({ children, pilotMode = false }: { children: React
     { label: t("sections.apiKeys"), href: "/settings/api-keys" },
     { label: t("sections.connectedApps"), href: "/settings/connected-apps" },
     ...(pathname === "/settings/widget" || pathname.startsWith("/settings/widget/") ? [{ label: t("sections.widget"), href: "/settings/widget" }] : []),
-  ].filter(item => !pilotMode || item.href === "/settings/email");
+  ].filter(item => !pilotMode || ["/settings/email", "/settings/business"].includes(item.href));
   return (
     <section className="flex flex-1 flex-col gap-6">
       <PageHeader title={t("header.title")} />
