@@ -251,7 +251,9 @@ export class LmcEmailWorker {
 
   private async send(job: LmcJob) {
     const payload=lmcSendJobSchema.parse(job.payload);
-    const prepared=await this.scoped(job.tenantId,async tx=>{
+    const prepared=await (async()=>{
+      try {
+        return await this.scoped(job.tenantId,async tx=>{
       await this.lease(tx,job);
       const [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId))).for("update");
       const [message]=await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.id,payload.messageId))).for("update");
@@ -294,7 +296,11 @@ export class LmcEmailWorker {
       }
       await tx.update(lmcMessages).set({status:"sending"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id),or(eq(lmcMessages.status,"queued"),eq(lmcMessages.status,"sending"))));
       return {config,lead,message,outgoing,owner,replyToken,followupRateWindow};
-    });
+        });
+      } catch (error) {
+        throw new Error(error instanceof Error && ["INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error.message) ? error.message : "EMAIL_SEND_PREPARE_FAILED");
+      }
+    })();
     if (!prepared) return;
     let delivery:{providerMessageId:string};
     try {

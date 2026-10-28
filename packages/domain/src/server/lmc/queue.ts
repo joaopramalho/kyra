@@ -20,7 +20,7 @@ export async function enqueueLmcJob(tx: DatabaseTransaction, input: NewLmcJob): 
   return existing.id;
 }
 
-const failureCodes = new Set(["EMAIL_PROVIDER_UNAVAILABLE","INVALID_OUTBOUND_EMAIL","IDEMPOTENCY_CONFLICT","MODEL_UNAVAILABLE","CALENDAR_UNAVAILABLE","INVALID_JOB_PAYLOAD","LMC_JOB_FAILED"]);
+const failureCodes = new Set(["EMAIL_PROVIDER_UNAVAILABLE","EMAIL_SEND_PREPARE_FAILED","INVALID_OUTBOUND_EMAIL","IDEMPOTENCY_CONFLICT","MODEL_UNAVAILABLE","CALENDAR_UNAVAILABLE","INVALID_JOB_PAYLOAD","LMC_JOB_FAILED"]);
 
 export class LmcJobQueue {
   constructor(private readonly input: { worker: Database; dispatcher: Database; now: () => Date }) {}
