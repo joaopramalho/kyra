@@ -73,7 +73,7 @@ enabled("worker completes the form lead process job", async () => {
       tx.select({ kind: scenario.lmcJobs.kind, status: scenario.lmcJobs.status, lastError: scenario.lmcJobs.lastError }).from(scenario.lmcJobs),
     );
     if (result.failed !== 0) {
-      const error = jobs.find(job => job.kind === "process")?.lastError;
+      const error = jobs.find(job => job.lastError)?.lastError;
       const code = ["EMAIL_PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE", "CALENDAR_UNAVAILABLE", "INVALID_JOB_PAYLOAD", "LMC_JOB_FAILED"].includes(error ?? "") ? error : "UNKNOWN";
       throw new Error(`FORM_WORKER_FAILED_${code}`);
     }
