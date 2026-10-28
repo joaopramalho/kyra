@@ -22,6 +22,9 @@ export function summarizeVitestFailures(report, { root }) {
           .map(test => ({
             title: typeof test?.fullName === "string" ? test.fullName.slice(0, 300) : "<unnamed-test>",
             status: typeof test?.status === "string" ? test.status : "unknown",
+            ...(Number.isSafeInteger(test?.location?.line) && Number.isSafeInteger(test?.location?.column)
+              ? { location: { line: test.location.line, column: test.location.column } }
+              : {}),
           }))
       : [];
     if (tests.length > 0) {

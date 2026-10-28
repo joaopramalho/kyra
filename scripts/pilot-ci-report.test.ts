@@ -10,7 +10,7 @@ describe("pilot CI failure summaries", () => {
           name: "/home/runner/work/kyra/tests/lmc/workflow.acceptance.ts",
           status: "failed",
           assertionResults: [
-            { fullName: "sends one reply", status: "failed", failureMessages: ["private customer content"] },
+            { fullName: "sends one reply", status: "failed", failureMessages: ["private customer content"], location: { line: 42, column: 7 } },
             { fullName: "sends no duplicate", status: "passed", failureMessages: [] },
           ],
         },
@@ -20,7 +20,7 @@ describe("pilot CI failure summaries", () => {
     expect(result).toEqual([
       {
         path: "tests/lmc/workflow.acceptance.ts",
-        tests: [{ title: "sends one reply", status: "failed" }],
+        tests: [{ title: "sends one reply", status: "failed", location: { line: 42, column: 7 } }],
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("private customer content");
