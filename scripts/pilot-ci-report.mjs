@@ -13,9 +13,15 @@ export function summarizeVitestFailures(report, { root }) {
   };
   let remaining = failureAssertionLimit;
   const result = [];
-  const boundedCode = value => typeof value === "string"
-    ? value.match(/\b(?:FORM|LMC|EMAIL|MODEL|CAPTURE|PILOT)_[A-Z0-9_]+\b/)?.[0]
-    : undefined;
+  const boundedCode = value => {
+    if (typeof value !== "string") return undefined;
+    const explicit = value.match(/\b(?:FORM|LMC|EMAIL|MODEL|CAPTURE|PILOT)_[A-Z0-9_]+\b/)?.[0];
+    if (explicit) return explicit;
+    if (/hook timed out|beforeEach timed out|afterEach timed out/i.test(value)) return "LMC_ACCEPTANCE_HOOK_TIMEOUT";
+    if (/test timed out|timeout of \d+ms exceeded/i.test(value)) return "LMC_ACCEPTANCE_TEST_TIMEOUT";
+    if (/Capture failed:\s*5\d\d/i.test(value)) return "LMC_CAPTURE_HTTP_5XX";
+    return undefined;
+  };
   for (const file of report.testResults) {
     if (result.length >= failureSuiteLimit || remaining === 0) break;
     const tests = Array.isArray(file?.assertionResults)

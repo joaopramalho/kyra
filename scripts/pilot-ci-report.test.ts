@@ -53,4 +53,17 @@ describe("pilot CI failure summaries", () => {
     expect(result[0]?.tests[0]).toMatchObject({ failureCode: "LMC_DATABASE_PERMISSION" });
     expect(JSON.stringify(result)).not.toContain("private details");
   });
+
+  it("classifies timeout failures without publishing the timeout text", () => {
+    const result = summarizeVitestFailures({
+      testResults: [{
+        name: "/repo/tests/lmc/email.acceptance.ts",
+        message: "Hook timed out in 15000ms while handling private fixture data",
+        assertionResults: [{ fullName: "captures a lead", status: "failed", failureMessages: [] }],
+      }],
+    }, { root: "/repo" });
+
+    expect(result[0]?.tests[0]).toMatchObject({ failureCode: "LMC_ACCEPTANCE_HOOK_TIMEOUT" });
+    expect(JSON.stringify(result)).not.toContain("private fixture data");
+  });
 });
