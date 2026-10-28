@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import type { LmcOutboundEmail } from "../../packages/contracts/src/lmc";
 import { businesses, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { FakeLmcEmailModel, FakeLmcEmailProvider } from "@lobbystack/providers";
 import { EmailChannel } from "../../packages/agent-core/src/channels";
@@ -104,6 +105,17 @@ describe("captured leads are processed and delivered through the durable outbox"
     h.advance(10_000); await h.worker.drain();
     expect(h.mail.to(h.email)).toHaveLength(1);
     expect(await h.scoped(tx=>tx.select().from(lmcMessages).where(eq(lmcMessages.direction,"assistant")))).toMatchObject([{status:"sent"}]);
+  });
+  it("claims an outbound message before calling the provider", async () => {
+    await h.capture("Can you help with my roof?");
+    const send = h.mail.send.bind(h.mail);
+    h.mail.send = async (input: LmcOutboundEmail) => {
+      expect(await h.scoped((tx: DatabaseTransaction) => tx.select({ status: lmcMessages.status }).from(lmcMessages).where(eq(lmcMessages.messageId, input.headers["Message-ID"]!)))).toEqual([
+        { status: "sending" },
+      ]);
+      return send(input);
+    };
+    await h.worker.drain();
   });
   it("cancels queued automation when the business disables email processing", async () => {
     await h.capture("Can you help with my roof?");
