@@ -278,12 +278,14 @@ export class LmcEmailWorker {
         if(!owner&&config)await this.outbound(tx,job,lead,message,config,replyToken,`Delivery to ${lead.email} may already have succeeded. Automatic retry has stopped; review provider logs before retrying.\n\nLast message:\n${message.body}`,"owner_alert",true,lead.followupGeneration+1);
         return null;
       }
+      let followupRateWindow:{scopeKey:string;windowStart:Date}|null=null;
       if(outgoing.kind==="followup"){
         const touch=payload.followupTouch;
         if(!touch||!config?.followups.enabled||!config.followups.dailyCap||touch>config.followups.maxTouches||!lead.consentFollowups||terminal.has(lead.status)||lead.followupCount!==touch-1){
           await tx.update(lmcMessages).set({status:"cancelled"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id)));return null;
         }
         const now=this.input.now(),windowStart=new Date(Math.floor(now.getTime()/86_400_000)*86_400_000),scopeKey="followup:daily";
+        followupRateWindow={scopeKey,windowStart};
         const [allowance]=await tx.insert(lmcRateWindows).values({tenantId:job.tenantId,scopeKey,windowStart,count:1}).onConflictDoUpdate({target:[lmcRateWindows.tenantId,lmcRateWindows.scopeKey,lmcRateWindows.windowStart],set:{count:sql`${lmcRateWindows.count}+1`},setWhere:sql`${lmcRateWindows.count}<${config.followups.dailyCap}`}).returning({count:lmcRateWindows.count});
         if(!allowance){
           await tx.update(lmcJobs).set({status:"pending",leaseToken:null,leasedUntil:null,attempts:Math.max(0,job.attempts-1),availableAt:new Date(windowStart.getTime()+86_400_000),updatedAt:now}).where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id)));
@@ -291,7 +293,7 @@ export class LmcEmailWorker {
         }
       }
       await tx.update(lmcMessages).set({status:"sending"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,message.id),or(eq(lmcMessages.status,"queued"),eq(lmcMessages.status,"sending"))));
-      return {config,lead,message,outgoing,owner,replyToken};
+      return {config,lead,message,outgoing,owner,replyToken,followupRateWindow};
     });
     if (!prepared) return;
     let delivery:{providerMessageId:string};
@@ -300,6 +302,7 @@ export class LmcEmailWorker {
     } catch (error) {
       await this.scoped(job.tenantId,async tx=>{
         await tx.update(lmcMessages).set({status:"queued"}).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.id,prepared.message.id),eq(lmcMessages.status,"sending")));
+        if(prepared.followupRateWindow) await tx.update(lmcRateWindows).set({count:sql`${lmcRateWindows.count}-1`}).where(and(eq(lmcRateWindows.tenantId,job.tenantId),eq(lmcRateWindows.scopeKey,prepared.followupRateWindow.scopeKey),eq(lmcRateWindows.windowStart,prepared.followupRateWindow.windowStart),sql`${lmcRateWindows.count}>0`));
       });
       throw error;
     }
