@@ -1,7 +1,6 @@
 import {
   bookForCaller,
   cancelForCaller,
-  checkOpening,
   findOpenings,
   issueAppointmentChangeOtp,
   lookupCallerAppointments,
@@ -34,6 +33,7 @@ export type AgentToolContext = {
   /** Verified caller ID on phone calls and the sender's number on SMS. Never set from what a visitor types. */
   callerPhone?: string;
   callId?: string;
+  sessionId?: string;
   conversationId?: string;
   callControl?: CallControl;
   /** Prospect demos only answer questions and take messages: no booking, no transfers. */
@@ -64,7 +64,21 @@ function snapshotKnowledgeMatches(snapshot: BusinessContextSnapshot, query: stri
   });
 }
 
-const phone = z.string().describe("Phone number in E.164 format, for example +14165550134.");
+const phone = z.string().describe("Phone number, preferably in E.164 format.");
+
+function normalizePhone(value: string, callerPhone?: string): string | undefined {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/[\s().-]/g, "");
+  if (/^\+[1-9]\d{7,14}$/.test(digits)) return digits;
+  // The trusted caller ID provides the country context for common local input.
+  if (callerPhone?.startsWith("+1") && /^\d{10}$/.test(digits)) return `+1${digits}`;
+  if (/^1\d{10}$/.test(digits)) return `+${digits}`;
+  return undefined;
+}
+
+function logOperational(event: string, details: Record<string, string | number>): void {
+  try { console.info(JSON.stringify({ event, ...details })); } catch { /* logs must not change call behavior */ }
+}
 
 export function createReceptionistTools(context: AgentToolContext): ToolSet {
   const { domain, snapshot } = context;
@@ -153,6 +167,8 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
     });
 
   if (bookingMode === "instant") {
+    const availabilityCache = new Map<string, ReturnType<typeof findOpenings>>();
+    const offeredSlots = new Set<string>();
     tools.findAvailability = tool({
       description: "Find open appointment times for one service on one date. Never state availability without calling this.",
       inputSchema: z.object({
@@ -161,8 +177,12 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         preferredTime: z.string().optional().describe("Preferred start time as HH:mm (24-hour)."),
       }),
       execute: async ({ serviceName, date, preferredTime }) => {
+        const cacheKey = JSON.stringify([serviceName.trim().toLowerCase(), date, preferredTime ?? ""]);
+        const cached = availabilityCache.get(cacheKey);
+        if (cached) return await cached;
         const [hour, minute] = (preferredTime ?? "").split(":").map(Number);
-        return await findOpenings(domain, {
+        const startedAt = Date.now();
+        const lookup = findOpenings(domain, {
           businessId,
           serviceName,
           date,
@@ -171,6 +191,17 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           ...(Number.isFinite(hour) ? { preferredHour24: hour, preferredMinute: Number.isFinite(minute) ? minute : 0 } : {}),
           ...(context.callId ? { callId: context.callId } : {}),
         });
+        availabilityCache.set(cacheKey, lookup);
+        try {
+          const result = await lookup;
+          if (result.ok) for (const opening of result.openings) offeredSlots.add(JSON.stringify([serviceName.trim().toLowerCase(), opening.startsAt]));
+          logOperational("voice.availability.completed", { operation: "find_availability", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: result.ok ? "completed" : "unavailable", resultCount: result.ok ? result.openings.length : 0, durationMs: Date.now() - startedAt });
+          return result;
+        } catch {
+          availabilityCache.delete(cacheKey);
+          logOperational("voice.availability.failed", { operation: "find_availability", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "query_failed", durationMs: Date.now() - startedAt });
+          throw new Error("Availability could not be checked. Offer to try another time or take a message.");
+        }
       },
     });
     tools.bookAppointment = tool({
@@ -179,24 +210,46 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         serviceName: z.string(),
         startsAt: z.string().describe("The exact startsAt value returned by findAvailability."),
         contactName: z.string().optional(),
-        contactPhone: phone.optional().describe("Required when the caller's number isn't already known."),
+        contactPhone: phone.optional().describe("Only set if caller explicitly chose a different callback number; otherwise use trusted Caller ID."),
         smsConsentGranted: z.boolean().describe("True only if the caller agreed to receive a confirmation and reminder text."),
       }),
       execute: async (input) => {
-        const contactPhone = input.contactPhone ?? context.callerPhone;
-        if (!contactPhone) return { ok: false, reason: "Ask for a phone number before booking." };
-        const opening = await checkOpening(domain, { businessId, serviceName: input.serviceName, startsAt: input.startsAt, timezone, ...(context.callId ? { callId: context.callId } : {}) });
-        if (!opening.ok || !opening.available) return { ok: false, reason: "That time is no longer available. Offer another opening." };
+        const startedAt = Date.now();
+        const offeredSlotKey = JSON.stringify([input.serviceName.trim().toLowerCase(), input.startsAt]);
+        if (!offeredSlots.has(offeredSlotKey)) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "slot_not_offered", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "Choose an exact time returned by findAvailability before booking." };
+        }
+        const rawPhone = input.contactPhone ?? context.callerPhone;
+        if (!rawPhone) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "missing_phone", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "A valid callback number is needed. Ask one focused question for a number including its country code." };
+        }
+        const selected = normalizePhone(rawPhone, context.callerPhone);
+        if (!selected) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "invalid_phone", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "A valid callback number is needed. Ask one focused question for a number including its country code." };
+        }
+        const businessDid = normalizePhone(snapshot.contactChannels.phoneNumber ?? "");
+        if (input.contactPhone && businessDid && selected === businessDid) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "business_did_ambiguous", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "That number is the business line, not a caller callback number. Clarify whether to use the number they are calling from or ask for another number." };
+        }
+        logOperational("voice.booking.attempt", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}) });
         return await bookForCaller(domain, {
           businessId,
           serviceName: input.serviceName,
           startsAt: input.startsAt,
           timezone,
-          contactPhone,
+          contactPhone: selected,
           channel,
           smsConsentGranted: input.smsConsentGranted,
           ...(input.contactName ? { contactName: input.contactName } : {}),
           ...(context.callId ? { callId: context.callId } : {}),
+          ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+        }).then((result) => {
+          logOperational("voice.booking.result", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: result.ok ? "committed" : "not_committed", durationMs: Date.now() - startedAt });
+          return result;
         });
       },
     });

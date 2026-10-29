@@ -1,7 +1,8 @@
 import { demoSnapshot, type BookingMode, type BusinessContextSnapshot } from "@lobbystack/shared";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@lobbystack/domain", () => ({}));
+const domainMocks = vi.hoisted(() => ({ bookForCaller: vi.fn(), findOpenings: vi.fn() }));
+vi.mock("@lobbystack/domain", () => ({ bookForCaller: domainMocks.bookForCaller, findOpenings: domainMocks.findOpenings }));
 
 import { createReceptionistTools, type AgentToolContext } from "./tools";
 
@@ -17,7 +18,57 @@ function toolNames(overrides: Partial<AgentToolContext> & { bookingMode?: Bookin
 
 const callControl = { transfer: vi.fn(async () => true), hangup: vi.fn(async () => undefined) };
 
+const offeredStartsAt = "2030-01-01T15:00:00.000Z";
+beforeEach(() => {
+  vi.clearAllMocks();
+  domainMocks.findOpenings.mockResolvedValue({ ok: true, serviceName: "HVAC maintenance", date: "2030-01-01", timezone: "America/Toronto", openings: [{ startsAt: offeredStartsAt, displayTime: "Tuesday Jan 1, 10:00 AM" }] });
+});
+
+async function offerSlot(tools: ReturnType<typeof createReceptionistTools>) {
+  const execute = tools.findAvailability!.execute! as (input: object, options: object) => Promise<unknown>;
+  await execute({ serviceName: "HVAC maintenance", date: "2030-01-01" }, { toolCallId: "offer", messages: [] });
+}
+
 describe("createReceptionistTools", () => {
+  it("uses trusted Caller ID by default and keeps SMS consent independent", async () => {
+    domainMocks.bookForCaller.mockResolvedValue({ ok: true, appointmentId: "apt_1", serviceName: "HVAC maintenance", startsAt: "2030-01-01T15:00:00.000Z" });
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", callerPhone: "+14165550100", snapshot: demoSnapshot });
+    await offerSlot(tools);
+    const execute = tools.bookAppointment!.execute! as (input: object, options: object) => Promise<unknown>;
+    await expect(execute({ serviceName: "HVAC maintenance", startsAt: "2030-01-01T15:00:00.000Z", smsConsentGranted: false }, { toolCallId: "1", messages: [] })).resolves.toMatchObject({ ok: true });
+    expect(domainMocks.bookForCaller).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contactPhone: "+14165550100", smsConsentGranted: false }));
+  });
+
+  it("normalizes an explicitly selected alternate phone but rejects the business DID", async () => {
+    domainMocks.bookForCaller.mockResolvedValue({ ok: true, appointmentId: "apt_2", serviceName: "HVAC maintenance", startsAt: offeredStartsAt });
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", callerPhone: "+14165550100", snapshot: { ...demoSnapshot, contactChannels: { ...demoSnapshot.contactChannels, phoneNumber: "+17542191002" } } });
+    await offerSlot(tools);
+    const execute = tools.bookAppointment!.execute! as (input: object, options: object) => Promise<unknown>;
+    const input = { serviceName: "HVAC maintenance", startsAt: offeredStartsAt, smsConsentGranted: false };
+    await expect(execute({ ...input, contactPhone: "754 219 1003" }, { toolCallId: "2", messages: [] })).resolves.toMatchObject({ ok: true });
+    expect(domainMocks.bookForCaller).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contactPhone: "+17542191003" }));
+    await expect(execute({ ...input, contactPhone: "7542191002" }, { toolCallId: "3", messages: [] })).resolves.toMatchObject({ ok: false, reason: expect.stringContaining("business line") });
+    expect(domainMocks.bookForCaller).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for a number only when both valid Caller ID and an approved alternate are absent", async () => {
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", snapshot: demoSnapshot });
+    await offerSlot(tools);
+    const execute = tools.bookAppointment!.execute! as (input: object, options: object) => Promise<unknown>;
+    await expect(execute({ serviceName: "HVAC maintenance", startsAt: "2030-01-01T15:00:00.000Z", smsConsentGranted: false }, { toolCallId: "4", messages: [] })).resolves.toMatchObject({ ok: false, reason: expect.stringContaining("callback number") });
+    expect(domainMocks.bookForCaller).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat an unchanged availability lookup within the same call", async () => {
+    domainMocks.findOpenings.mockResolvedValue({ ok: true, openings: [{ startsAt: "2030-01-01T15:00:00.000Z" }] });
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", snapshot: demoSnapshot });
+    const execute = tools.findAvailability!.execute! as (input: object, options: object) => Promise<unknown>;
+    const input = { serviceName: "HVAC maintenance", date: "2030-01-01" };
+    await execute(input, { toolCallId: "5", messages: [] });
+    await execute(input, { toolCallId: "6", messages: [] });
+    expect(domainMocks.findOpenings).toHaveBeenCalledTimes(1);
+  });
+
   it("books directly by default", () => {
     expect(toolNames()).toEqual(["bookAppointment", "findAvailability", "getBusinessHours", "getBusinessServices", "searchKnowledge", "takeMessage"]);
   });

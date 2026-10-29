@@ -1,7 +1,7 @@
 import type * as DbModule from "@lobbystack/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { appointments, businesses, businessHours, calendarConnections, closures, contacts, notifications, services, staff, staffServiceAssignments } from "@lobbystack/db";
+import { appointments, businesses, businessHours, calendarConnections, calls, closures, contacts, notifications, services, staff, staffServiceAssignments } from "@lobbystack/db";
 
 const mocks = vi.hoisted(() => ({
   withBusinessTransaction: vi.fn(),
@@ -22,6 +22,7 @@ type TransactionConfig = {
   assignmentsAfterLock?: unknown[];
   connections?: unknown[];
   hours?: unknown[];
+  existingCallBooking?: { appointmentId: string; contactId: string; staffId: string };
 };
 
 function createRecordingTransaction(config: TransactionConfig = {}) {
@@ -33,6 +34,8 @@ function createRecordingTransaction(config: TransactionConfig = {}) {
 
   const rowsFor = (table: unknown): unknown[] => {
     if (table === services) return [{ id: "svc-1", name: "General Checkup", durationMinutes: 30 }];
+    if (table === calls && config.existingCallBooking) return [{ id: "call-1", conversationId: null, contactId: "original-contact", startedAt: new Date(), transport: "phone" }];
+    if (table === appointments && config.existingCallBooking) return [config.existingCallBooking];
     if (table === businesses) return [{ timezone: "UTC" }];
     if (table === staff) return config.staffRows ?? [{ id: "staff-1" }, { id: "staff-2" }, { id: "staff-3" }];
     if (table === staffServiceAssignments) return executeCalls.length && config.assignmentsAfterLock
@@ -152,5 +155,17 @@ describe("booking availability reference locking", () => {
     expect(result.staffId).toBe("staff-2");
     expect(recording.executeCalls).toHaveLength(2);
     expect(recording.fromCounts.get(staffServiceAssignments)).toBe(3);
+  });
+
+  it("returns the original appointment on a duplicate voice booking invocation", async () => {
+    const existingCallBooking = { appointmentId: "apt-existing", contactId: "alternate-contact", staffId: "staff-1" };
+    const recording = useTransaction({ existingCallBooking });
+
+    const result = await bookAppointment(context, { ...input, callId: "call-1" });
+
+    expect(result).toEqual({ ...existingCallBooking, idempotent: true });
+    expect(recording.executeCalls).toHaveLength(0);
+    expect(recording.insertCounts.get(appointments) ?? 0).toBe(0);
+    expect(recording.insertCounts.get(notifications) ?? 0).toBe(0);
   });
 });

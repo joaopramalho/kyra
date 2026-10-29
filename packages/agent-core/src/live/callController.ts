@@ -33,6 +33,7 @@ export type LiveCallSummary = {
 export type LiveCallTurn = { sequence: number; speaker: "caller" | "assistant"; text: string };
 
 export type LiveCallTimeout = "silence_timeout" | "duration_limit";
+export type LiveCallEndReason = "caller_finished" | "spam" | "abuse" | LiveCallTimeout | "caller_hung_up" | "transferred" | "connection_lost";
 
 export type LiveCallControllerOptions = {
   client: OpenAI;
@@ -48,6 +49,8 @@ export type LiveCallControllerOptions = {
   onStarted?: () => void;
   onTurn?: (turn: LiveCallTurn) => void;
   onTimeout?: (reason: LiveCallTimeout) => void;
+  onEndIntent?: (reason: LiveCallEndReason) => void;
+  onHangup?: (reason: LiveCallEndReason) => Promise<void> | void;
   onDelegation?: (timing: DelegationTiming) => void;
   onClose?: (summary: LiveCallSummary) => void;
 };
@@ -59,6 +62,12 @@ const TRANSCRIPT_WAIT_MS = 300;
 const SIDEBAND_OPEN_TIMEOUT_MS = 4_000;
 const GREETING_AUDIO_TIMEOUT_MS = 4_000;
 const GREETING_EVENT_ID = "kyra_initial_greeting";
+// GPT-Live exposes ordered audio deltas, not a response-complete event. This
+// bounded drain heuristic is not proof that a human heard every audio sample.
+const FINAL_AUDIO_IDLE_MS = 900;
+const FINAL_AUDIO_START_GRACE_MS = 2_000;
+const FINAL_AUDIO_MAX_DRAIN_MS = 4_500;
+const HANGUP_CLOSE_TIMEOUT_MS = 5_000;
 const FALLBACK_ANSWER = "Sorry, I couldn't check that just now. Offer to take a message so the team can follow up.";
 type SidebandAudioEvents = {
   on(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
@@ -102,6 +111,14 @@ export class LiveCallController {
   private greetingSent = false;
   private mediaStartedNotified = false;
   private startupFailureReject: ((error: LiveCallStartupError) => void) | undefined;
+  private pendingEndReason: LiveCallEndReason | undefined;
+  private finalAudioIdleTimer: ReturnType<typeof setTimeout> | undefined;
+  private finalAudioMaxTimer: ReturnType<typeof setTimeout> | undefined;
+  private hangupCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  private callerTurnCount = 0;
+  private pendingEndCallerTurnCount = 0;
+  private finalAudioStarted = false;
+  private hangupRequested = false;
 
   constructor(private readonly options: LiveCallControllerOptions) {}
 
@@ -122,7 +139,13 @@ export class LiveCallController {
     // OpenAI reflects output audio to the sideband with timeline offsets, but
     // the SDK's sideband event types leave it out. The socket still emits it.
     const audioEvents = socket as unknown as SidebandAudioEvents;
-    audioEvents.on("session.output_audio.delta", (event) => this.measure(() => this.latency.receptionistAudio(event.start_ms, event.end_ms)));
+    audioEvents.on("session.output_audio.delta", (event) => {
+      this.measure(() => this.latency.receptionistAudio(event.start_ms, event.end_ms));
+      if (this.pendingEndReason === "caller_finished") {
+        this.finalAudioStarted = true;
+        this.scheduleFinalAudioIdleHangup();
+      }
+    });
     socket.on("session.delegation.created", (event) => void this.handleDelegation(event));
     socket.on("session.closed", (event) => {
       if (!this.ready) {
@@ -263,6 +286,24 @@ export class LiveCallController {
     return this.sessionEnded;
   }
 
+  /** Record an end intent; caller-finished waits until its farewell is appended. */
+  requestEndCall(reason: LiveCallEndReason): void {
+    if (this.finished || this.hangupRequested || this.pendingEndReason) return;
+    this.pendingEndReason = reason;
+    this.pendingEndCallerTurnCount = this.callerTurnCount;
+    this.finalAudioStarted = false;
+    this.options.onEndIntent?.(reason);
+    if (reason !== "caller_finished") void this.requestProviderHangup(reason);
+  }
+
+  /** Safety endings such as abuse and duration limits do not wait for speech. */
+  endCallNow(reason: LiveCallEndReason): void {
+    if (this.finished || this.hangupRequested) return;
+    this.pendingEndReason = reason;
+    this.options.onEndIntent?.(reason);
+    void this.requestProviderHangup(reason);
+  }
+
   /** Ends the whole session, which hangs up a browser call. OpenAI answers with session.closed. */
   endSession(): void {
     this.socket?.send({ type: "session.close" });
@@ -294,6 +335,12 @@ export class LiveCallController {
       this.emitFinishedTurns(false);
     }
     if (role !== "caller") return;
+    this.callerTurnCount += 1;
+    if (this.pendingEndReason === "caller_finished" && this.callerTurnCount > this.pendingEndCallerTurnCount) {
+      this.pendingEndReason = undefined;
+      clearTimeout(this.finalAudioIdleTimer);
+      clearTimeout(this.finalAudioMaxTimer);
+    }
     this.transcriptWaiters = this.transcriptWaiters.filter((waiter) => {
       if (endMs < waiter.offsetMs) return true;
       waiter.resolve();
@@ -354,6 +401,7 @@ export class LiveCallController {
     const answeredAt = performance.now();
 
     this.socket?.send({ type: "session.commentary.append", delegation_id: delegationId, content: answer, event_id: `answer_${delegationId}` });
+    if (this.pendingEndReason === "caller_finished" && this.pendingEndCallerTurnCount === this.callerTurnCount) this.beginFinalAudioDrain();
 
     const timing: DelegationTiming = {
       delegationId,
@@ -372,14 +420,55 @@ export class LiveCallController {
   private finished = false;
   private sessionEnded: Promise<void> = Promise.resolve();
 
+  private beginFinalAudioDrain(): void {
+    clearTimeout(this.finalAudioIdleTimer);
+    clearTimeout(this.finalAudioMaxTimer);
+    this.finalAudioMaxTimer = setTimeout(() => {
+      if (this.pendingEndReason === "caller_finished") void this.requestProviderHangup("caller_finished");
+    }, FINAL_AUDIO_MAX_DRAIN_MS);
+    clearTimeout(this.finalAudioIdleTimer);
+    this.finalAudioIdleTimer = setTimeout(() => {
+      if (this.pendingEndReason === "caller_finished") void this.requestProviderHangup("caller_finished");
+    }, this.finalAudioStarted ? FINAL_AUDIO_IDLE_MS : FINAL_AUDIO_START_GRACE_MS);
+  }
+
+  private scheduleFinalAudioIdleHangup(): void {
+    clearTimeout(this.finalAudioIdleTimer);
+    this.finalAudioIdleTimer = setTimeout(() => {
+      if (this.pendingEndReason === "caller_finished") void this.requestProviderHangup("caller_finished");
+    }, FINAL_AUDIO_IDLE_MS);
+  }
+
+  private async requestProviderHangup(reason: LiveCallEndReason): Promise<void> {
+    if (this.hangupRequested || this.finished) return;
+    this.hangupRequested = true;
+    clearTimeout(this.finalAudioIdleTimer);
+    clearTimeout(this.finalAudioMaxTimer);
+    this.hangupCloseTimer = setTimeout(() => this.finish(reason, undefined, true), HANGUP_CLOSE_TIMEOUT_MS);
+    try {
+      this.sessionEnded = this.options.onHangup
+        ? Promise.resolve(this.options.onHangup(reason)).then(() => undefined)
+        : this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined);
+      await this.sessionEnded;
+    } catch {
+      // The provider may still close by its own timeout; retain bounded local finalization.
+    }
+  }
+
   private finish(closeReason?: string, billedSeconds?: number, sessionClosed = false): void {
     if (this.finished) return;
     this.finished = true;
     // Without the sideband nobody answers delegations, so end the session
     // rather than leave the caller talking to it while OpenAI keeps billing.
-    if (!sessionClosed) this.sessionEnded = this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined, () => undefined);
+    if (!sessionClosed && !this.hangupRequested) {
+      this.hangupRequested = true;
+      this.sessionEnded = this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined, () => undefined);
+    }
     clearTimeout(this.silenceTimer);
     clearTimeout(this.durationTimer);
+    clearTimeout(this.finalAudioIdleTimer);
+    clearTimeout(this.finalAudioMaxTimer);
+    clearTimeout(this.hangupCloseTimer);
     this.abort.abort();
     this.socket?.close({ code: 1000, reason: "session finished" });
     this.emitFinishedTurns(true);

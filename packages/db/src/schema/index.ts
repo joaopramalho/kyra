@@ -652,6 +652,8 @@ export const appointments = pgTable(
     timezone: varchar("timezone", { length: 80 }).notNull(),
     status: varchar("status", { length: 32 }).default("confirmed").notNull(),
     sourceChannel: varchar("source_channel", { length: 32 }).notNull(),
+    originCallId: uuid("origin_call_id").references(() => calls.id, { onDelete: "set null" }),
+    idempotencyKey: varchar("idempotency_key", { length: 128 }),
     calendarSyncState: varchar("calendar_sync_state", { length: 32 }).default("not_required").notNull(),
     calendarExternalId: text("calendar_external_id"),
     revision: integer("revision").default(0).notNull(),
@@ -664,6 +666,7 @@ export const appointments = pgTable(
     index("appointments_staff_start_idx").on(table.staffId, table.startsAt),
     index("appointments_business_created_idx").on(table.businessId, table.createdAt),
     uniqueIndex("appointments_calendar_external_unique").on(table.businessId, table.calendarExternalId),
+    uniqueIndex("appointments_call_idempotency_unique").on(table.businessId, table.originCallId, table.idempotencyKey).where(sql`${table.originCallId} is not null and ${table.idempotencyKey} is not null`),
   ],
 );
 

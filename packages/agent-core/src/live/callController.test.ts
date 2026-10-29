@@ -29,12 +29,13 @@ vi.mock("openai/resources/live/sideband/ws", () => ({
 
 import { LiveCallController, LiveCallStartupError, type LiveCallSummary, type LiveCallTurn } from "./callController";
 
-function createController(options: { silenceTimeoutMs?: number } = {}) {
-  const generate = vi.fn(async () => ({ text: "We're open until 5.", steps: [{ toolCalls: [{ toolName: "getBusinessHours" }] }] }));
+function createController(options: { silenceTimeoutMs?: number; onGenerate?: () => void; onHangup?: (reason: string) => void } = {}) {
+  const generate = vi.fn(async () => { options.onGenerate?.(); return { text: "We're open until 5.", steps: [{ toolCalls: [{ toolName: "getBusinessHours" }] }] }; });
   const turns: LiveCallTurn[] = [];
   const closed: LiveCallSummary[] = [];
   const onTimeout = vi.fn();
   const onStarted = vi.fn();
+  const onHangup = vi.fn((reason: string) => options.onHangup?.(reason));
   const hangup = vi.fn(async () => undefined);
   const controller = new LiveCallController({
     client: { live: { sessions: { hangup } } } as never,
@@ -45,10 +46,11 @@ function createController(options: { silenceTimeoutMs?: number } = {}) {
     onStarted,
     onTurn: (turn) => turns.push(turn),
     onTimeout,
+    onHangup,
     onClose: (summary) => closed.push(summary),
   });
   const start = controller.start();
-  return { controller, socket: sockets.at(-1)!, start, generate, turns, closed, onTimeout, onStarted, hangup };
+  return { controller, socket: sockets.at(-1)!, start, generate, turns, closed, onTimeout, onStarted, onHangup, hangup };
 }
 
 async function setup(options: { silenceTimeoutMs?: number } = {}) {
@@ -100,6 +102,34 @@ describe("LiveCallController startup and media", () => {
     socket.emit("session.delegation.created", { delegation: { id: "item_1" }, offset_ms: 900 });
     await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "item_1", content: "We're open until 5." })));
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.stringContaining("Caller: Are you open today?") }));
+  });
+
+  it("waits for the final farewell audio drain and hangs up exactly once", async () => {
+    const providerHangup = vi.fn();
+    let requestEnd: () => void = () => {};
+    const state = createController({ onGenerate: () => requestEnd(), onHangup: providerHangup });
+    requestEnd = () => state.controller.requestEndCall("caller_finished");
+    await state.start;
+    state.socket.emit("session.input_transcript.delta", { delta: "Goodbye.", end_ms: 1_000 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "bye_1" }, offset_ms: 900 });
+    await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "bye_1" })));
+    expect(providerHangup).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 950));
+    expect(providerHangup).toHaveBeenCalledTimes(1);
+    expect(providerHangup).toHaveBeenCalledWith("caller_finished");
+  });
+
+  it("does not hang up after the caller interrupts a pending farewell", async () => {
+    let requestEnd: () => void = () => {};
+    const state = createController({ onGenerate: () => requestEnd() });
+    requestEnd = () => state.controller.requestEndCall("caller_finished");
+    await state.start;
+    state.socket.emit("session.input_transcript.delta", { delta: "Goodbye.", end_ms: 1_000 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "bye_2" }, offset_ms: 900 });
+    await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "bye_2" })));
+    state.socket.emit("session.input_transcript.delta", { delta: "Actually, one more thing.", end_ms: 2_000 });
+    await new Promise((resolve) => setTimeout(resolve, 950));
+    expect(state.onHangup).not.toHaveBeenCalled();
   });
 
   it("reports finished turns in order and billed seconds on close", async () => {
