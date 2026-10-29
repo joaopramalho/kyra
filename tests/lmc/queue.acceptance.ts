@@ -68,6 +68,8 @@ describe("durable email work queue", () => {
   });
   it("bounds retries, sanitizes errors and dead-letters work after ten failed attempts", async () => {
     await enqueue(a,leadA,"retries");
+    const [retryJob] = await db.admin.db.select({ id: lmcJobs.id }).from(lmcJobs).where(sql`${lmcJobs.tenantId}=${a} and ${lmcJobs.dedupeKey}='retries'`);
+    expect(retryJob).toBeDefined();
     for (let attempt=1;attempt<=10;attempt++) {
       const [job] = await queue.claim(a);
       expect(job?.attempts).toBe(attempt);
@@ -77,7 +79,7 @@ describe("durable email work queue", () => {
     expect(await queue.claim(a)).toEqual([]);
     const rows = await withBusinessTransaction(db.worker.db, { businessId: a, actorType: "worker" }, tx => tx.execute(sql`select status,last_error from lmc_jobs where dedupe_key='retries'`));
     expect(rows.rows).toEqual([{ status: "failed", last_error: "LMC_JOB_FAILED" }]);
-    const failures=await withBusinessTransaction(db.worker.db,{businessId:a,actorType:"worker"},tx=>tx.select({type:lmcEvents.type,metadata:lmcEvents.metadata}).from(lmcEvents).where(sql`${lmcEvents.tenantId}=${a} and ${lmcEvents.leadId}=${leadA} and ${lmcEvents.type}='email_job_failed'`));
+    const failures=await withBusinessTransaction(db.worker.db,{businessId:a,actorType:"worker"},tx=>tx.select({type:lmcEvents.type,metadata:lmcEvents.metadata}).from(lmcEvents).where(sql`${lmcEvents.tenantId}=${a} and ${lmcEvents.leadId}=${leadA} and ${lmcEvents.type}='email_job_failed' and ${lmcEvents.externalId} like ${`job-failed:${retryJob!.id}:%`}`));
     expect(failures).toHaveLength(10);
     expect(failures).toContainEqual(expect.objectContaining({metadata:expect.objectContaining({kind:"process",code:"LMC_JOB_FAILED",category:"unknown",attempts:10,terminal:true})}));
     expect(JSON.stringify(failures)).not.toContain("credential");
