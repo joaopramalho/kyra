@@ -111,6 +111,7 @@ test("production-default pilot auth displays and every published static asset en
     }
     const authenticatedPagePatterns=new Set([
       "/", "/leads", "/contacts", "/contacts/[contactId]", "/agent/knowledge", "/agent/services", "/setup-required", "/settings/email", "/settings/business",
+      "/agent", "/agent/basic-settings", "/agent/rules", "/calls", "/calls/[callId]",
       "/internal", "/internal/clients", "/internal/clients/new", "/internal/clients/[tenantId]",
       "/internal/mfa", "/internal/mfa/setup",
       "/healthz", "/readyz",
