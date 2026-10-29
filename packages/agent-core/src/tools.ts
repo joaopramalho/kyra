@@ -214,13 +214,27 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         smsConsentGranted: z.boolean().describe("True only if the caller agreed to receive a confirmation and reminder text."),
       }),
       execute: async (input) => {
-        const offeredSlotKey = JSON.stringify([input.serviceName.trim().toLowerCase(), input.startsAt]);
-        if (!offeredSlots.has(offeredSlotKey)) return { ok: false, reason: "Choose an exact time returned by findAvailability before booking." };
-        const selected = input.contactPhone ? normalizePhone(input.contactPhone, context.callerPhone) : normalizePhone(context.callerPhone ?? "");
-        if (!selected) return { ok: false, reason: "A valid callback number is needed. Ask one focused question for a number including its country code." };
-        const businessDid = normalizePhone(snapshot.contactChannels.phoneNumber ?? "");
-        if (input.contactPhone && businessDid && selected === businessDid) return { ok: false, reason: "That number is the business line, not a caller callback number. Clarify whether to use the number they are calling from or ask for another number." };
         const startedAt = Date.now();
+        const offeredSlotKey = JSON.stringify([input.serviceName.trim().toLowerCase(), input.startsAt]);
+        if (!offeredSlots.has(offeredSlotKey)) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "slot_not_offered", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "Choose an exact time returned by findAvailability before booking." };
+        }
+        const rawPhone = input.contactPhone ?? context.callerPhone;
+        if (!rawPhone) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "missing_phone", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "A valid callback number is needed. Ask one focused question for a number including its country code." };
+        }
+        const selected = normalizePhone(rawPhone, context.callerPhone);
+        if (!selected) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "invalid_phone", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "A valid callback number is needed. Ask one focused question for a number including its country code." };
+        }
+        const businessDid = normalizePhone(snapshot.contactChannels.phoneNumber ?? "");
+        if (input.contactPhone && businessDid && selected === businessDid) {
+          logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "business_did_ambiguous", durationMs: Date.now() - startedAt });
+          return { ok: false, reason: "That number is the business line, not a caller callback number. Clarify whether to use the number they are calling from or ask for another number." };
+        }
         logOperational("voice.booking.attempt", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}) });
         return await bookForCaller(domain, {
           businessId,
