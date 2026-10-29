@@ -15,14 +15,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    return NextResponse.json(await withOperatorTransaction(request, async ({ session, businessId }) => await listAgentRules(createDomainContext(), { userId: session.user.id, businessId })));
+    return NextResponse.json(await withOperatorTransaction(request, async ({ session, businessId }) => await listAgentRules(createDomainContext(), { userId: session.user.id, businessId }), { pilotCapability: "voice" }));
   } catch (error) { return asApiResponse(error); }
 }
 
 export async function POST(request: Request) {
   try {
     const body = createSchema.parse(await readJson(request));
-    return NextResponse.json(await withOperatorTransaction(request, async ({ session, businessId }) => await createAgentRule(createDomainContext(), { userId: session.user.id, businessId, title: body.title, content: body.content, ...(body.active === undefined ? {} : { active: body.active }) })), { status: 201 });
+    return NextResponse.json(await withOperatorTransaction(request, async ({ session, businessId }) => await createAgentRule(createDomainContext(), { userId: session.user.id, businessId, title: body.title, content: body.content, ...(body.active === undefined ? {} : { active: body.active }) }), { pilotCapability: "voice" }), { status: 201 });
   } catch (error) { return asApiResponse(error); }
 }
 
@@ -31,10 +31,10 @@ export async function PATCH(request: Request) {
     const body = await readJson(request);
     if (typeof body === "object" && body !== null && "ruleIds" in body) {
       const input = reorderSchema.parse(body);
-      await withOperatorTransaction(request, async ({ session, businessId }) => await reorderAgentRules(createDomainContext(), { ...input, userId: session.user.id, businessId }), { minimumRole: "business_admin" });
+      await withOperatorTransaction(request, async ({ session, businessId }) => await reorderAgentRules(createDomainContext(), { ...input, userId: session.user.id, businessId }), { minimumRole: "business_admin", pilotCapability: "voice" });
     } else {
       const input = updateSchema.parse(body);
-      await withOperatorTransaction(request, async ({ session, businessId }) => await updateAgentRule(createDomainContext(), { userId: session.user.id, businessId, ruleId: input.ruleId, ...(input.title === undefined ? {} : { title: input.title }), ...(input.content === undefined ? {} : { content: input.content }), ...(input.active === undefined ? {} : { active: input.active }) }), { minimumRole: "business_admin" });
+      await withOperatorTransaction(request, async ({ session, businessId }) => await updateAgentRule(createDomainContext(), { userId: session.user.id, businessId, ruleId: input.ruleId, ...(input.title === undefined ? {} : { title: input.title }), ...(input.content === undefined ? {} : { content: input.content }), ...(input.active === undefined ? {} : { active: input.active }) }), { minimumRole: "business_admin", pilotCapability: "voice" });
     }
     return NextResponse.json({ ok: true });
   } catch (error) { return asApiResponse(error); }
@@ -43,7 +43,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const input = deleteSchema.parse(await readJson(request));
-    await withOperatorTransaction(request, async ({ session, businessId }) => await deleteAgentRule(createDomainContext(), { ...input, userId: session.user.id, businessId }), { minimumRole: "business_admin" });
+    await withOperatorTransaction(request, async ({ session, businessId }) => await deleteAgentRule(createDomainContext(), { ...input, userId: session.user.id, businessId }), { minimumRole: "business_admin", pilotCapability: "voice" });
     return NextResponse.json({ ok: true });
   } catch (error) { return asApiResponse(error); }
 }

@@ -13,6 +13,10 @@ describe("pilot dashboard capabilities", () => {
     ["/settings/business", "business_profile"],
     ["/agent/services", "services"],
     ["/agent/knowledge", "knowledge"],
+    ["/agent", "voice"],
+    ["/agent/rules", "voice"],
+    ["/calls", "voice"],
+    ["/calls/00000000-0000-4000-8000-000000000001", "voice"],
     ["/contacts", "contacts"],
     ["/contacts/713b15f6-85ec-47b2-b8dd-e06be2c7690b", "contacts"],
   ] as const)("maps %s to %s", (path, capability) => {

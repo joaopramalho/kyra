@@ -83,6 +83,7 @@ export const SCHEMA_MIGRATIONS = [
   "0075_superadmin_managed_clients.sql",
   "0076_superadmin_activation.sql",
   "0077_lmc_message_sending_status.sql",
+  "0078_lmc_inbound_voice.sql",
 ] as const;
 
 const CONCURRENT_INDEX_DIRECTIVE = /^-- lobbystack:concurrent-index ([a-z][a-z0-9_]*)$/m;

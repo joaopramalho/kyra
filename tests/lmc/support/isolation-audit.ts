@@ -7,6 +7,7 @@ import { probePilotManagedSetupContext } from "./isolation-pilot-managed-setup";
 import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
 import { probePilotMethodGuards } from "./isolation-pilot-guards";
 import { probePilotDashboardContext } from "./isolation-pilot-dashboard";
+import { probePilotVoiceContext } from "./isolation-pilot-voice";
 import { probePilotWorker } from "./isolation-pilot-worker";
 import { probeAdminHealthContext } from "./isolation-admin-health";
 import { openLmcTestDatabase } from "./database";
@@ -60,6 +61,7 @@ export async function runTenantIsolationAudit() {
       async (context) => {
         await probePilotMethodGuards(context, routes);
         await probePilotDashboardContext(context);
+        await probePilotVoiceContext(context);
         await probePilotSessionContext(context);
         await probePilotManagedSetupContext(context);
         await probePilotSuperAdminContext(context);

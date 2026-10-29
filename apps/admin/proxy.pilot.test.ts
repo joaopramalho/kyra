@@ -15,7 +15,7 @@ const request = (path: string, method = "GET", headers: Record<string, string> =
 
 it("denies inherited routes for every method before CSRF, locale redirects or maintenance", () => {
   vi.stubEnv("LOBBYSTACK_MAINTENANCE_MODE", "true");
-  for (const path of ["/api/voice/test", "/api/mcp", "/api/auth/oauth2/register", "/api/billing", "/api/widget/lead", "/api/realtime", "/agent", "/en/demo", "/embed.js", "/api/leads/one/unknown", "/api/leads/one/reply/extra", "/api/lmc/capture/opaque/extra", "/locales/en/auth.json/extra", "/brand/future-handler"]) {
+  for (const path of ["/api/voice/test", "/api/mcp", "/api/auth/oauth2/register", "/api/billing", "/api/widget/lead", "/api/realtime", "/en/demo", "/embed.js", "/api/leads/one/unknown", "/api/leads/one/reply/extra", "/api/lmc/capture/opaque/extra", "/locales/en/auth.json/extra", "/brand/future-handler"]) {
     for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
       const response = proxy(request(path, method, { origin: "https://foreign.invalid" }));
       expect(response.status, `${method} ${path}`).toBe(404);
@@ -43,6 +43,16 @@ it("allows concrete pilot actions while refusing other methods on allowed routes
   expect(proxy(request("/api/contacts/not-a-uuid", "GET")).status).toBe(404);
   expect(proxy(request("/api/knowledge/11111111-1111-1111-1111-111111111111", "GET")).status).toBe(404);
   expect(proxy(request("/internal", "POST", { "next-action": "admin-action" })).status).toBe(404);
+});
+
+it("allows the voice surfaces and only the reviewed call API methods in the pilot", () => {
+  const tenant = "11111111-1111-4111-8111-111111111111";
+  for (const [path, method] of [["/agent", "GET"], ["/agent/basic-settings", "GET"], ["/agent/rules", "GET"], ["/api/lmc/voice/number", "GET"], ["/calls", "GET"], [`/calls/${tenant}`, "GET"], ["/api/agent", "PATCH"], ["/api/rules", "GET"], ["/api/rules", "POST"], ["/api/rules", "PATCH"], ["/api/rules", "DELETE"], ["/api/calls", "GET"], ["/api/calls/active", "GET"], [`/api/calls/${tenant}`, "GET"], [`/api/calls/${tenant}/recording`, "GET"], ["/api/webhooks/openai/live", "POST"], [`/api/internal/superadmin/clients/${tenant}/voice`, "PATCH"]] as const) {
+    expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(200);
+  }
+  expect(proxy(request("/api/calls", "POST")).status).toBe(405);
+  expect(proxy(request(`/api/calls/${tenant}`, "PATCH")).status).toBe(405);
+  expect(proxy(request("/api/billing", "GET")).status).toBe(404);
 });
 
 it("blocks Server Actions and malformed dynamic segments even through allowed paths", () => {

@@ -70,7 +70,7 @@ export async function GET(request: Request) {
         tx.select().from(receptionistProfiles).where(eq(receptionistProfiles.businessId, businessId)).limit(1),
       ]);
       return { business: business[0] ?? null, profile: profile[0] ?? null };
-    }));
+    }, { pilotCapability: "voice" }));
   } catch (error) {
     return asApiResponse(error);
   }
@@ -125,7 +125,7 @@ export async function PATCH(request: Request) {
         payload: { businessId },
       });
       return { profile };
-    }, { minimumRole: "business_admin" }));
+    }, { minimumRole: "business_admin", pilotCapability: "voice" }));
   } catch (error) {
     return asApiResponse(error);
   }
