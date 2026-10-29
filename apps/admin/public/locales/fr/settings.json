@@ -370,6 +370,14 @@
     }
   },
   "phoneNumber": {
+    "pilotSetupNotice": "Choisissez un numéro uniquement si cet espace est admissible et prêt à recevoir des appels. La sélection lance le provisionnement et peut entraîner des frais de numéro et d'utilisation. Les identifiants Twilio, le compte et le trunk SIP sont gérés de façon centralisée ; cette page ne demande jamais de secrets fournisseur.",
+    "inboundSetup": {
+      "title": "Numéro de téléphone entrant",
+      "loading": "Chargement du numéro attribué…",
+      "empty": "Aucun numéro entrant n'est encore attribué. Configurez un numéro pour cet espace ci-dessous. Les identifiants Twilio et le trunk SIP restent gérés de façon centralisée ; ils ne sont jamais saisis ici.",
+      "manage": "Gérer le numéro",
+      "setup": "Configurer le numéro"
+    },
     "current": {
       "label": "Numéro de téléphone actuel",
       "description": "C'est le numéro que les appelants utilisent pour joindre votre réceptionniste IA.",

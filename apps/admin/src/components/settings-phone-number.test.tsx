@@ -32,6 +32,22 @@ function setup(plan: string, role = "business_owner", usedAt: string | null = nu
   return { client, fetchMock };
 }
 describe("phone-number replacement permissions", () => {
+  it("offers the tenant setup flow in pilot mode without requesting billing data from the pilot API", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    client.setQueryData(["phone-numbers", "business"], { phoneNumbers: [], replacement: { usedAt: null } });
+    const fetchMock = vi.fn(async (input: string) => {
+      if (input.includes("/api/businesses")) return Response.json({ businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+      if (input.includes("/api/phone-numbers?")) return Response.json({ phoneNumbers: [], replacement: { usedAt: null } });
+      throw new Error(`Unexpected request: ${input}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<QueryClientProvider client={client}><LivePhoneNumberSettingsSurface pilotMode /></QueryClientProvider>);
+    expect(await screen.findByText("phoneNumber.pilotSetupNotice")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "phoneNumber.actions.getNumber" }).hasAttribute("disabled")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => url.includes("/api/billing"))).toBe(false);
+  });
   it("resumes a replacement after reload and displays the newly provisioned number", async () => {
     const { fetchMock } = setup("starter", "business_owner", null, true, null, true);
     expect(screen.getByRole("button", { name: "phoneNumber.actions.requestChange" }).hasAttribute("disabled")).toBe(true);

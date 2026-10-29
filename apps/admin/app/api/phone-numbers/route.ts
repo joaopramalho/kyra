@@ -14,11 +14,11 @@ export async function GET(request: Request) {
       const workspace = await tx.select({ replacementReservedAt: businesses.phoneNumberReplacementReservedAt, replacementUsedAt: businesses.phoneNumberReplacementUsedAt }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
       const activeClaims = await tx.select({ id: onboardingNumberClaimEvents.id, status: onboardingNumberClaimEvents.status, purpose: onboardingNumberClaimEvents.purpose }).from(onboardingNumberClaimEvents).where(and(eq(onboardingNumberClaimEvents.businessId, businessId), eq(onboardingNumberClaimEvents.userId, session.user.id), inArray(onboardingNumberClaimEvents.status, ["reserved", "provisioning"]))).orderBy(desc(onboardingNumberClaimEvents.reservedAt));
       return {
-        phoneNumbers: await tx.select().from(phoneNumbers).where(and(eq(phoneNumbers.businessId, businessId), eq(phoneNumbers.status, "active"))).orderBy(asc(phoneNumbers.createdAt)),
+        phoneNumbers: await tx.select({ id: phoneNumbers.id, e164: phoneNumbers.e164, voiceEnabled: phoneNumbers.voiceEnabled, smsEnabled: phoneNumbers.smsEnabled, status: phoneNumbers.status, reclaimScheduledAt: phoneNumbers.reclaimScheduledAt, reclaimReason: phoneNumbers.reclaimReason }).from(phoneNumbers).where(and(eq(phoneNumbers.businessId, businessId), eq(phoneNumbers.status, "active"))).orderBy(asc(phoneNumbers.createdAt)),
         activeClaim: activeClaims[0] ?? null,
         replacement: { reservedAt: workspace[0]?.replacementReservedAt ?? null, usedAt: workspace[0]?.replacementUsedAt ?? null, activeClaim: activeClaims.find(claim => claim.purpose === "replacement") ?? null },
       };
-    }));
+    }, { pilotCapability: "voice" }));
   } catch (error) { return asApiResponse(error); }
 }
 

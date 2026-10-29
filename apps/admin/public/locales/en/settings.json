@@ -370,6 +370,14 @@
     }
   },
   "phoneNumber": {
+    "pilotSetupNotice": "Choose a number only if this workspace is eligible and ready to receive calls. Selecting a number starts provisioning and may incur number and usage charges. Twilio credentials, the account, and SIP trunk are centrally managed; this page never asks for provider secrets.",
+    "inboundSetup": {
+      "title": "Inbound phone number",
+      "loading": "Loading assigned number…",
+      "empty": "No inbound number is assigned yet. Set up a number for this workspace below. Twilio account credentials and the SIP trunk stay managed centrally; they are never entered here.",
+      "manage": "Manage phone number",
+      "setup": "Set up phone number"
+    },
     "current": {
       "label": "Current phone number",
       "description": "This is the number callers use to reach your AI receptionist.",
