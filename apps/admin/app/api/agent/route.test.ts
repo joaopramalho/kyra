@@ -39,7 +39,7 @@ describe("agent settings validation", () => {
   it("requires administrator access before any mutation", async () => {
     fixture.denied = true;
     expect((await patch({ transferMode: "always" })).status).toBe(403);
-    expect(fixture.transaction).toHaveBeenCalledWith({ minimumRole: "business_admin" });
+    expect(fixture.transaction).toHaveBeenCalledWith({ minimumRole: "business_admin", pilotCapability: "voice" });
     expect(fixture.insert).not.toHaveBeenCalled();
   });
 });

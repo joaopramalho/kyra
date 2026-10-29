@@ -70,6 +70,7 @@ export async function probePilotSuperAdminContext(context: HttpAuditContext) {
       { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "GET" },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "HEAD" },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, method: "POST" },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/voice", path: `/api/internal/superadmin/clients/${a.tenantId}/voice`, method: "PATCH" },
     ] as const;
     for (const target of managedDenials) {
       const response = await request(target.path, cookieB, b.tenantId, target.method, {
@@ -85,6 +86,7 @@ export async function probePilotSuperAdminContext(context: HttpAuditContext) {
       { pattern: "/api/internal/superadmin/clients/[tenantId]/draft", path: `/api/internal/superadmin/clients/${a.tenantId}/draft`, allow: ["GET", "HEAD", "OPTIONS", "PUT"] },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/invite", path: `/api/internal/superadmin/clients/${a.tenantId}/invite`, allow: ["OPTIONS", "POST"] },
       { pattern: "/api/internal/superadmin/clients/[tenantId]/activation", path: `/api/internal/superadmin/clients/${a.tenantId}/activation`, allow: ["GET", "HEAD", "OPTIONS", "POST"] },
+      { pattern: "/api/internal/superadmin/clients/[tenantId]/voice", path: `/api/internal/superadmin/clients/${a.tenantId}/voice`, allow: ["OPTIONS", "PATCH"] },
     ] as const) {
       const response = await request(target.path, cookieA, a.tenantId, "OPTIONS");
       const allow = (response.headers.get("allow") ?? "").split(/,\s*/);
@@ -92,6 +94,31 @@ export async function probePilotSuperAdminContext(context: HttpAuditContext) {
       check(valid, `PILOT_SUPERADMIN_MANAGED_OPTIONS:${target.pattern}:${response.status}`);
       if (valid) probed.push(`OPTIONS ${target.pattern}`);
     }
+
+    const voicePath = `/api/internal/superadmin/clients/${a.tenantId}/voice`;
+    const beforeVoice = await db.admin.pool.query<{ id: string; lmc_voice_enabled: boolean }>(
+      "select id, lmc_voice_enabled from businesses where id=any($1::uuid[]) order by id",
+      [[a.tenantId, b.tenantId]],
+    );
+    const enabled = await request(voicePath, cookieA, a.tenantId, "PATCH", {}, { enabled: true });
+    check(enabled.status === 200, `PILOT_SUPERADMIN_VOICE_ENABLE:${enabled.status}`);
+    await enabled.arrayBuffer();
+    const afterEnable = await db.admin.pool.query<{ id: string; lmc_voice_enabled: boolean }>(
+      "select id, lmc_voice_enabled from businesses where id=any($1::uuid[]) order by id",
+      [[a.tenantId, b.tenantId]],
+    );
+    check(afterEnable.rows.find((row) => row.id === a.tenantId)?.lmc_voice_enabled === true, "PILOT_SUPERADMIN_VOICE_ENABLE_DID_NOT_APPLY");
+    check(afterEnable.rows.find((row) => row.id === b.tenantId)?.lmc_voice_enabled === beforeVoice.rows.find((row) => row.id === b.tenantId)?.lmc_voice_enabled, "PILOT_SUPERADMIN_VOICE_ENABLE_CHANGED_FOREIGN_TENANT");
+    if (enabled.status === 200) probed.push("PATCH /api/internal/superadmin/clients/[tenantId]/voice");
+    const disabled = await request(voicePath, cookieA, a.tenantId, "PATCH", {}, { enabled: false });
+    check(disabled.status === 200, `PILOT_SUPERADMIN_VOICE_DISABLE:${disabled.status}`);
+    await disabled.arrayBuffer();
+    const afterDisable = await db.admin.pool.query<{ id: string; lmc_voice_enabled: boolean }>(
+      "select id, lmc_voice_enabled from businesses where id=any($1::uuid[]) order by id",
+      [[a.tenantId, b.tenantId]],
+    );
+    check(afterDisable.rows.find((row) => row.id === a.tenantId)?.lmc_voice_enabled === false, "PILOT_SUPERADMIN_VOICE_DISABLE_DID_NOT_APPLY");
+    check(afterDisable.rows.find((row) => row.id === b.tenantId)?.lmc_voice_enabled === beforeVoice.rows.find((row) => row.id === b.tenantId)?.lmc_voice_enabled, "PILOT_SUPERADMIN_VOICE_DISABLE_CHANGED_FOREIGN_TENANT");
 
     const invitationPreview = await request("/api/team/accept");
     const previewBody = await invitationPreview.json() as { invitation?: unknown };

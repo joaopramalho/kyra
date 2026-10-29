@@ -14,7 +14,7 @@ export async function GET(request: Request) {
       const [number] = await tx.select({ e164: phoneNumbers.e164, status: phoneNumbers.status, voiceEnabled: phoneNumbers.voiceEnabled, voiceWebhookStatus: phoneNumbers.voiceWebhookStatus })
         .from(phoneNumbers).where(eq(phoneNumbers.businessId, businessId)).limit(1);
       return { voiceEnabled: true as const, phoneNumber: number ?? null };
-    });
+    }, { pilotCapability: "voice" });
     if (!result.voiceEnabled) return NextResponse.json({ error: "Voice is not enabled for this workspace." }, { status: 404 });
     return NextResponse.json({ phoneNumber: result.phoneNumber });
   } catch (error) { return asApiResponse(error); }

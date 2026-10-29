@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}),
       ...(Number.isFinite(limit) ? { limit } : {}),
       ...(Number.isFinite(offset) ? { offset } : {}),
-    })));
+    }), { pilotCapability: "voice" }));
   } catch (error) { return asApiResponse(error); }
 }
 
