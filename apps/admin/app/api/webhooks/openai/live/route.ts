@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       const greetingOverride = `Hi, this is ${ASSISTANT_NAME}, the virtual receptionist for ${snapshot.displayName}, returning your call. This call may be recorded. How can I help?`;
       return await answerCall(client, { sessionId, businessId: callback.businessId, snapshot, from: context.callerPhone, to: phoneFromSipHeader(header("from")) ?? "callback", greetingOverride });
     } catch {
-      console.error(JSON.stringify({ event: "live.callback.failed", reason: "answer_setup_failed", sessionId }));
+      console.error(JSON.stringify({ event: "live.setup.failed", operation: "callback_setup", reason: "call_setup_failed", sessionId, businessId: callback.businessId }));
       await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
       return new NextResponse(null, { status: 200 });
     }
@@ -102,13 +102,29 @@ export async function POST(request: Request) {
     }
     return await answerCall(client, { sessionId, businessId, snapshot, from, to });
   } catch {
-    console.error(JSON.stringify({ event: "live.inbound.failed", reason: "answer_setup_failed", sessionId, businessId }));
+    console.error(JSON.stringify({ event: "live.setup.failed", operation: "inbound_setup", reason: "call_setup_failed", sessionId, businessId }));
     await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
     return new NextResponse(null, { status: 200 });
   }
 }
 
 type LiveClient = ReturnType<typeof getLiveClient>;
+
+function safeProviderError(error: unknown): { status?: number; code?: string; requestId?: string } {
+  if (!error || typeof error !== "object") return {};
+  const value = error as { status?: unknown; code?: unknown; errorCode?: unknown; requestId?: unknown; request_id?: unknown };
+  const code = value.code ?? value.errorCode;
+  const requestId = value.requestId ?? value.request_id;
+  return {
+    ...(typeof value.status === "number" && Number.isInteger(value.status) ? { status: value.status } : {}),
+    ...(typeof code === "string" && /^[a-z0-9_.-]{1,80}$/i.test(code) ? { code } : {}),
+    ...(typeof requestId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(requestId) ? { requestId } : {}),
+  };
+}
+
+function logSetupFailure(reason: string, input: { sessionId: string; businessId: string }, error?: unknown, operation = reason): void {
+  console.error(JSON.stringify({ event: "live.setup.failed", operation, reason, ...input, ...safeProviderError(error) }));
+}
 
 // Reserves minutes and records the call before accepting it, the same way the
 // Twilio media path does, so billing and limits behave identically.
@@ -126,12 +142,10 @@ async function answerCall(client: LiveClient, input: { sessionId: string; busine
     }
     throw error;
   }
-  // A retried delivery. The first one may have died before accepting or before
-  // the worker attached, so finish the job without touching the call record:
-  // accepting an accepted session just fails, and attaching is idempotent.
-  if (call.duplicate) {
-    await client.live.sessions.accept(input.sessionId, { session: buildPhoneSessionConfig(input.snapshot) }).catch(() => undefined);
-    await attachWorkerToLiveSession({ sessionId: input.sessionId, businessId: input.businessId, callId: call.callId, conversationId: call.conversationId, channel: "voice", ...(input.from ? { callerPhone: input.from } : {}), ...(input.greetingOverride ? { greetingOverride: input.greetingOverride } : {}) }).catch(() => undefined);
+  // Never revive an already finalized call record on webhook redelivery.
+  if (call.duplicate && call.ended) {
+    console.info(JSON.stringify({ event: "live.setup.duplicate_ignored", reason: "call_already_ended", sessionId: input.sessionId, businessId: input.businessId }));
+    await client.live.sessions.reject(input.sessionId, { status_code: 486 }).catch(() => undefined);
     return new NextResponse(null, { status: 200 });
   }
   if (call.blocked) {
@@ -140,18 +154,36 @@ async function answerCall(client: LiveClient, input: { sessionId: string; busine
     await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "blocked_contact" });
     return new NextResponse(null, { status: 200 });
   }
-  try {
-    await client.live.sessions.accept(input.sessionId, { session: buildPhoneSessionConfig(input.snapshot) });
-  } catch (error) {
-    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" });
-    throw error;
+  // On retry, accept may fail because OpenAI already accepted the session. The
+  // awaited worker attach is authoritative: it returns success only after a
+  // live sideband and first output audio are established.
+  let accepted = false;
+  if (!call.duplicate) {
+    try {
+      await client.live.sessions.accept(input.sessionId, { session: buildPhoneSessionConfig(input.snapshot) });
+      accepted = true;
+    } catch (error) {
+      logSetupFailure("openai_session_accept_failed", { sessionId: input.sessionId, businessId: input.businessId }, error, "session_accept");
+      await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" }).catch((finalizeError) => logSetupFailure("setup_failure_finalize_failed", { sessionId: input.sessionId, businessId: input.businessId }, finalizeError, "call_finalize"));
+      throw error;
+    }
+  } else {
+    try {
+      await client.live.sessions.accept(input.sessionId, { session: buildPhoneSessionConfig(input.snapshot) });
+      accepted = true;
+    } catch {
+      console.info(JSON.stringify({ event: "live.session.accept_retry_skipped", reason: "duplicate_delivery", sessionId: input.sessionId, businessId: input.businessId }));
+    }
   }
+  if (accepted) console.info(JSON.stringify({ event: "live.session.accepted", sessionId: input.sessionId, businessId: input.businessId }));
   try {
     await attachWorkerToLiveSession({ sessionId: input.sessionId, businessId: input.businessId, callId: call.callId, conversationId: call.conversationId, channel: "voice", ...(input.from ? { callerPhone: input.from } : {}), ...(input.greetingOverride ? { greetingOverride: input.greetingOverride } : {}) });
   } catch (error) {
     // Without the worker nobody answers delegations, so end the call cleanly.
     await client.live.sessions.hangup(input.sessionId).catch(() => undefined);
-    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" });
+    const attach = error && typeof error === "object" && "reason" in error && typeof error.reason === "string" ? error.reason : undefined;
+    logSetupFailure(attach ?? "worker_attach_failed", { sessionId: input.sessionId, businessId: input.businessId }, error, "worker_attach");
+    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" }).catch((finalizeError) => logSetupFailure("setup_failure_finalize_failed", { sessionId: input.sessionId, businessId: input.businessId }, finalizeError, "call_finalize"));
     throw error;
   }
   return new NextResponse(null, { status: 200 });

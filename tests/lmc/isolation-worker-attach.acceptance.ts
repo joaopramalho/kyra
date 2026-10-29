@@ -29,6 +29,11 @@ vi.mock("openai/resources/live/sideband/ws", () => ({
     }
     send(event: unknown) {
       this.sent.push(event);
+      if ((event as { event_id?: string }).event_id === "kyra_initial_greeting")
+        this.emit("session.output_audio.delta", { delta: "fixture-audio" });
+    }
+    async *stream() {
+      yield { type: "open" };
     }
     close() {}
   },
@@ -50,6 +55,9 @@ afterEach(() => {
 });
 
 it("binds real worker attaches to the canonical tenant, call, session, conversation and channel before deduplication", async () => {
+  // Exercise the narrowly allowed pilot exception through the real verified
+  // wrapper and real tenant-bound database admission.
+  vi.stubEnv("LMC_PILOT_MODE", "true");
   vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
   vi.stubEnv("INTERNAL_SERVICE_TOKEN", "lmc-worker-acceptance-only-token");
   vi.stubEnv("OPENAI_API_KEY", "lmc-acceptance-synthetic-not-a-real-key");
@@ -147,7 +155,7 @@ it("binds real worker attaches to the canonical tenant, call, session, conversat
     }
     expect(external.sockets).toHaveLength(0);
     for (const method of ["GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS"])
-      expect(await request(fixtures[0], undefined, method)).toBe(405);
+      expect(await request(fixtures[0], undefined, method)).toBe(404);
     const [first, second] = fixtures as [
       (typeof fixtures)[number],
       (typeof fixtures)[number],
