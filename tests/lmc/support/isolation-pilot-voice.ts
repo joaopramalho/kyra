@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { businesses, calls } from "@lobbystack/db";
+import { renewVoicePresenceGateway } from "@lobbystack/jobs";
 import { PILOT_ADMIN_ROUTES } from "@lobbystack/shared";
 import type { HttpAuditContext } from "./isolation-http";
 
@@ -96,6 +97,9 @@ export async function probePilotVoiceContext(context: HttpAuditContext) {
   await options(callsPath);
 
   const activePath = "/api/calls/active";
+  // The active-call endpoint fails closed when no live gateway heartbeat exists.
+  // Register a synthetic gateway in the isolated CI Redis to exercise the healthy path.
+  await renewVoicePresenceGateway(`isolation-audit-${randomUUID()}`);
   const active = await request(activePath, cookieA, a.tenantId);
   check(active.status === 200, `PILOT_VOICE_CALLS_ACTIVE:${active.status}`);
   await active.arrayBuffer();

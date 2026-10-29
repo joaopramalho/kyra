@@ -38,6 +38,7 @@ export async function probePilotMethodGuards(context: HttpAuditContext, routes: 
       .replace("[documentId]", one.id)
       .replace("[snippetId]", one.id)
       .replace("[tenantId]", a.tenantId)
+      .replace("[callId]", a.tenantId)
       .replace("[token]", token);
     for (const method of route.methods.filter(method => !policy.methods.includes(method))) {
       const id = `${method} ${route.path}`;

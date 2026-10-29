@@ -3,8 +3,16 @@ import { NextResponse } from "next/server";
 import { listCalls, startCall } from "@lobbystack/domain";
 import { asApiResponse, readJson, withOperatorTransaction } from "@/lib/api-helpers";
 import { createDomainContext, createWorkerDomainContext } from "@/lib/domain-context";
+import { isPilotMode } from "@lobbystack/shared";
 
 export const dynamic = "force-dynamic";
+
+export function OPTIONS() {
+  // `POST` is intentionally blocked by the pilot proxy. Keep Next's automatic
+  // Allow header from advertising it while the pilot boundary is active.
+  const methods = isPilotMode(process.env) ? "GET, HEAD, OPTIONS" : "GET, HEAD, POST, OPTIONS";
+  return new Response(null, { status: 204, headers: { Allow: methods } });
+}
 
 export async function GET(request: Request) {
   try {
