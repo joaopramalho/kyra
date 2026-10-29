@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { buildPhoneSessionConfig } from "@lobbystack/agent-core/live/session";
 import { finishLiveCall, getCachedBusinessSnapshot, loadCallbackContext, resolveMissedCallCallback, startLivePhoneCall } from "@lobbystack/domain";
-import { ASSISTANT_NAME } from "@lobbystack/shared";
+import { ASSISTANT_NAME, isPilotMode } from "@lobbystack/shared";
 import type { BusinessContextSnapshot } from "@lobbystack/shared";
 import { getAppDatabase } from "@/lib/api-helpers";
 import { createWorkerDomainContext } from "@/lib/domain-context";
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       const greetingOverride = `Hi, this is ${ASSISTANT_NAME}, the virtual receptionist for ${snapshot.displayName}, returning your call. This call may be recorded. How can I help?`;
       return await answerCall(client, { sessionId, businessId: callback.businessId, snapshot, from: context.callerPhone, to: phoneFromSipHeader(header("from")) ?? "callback", greetingOverride });
     } catch (error) {
-      console.error("[kyra] callback answer failed", error instanceof Error ? error.message : error);
+      console.error(JSON.stringify({ event: "live.callback.failed", reason: "answer_setup_failed", sessionId }));
       await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
       return new NextResponse(null, { status: 200 });
     }
@@ -65,10 +65,10 @@ export async function POST(request: Request) {
   const to = phoneFromSipHeader(header("diversion")) ?? phoneFromSipHeader(header("to"));
   const from = phoneFromSipHeader(header("from"));
   // Only the dialled-number headers: "From" is the caller's own number.
-  const routing = event.data.sip_headers.filter((item) => ["to", "diversion", "p-called-party-id"].includes(item.name.toLowerCase()));
+  const routingHeaderNames = event.data.sip_headers.filter((item) => ["to", "diversion", "p-called-party-id"].includes(item.name.toLowerCase())).map((item) => item.name.toLowerCase());
   if (!to) {
     // No deployment can route a call without a dialled number.
-    console.warn("[live] incoming call without a dialled number", JSON.stringify({ sessionId, routing }));
+    console.warn(JSON.stringify({ event: "live.inbound.rejected", reason: "missing_dialled_number", sessionId, routingHeaderNames }));
     await client.live.sessions.reject(sessionId, { status_code: 404 }).catch(() => undefined);
     return new NextResponse(null, { status: 200 });
   }
@@ -78,29 +78,31 @@ export async function POST(request: Request) {
   // or reject it; until ownership is known, this deployment leaves the call alone.
   let businessId: string | null | undefined;
   try {
-    const resolved = await getAppDatabase().db.execute<{ business_id: string | null }>(sql`select app.resolve_business_by_phone(${to}) as business_id`);
+    const resolved = isPilotMode(process.env)
+      ? await getAppDatabase().db.execute<{ business_id: string | null }>(sql`select app.resolve_lmc_live_business_by_phone(${to}) as business_id`)
+      : await getAppDatabase().db.execute<{ business_id: string | null }>(sql`select app.resolve_business_by_phone(${to}) as business_id`);
     businessId = resolved.rows[0]?.business_id;
   } catch (error) {
     // Ownership is unknown: don't reject a call that may belong to the other
     // deployment. A 503 makes OpenAI deliver the event again.
-    console.error("[live] couldn't look up the dialled number", error instanceof Error ? error.message : error);
+    console.error(JSON.stringify({ event: "live.inbound.lookup_failed", reason: "tenant_resolution_unavailable", sessionId }));
     return new NextResponse(null, { status: 503 });
   }
   if (!businessId) {
-    console.info("[live] incoming call for a number this deployment doesn't serve", JSON.stringify({ sessionId, to, routing }));
+    console.info(JSON.stringify({ event: "live.inbound.ignored", reason: "number_not_enabled_here", sessionId, routingHeaderNames }));
     return new NextResponse(null, { status: 200 });
   }
 
   try {
     const snapshot = await getCachedBusinessSnapshot(createWorkerDomainContext(), { businessId });
     if (!snapshot) {
-      console.warn("[live] no published snapshot for incoming call", JSON.stringify({ sessionId, businessId }));
+      console.warn(JSON.stringify({ event: "live.inbound.rejected", reason: "snapshot_unavailable", sessionId, businessId }));
       await client.live.sessions.reject(sessionId, { status_code: 503 });
       return new NextResponse(null, { status: 200 });
     }
     return await answerCall(client, { sessionId, businessId, snapshot, from, to });
   } catch (error) {
-    console.error("[live] incoming call failed", error instanceof Error ? error.message : error);
+    console.error(JSON.stringify({ event: "live.inbound.failed", reason: "answer_setup_failed", sessionId, businessId }));
     await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
     return new NextResponse(null, { status: 200 });
   }

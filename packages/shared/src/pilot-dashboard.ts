@@ -5,6 +5,7 @@ export const pilotDashboardCapabilityIds = [
   "services",
   "knowledge",
   "contacts",
+  "voice",
 ] as const;
 
 export type PilotDashboardCapability = (typeof pilotDashboardCapabilityIds)[number];
@@ -20,6 +21,7 @@ export function pilotDashboardCapabilityForPath(pathname: string): PilotDashboar
   if (pathname === "/settings/business") return "business_profile";
   if (pathname === "/agent/services") return "services";
   if (pathname === "/agent/knowledge") return "knowledge";
+  if (pathname === "/agent" || pathname === "/agent/basic-settings" || pathname === "/agent/rules" || pathname === "/calls" || /^\/calls\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pathname)) return "voice";
   if (pathname === "/contacts" || /^\/contacts\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pathname)) return "contacts";
   return undefined;
 }

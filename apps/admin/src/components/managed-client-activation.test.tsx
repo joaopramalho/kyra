@@ -15,6 +15,7 @@ afterEach(() => {
 
 const readiness: ManagedClientReadiness = {
   tenantId: "00000000-0000-4000-8000-000000000001",
+  voiceEnabled: false,
   status: "draft",
   onboardingStage: "managed_draft",
   checks: {

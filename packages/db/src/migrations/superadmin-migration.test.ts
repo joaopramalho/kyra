@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(fileURLToPath(new URL("../../migrations/0074_superadmin_foundation.sql", import.meta.url)), "utf8");
 const managedClients = readFileSync(fileURLToPath(new URL("../../migrations/0075_superadmin_managed_clients.sql", import.meta.url)), "utf8");
 const activation = readFileSync(fileURLToPath(new URL("../../migrations/0076_superadmin_activation.sql", import.meta.url)), "utf8");
+const inboundVoice = readFileSync(fileURLToPath(new URL("../../migrations/0078_lmc_inbound_voice.sql", import.meta.url)), "utf8");
 
 describe("Super Admin foundation migration", () => {
   it("keeps MFA secrets auth-only and audit events system-only", () => {
@@ -43,6 +44,19 @@ describe("Super Admin foundation migration", () => {
     expect(migration).toContain("session_user <> 'lobbystack_system'");
     expect(migration).toContain("A platform administrator already exists.");
     expect(migration).toContain("'platform_admin.bootstrap'");
+  });
+});
+
+describe("LMC inbound voice migration", () => {
+  it("defaults tenant enablement off and resolves only active, voice-enabled assigned numbers", () => {
+    expect(inboundVoice).toContain("lmc_voice_enabled boolean NOT NULL DEFAULT false");
+    expect(inboundVoice).toContain("p.status = 'active'");
+    expect(inboundVoice).toContain("p.voice_enabled");
+    expect(inboundVoice).toContain("s.enabled");
+    expect(inboundVoice).toContain("b.deployment_mode = 'cloud'");
+    expect(inboundVoice).toContain("b.status = 'active'");
+    expect(inboundVoice).toContain("AND b.lmc_voice_enabled");
+    expect(inboundVoice).toContain("REVOKE ALL ON FUNCTION app.resolve_lmc_live_business_by_phone(text) FROM PUBLIC");
   });
 });
 

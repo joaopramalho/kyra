@@ -11,6 +11,7 @@ export type LmcPilotPageAccess = {
 
 export function resolveLmcPilotDashboardCapabilities(input: {
   businessStatus: string;
+  voiceEnabled?: boolean;
 }): PilotDashboardCapability[] {
   const configuration: PilotDashboardCapability[] = [
     "leads",
@@ -22,7 +23,9 @@ export function resolveLmcPilotDashboardCapabilities(input: {
   // Draft workspaces can be configured before activation. Contacts are an
   // operational/PII surface and open only after activation (or while paused
   // for repair), when the operator still has an active tenant membership.
-  return input.businessStatus === "draft" ? configuration : [...configuration, "contacts"];
+  const available: PilotDashboardCapability[] = input.businessStatus === "draft" ? configuration : [...configuration, "contacts"];
+  if (input.voiceEnabled) available.push("voice");
+  return available;
 }
 
 export async function resolveLmcPilotPageAccess(context:{database:Database;authDatabase:Database},userId:string):Promise<LmcPilotPageAccess|null>{
@@ -35,11 +38,11 @@ export async function resolveLmcPilotPageAccess(context:{database:Database;authD
     try{await requireBusinessMembership(tx,{businessId:tenantId,userId:identity.data,minimumRole:"viewer"});}
     catch(error){if(error instanceof AuthorizationError)return null;throw error;}
     const [settings] = await tx.select({config:lmcSettings.config}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId)).limit(1);
-    const [business] = await tx.select({status:businesses.status}).from(businesses).where(eq(businesses.id,tenantId)).limit(1);
+    const [business] = await tx.select({status:businesses.status,voiceEnabled:businesses.lmcVoiceEnabled}).from(businesses).where(eq(businesses.id,tenantId)).limit(1);
     if(!settings||!business||!lmcBusinessSettingsSchema.safeParse(settings.config).success)return null;
     // A paused tenant still needs settings access; API roles and scheduling
     // freshness/verification rules continue to govern every actual operation.
-    return {tenantId,capabilities:resolveLmcPilotDashboardCapabilities({businessStatus:business.status})};
+    return {tenantId,capabilities:resolveLmcPilotDashboardCapabilities({businessStatus:business.status,voiceEnabled:business.voiceEnabled})};
   });
 }
 

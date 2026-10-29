@@ -69,12 +69,17 @@ The admin and worker read these variables:
 | `INTERNAL_SERVICE_TOKEN` | admin, worker | Authenticates the admin's attach request to the worker. |
 | `WORKER_INTERNAL_URL` | admin | Private URL of the worker's HTTP port, for example `http://worker:3002`. |
 | `TWILIO_SIP_TRUNK_SID` | worker | Adds new phone numbers to the SIP trunk. The worker refuses to provision a number without it. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | operator scripts | Authenticated Twilio API access for the explicit, dry-run-by-default number migration script. Never expose these to the browser. |
 | `WEB_CALL_MAX_DURATION_MS` | admin | Optional cap on browser call length. |
 | `WEB_CALL_PUBLIC_BUSINESS_SLUG`, `WEB_CALL_ALLOWED_ORIGINS` | admin | The business the landing demo calls, and the sites allowed to start it. |
 | `AI_CHAT_MODEL`, `AI_CHAT_REASONING_EFFORT` | admin, worker | The agent's model and, on OpenAI, its reasoning effort. Leave both blank for `gpt-6-luna` on `high`. |
 | `AI_SUMMARY_MODEL`, `AI_SUMMARY_REASONING_EFFORT` | worker | The model and reasoning effort for the one-line summary written after each call. Leave both blank to use the agent's model on `low`. |
 
 The worker listens on its health port for `/internal/live/attach`. Keep that port on the private network.
+
+Phone sessions use the existing 30-minute hard maximum and 75-second silence timeout in the worker. Each inbound phone call reserves/settles usage through the existing per-business voice billing path, persists transcript and provider usage, and queues the Twilio price reconciliation separately. Do not change those controls to bypass billing. Session closure, caller hangup, worker disconnect, duplicate webhook delivery, transfer, and retry recovery remain handled by the existing live-call controller/worker.
+
+In LMC pilot mode, inbound phone calls additionally require the tenant's `businesses.lmc_voice_enabled` flag and the assigned phone number's existing `phone_numbers.voice_enabled` flag. The LMC flag defaults to `false` and is changed only by an authenticated platform administrator in the client's managed-onboarding screen. This is separate from the missed-call callback preference (`voiceCallbackEnabled`), which governs outbound callbacks and does not enable inbound calls.
 
 ## Set up the phone path
 
@@ -93,3 +98,5 @@ pnpm exec tsx scripts/operations/move-number-to-gpt-live.ts \
 ```
 
 A number off the trunk has nothing to answer its calls, so keep every number on it.
+
+For the first real LMC test, select only the demo tenant in the Super Admin client screen and enable **Inbound AI voice** after confirming it has an active phone number. Apply the migration, configure the OpenAI webhook and Twilio trunk, and move that already-owned number with the script's dry run first. Review the proposed change, then explicitly run with `--apply`; do not purchase a number or change production credentials as part of this release. Configure the receptionist behavior and transfer destination under Agent settings. Call that number from a test phone, confirm the business's required recording/AI disclosure and consent procedure before collecting any recording, then verify the resulting call, transcript, summary, and any booking/transfer in the tenant's Calls page. Disable the tenant voice flag to stop inbound acceptance.

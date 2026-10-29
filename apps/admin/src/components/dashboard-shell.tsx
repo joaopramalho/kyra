@@ -140,6 +140,7 @@ function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }:
   const pilotHas = (capability: PilotDashboardCapability) => pilotCapabilities.includes(capability);
   const general: NavigationItem[] = pilotMode ? [
     ...(pilotHas("leads") ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
+    ...(pilotHas("voice") ? [{ label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon }] : []),
     ...(pilotHas("contacts") ? [{ label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon }] : []),
   ] : [
     { label: t("nav:items.home"), href: "/", icon: HomeIcon },
@@ -149,6 +150,8 @@ function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }:
     { label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon },
   ];
   const receptionist: NavigationItem[] = pilotMode ? [
+    ...(pilotHas("voice") ? [{ label: t("agent:sections.basicSettings.title"), href: "/agent", icon: ClipboardCheckIcon }] : []),
+    ...(pilotHas("voice") ? [{ label: t("agent:sections.rules.title"), href: "/agent/rules", icon: WorkflowIcon }] : []),
     ...(pilotHas("knowledge") ? [{ label: t("agent:sections.knowledge.title"), href: "/agent/knowledge", icon: BookTextIcon }] : []),
     ...(pilotHas("services") ? [{ label: t("agent:sections.services.title"), href: "/agent/services", icon: BlocksIcon }] : []),
   ] : [
