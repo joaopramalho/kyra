@@ -1,8 +1,9 @@
 import { DateTime } from "luxon";
+import { createHash } from "node:crypto";
 import { lmcBookingRulesSchema } from "@lobbystack/contracts";
 import { and, asc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
-import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, closures, contacts, enqueueOutbox, lmcSettings, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, calls, closures, contacts, enqueueOutbox, lmcSettings, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
 
 import { computeAvailability } from "../availability";
@@ -150,10 +151,28 @@ export async function findAvailability(
 export async function bookAppointment(
   context: DomainContext,
   input: BookingInput,
-): Promise<{ appointmentId: string; contactId: string; staffId: string }> {
+): Promise<{ appointmentId: string; contactId: string; staffId: string; idempotent?: boolean }> {
   return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: input.userId ? "operator" : "worker" }, async (tx) => {
     if (input.userId) {
       await requireBusinessMembership(tx, { userId: input.userId, businessId: input.businessId, minimumRole: "scheduler" });
+    }
+    const canonicalStartsAt = new Date(input.startsAt);
+    if (!Number.isFinite(canonicalStartsAt.getTime())) throw new Error("A valid appointment time and duration are required.");
+    const idempotencyKey = input.callId
+      ? createHash("sha256").update(`${input.serviceId}:${canonicalStartsAt.toISOString()}`).digest("hex")
+      : undefined;
+    if (input.callId && idempotencyKey) {
+      // Serialize retries for one call and return the first committed booking
+      // before checking availability (the successful booking now occupies it).
+      const [call] = await tx.select({ id: calls.id }).from(calls)
+        .where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId))).limit(1).for("update");
+      if (!call) throw new Error("Call does not belong to this business.");
+      const [existing] = await tx.select({ appointmentId: appointments.id, contactId: appointments.contactId, staffId: appointments.staffId })
+        .from(appointments).where(and(eq(appointments.businessId, input.businessId), eq(appointments.originCallId, input.callId), eq(appointments.idempotencyKey, idempotencyKey))).limit(1);
+      if (existing) {
+        await recordCallOutcomeInTransaction(tx, { businessId: input.businessId, callId: input.callId, outcome: { kind: "booked", serviceName: null, startsAt: canonicalStartsAt.toISOString(), appointmentId: existing.appointmentId } });
+        return { appointmentId: existing.appointmentId, contactId: existing.contactId, staffId: existing.staffId, idempotent: true as const };
+      }
     }
     // The first read discovers a stable, sorted lock set. Reference data is
     // reloaded after each candidate lock because it may change while we wait.
@@ -210,6 +229,8 @@ export async function bookAppointment(
       timezone: input.timezone,
       status: "confirmed",
       sourceChannel: input.sourceChannel,
+      ...(input.callId ? { originCallId: input.callId } : {}),
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       calendarSyncState: "pending",
     }).returning({ id: appointments.id, revision: appointments.revision });
     if (!appointment) {
@@ -272,7 +293,14 @@ export async function bookAppointment(
         });
       }
     }
-    if (input.callId) await recordCallOutcomeInTransaction(tx, { businessId: input.businessId, callId: input.callId, contactId, outcome: { kind: "booked", serviceName: reference.serviceName, startsAt: startsAt.toISOString() } });
+    if (input.callId) await recordCallOutcomeInTransaction(tx, {
+      businessId: input.businessId,
+      callId: input.callId,
+      // Browser voice starts with an anonymous contact and may bind it once at
+      // booking; a phone call retains its original Caller ID contact.
+      ...(input.sourceChannel === "web_voice" ? { contactId } : {}),
+      outcome: { kind: "booked", serviceName: reference.serviceName, startsAt: startsAt.toISOString(), appointmentId: appointment.id },
+    });
     if (input.apiAudit) await tx.insert(auditLogs).values({ businessId: input.businessId, actorUserId: input.apiAudit.actorUserId, eventType: "api.appointment.booked", entityType: "appointment", entityId: appointment.id, payload: input.apiAudit.payload });
     if (contactCreated) await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "contact.created", resourceId: contactId });
     await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "appointment.booked", resourceId: appointment.id });

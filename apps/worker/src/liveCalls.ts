@@ -224,7 +224,7 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
       hangup: async (reason) => {
         end = reason;
         if (reason === "abuse" && phone) await blockLiveCaller(input.domain, call);
-        await hangup();
+        controller?.requestEndCall(reason);
       },
       ...(phone ? {
         transfer: async (destination: string) => {
@@ -250,6 +250,7 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
         snapshot,
         channel: request.channel,
         callId: request.callId,
+        sessionId: request.sessionId,
         ...(request.conversationId ? { conversationId: request.conversationId } : {}),
         callControl,
         ...(request.callerPhone ? { callerPhone: request.callerPhone } : {}),
@@ -280,7 +281,15 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
       onTurn: (turn) => void saveLiveCallTurn(input.domain, { ...call, ...turn }).catch(logError(request.sessionId, "transcript save failed")),
       onTimeout: (reason) => {
         end = reason;
-        void hangup();
+        controller?.endCallNow(reason);
+      },
+      onEndIntent: (reason) => {
+        end = reason;
+        console.info(JSON.stringify({ event: "live.end_intent", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason }));
+      },
+      onHangup: async (reason) => {
+        console.info(JSON.stringify({ event: "live.provider_hangup.requested", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason }));
+        await hangup();
       },
       onDelegation: (timing) => {
         console.info(JSON.stringify({ event: "live.delegation", sessionId: request.sessionId, agentMs: timing.agentMs, totalMs: timing.totalMs, tools: timing.tools, failed: timing.failed }));

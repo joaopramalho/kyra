@@ -115,15 +115,24 @@ export async function checkOpening(
 
 export async function bookForCaller(
   context: DomainContext,
-  input: { businessId: string; serviceName: string; startsAt: string; timezone: string; contactPhone: string; contactName?: string; smsConsentGranted?: boolean; channel: ReceptionistChannel; callId?: string },
+  input: { businessId: string; serviceName: string; startsAt: string; timezone: string; contactPhone: string; contactName?: string; smsConsentGranted?: boolean; channel: ReceptionistChannel; callId?: string; sessionId?: string },
 ) {
-  const distinctId = getPostHogDistinctIdForBusinessSystem(input.businessId);
-  const service = await resolveActiveService(context, input.businessId, input.serviceName);
-  if (!service) {
-    await safeRecordProductEvent(context, { name: "appointment.booking_failed", businessId: input.businessId, distinctId, properties: { reason: "service_unavailable", requestedServiceName: input.serviceName, channel: input.channel, sourceChannel: input.channel } });
-    return { ok: false as const, reason: "Service is not available." };
+  const startedAt = Date.now();
+  const operationalLog = (event: string, reasonCode: string) => {
+    try { console.info(JSON.stringify({ event, operation: "book_appointment", businessId: input.businessId, ...(input.callId ? { callId: input.callId } : {}), ...(input.sessionId ? { sessionId: input.sessionId } : {}), reasonCode, durationMs: Date.now() - startedAt })); } catch { /* observability never controls booking */ }
+  };
+  if (!/^\+[1-9]\d{7,14}$/.test(input.contactPhone)) {
+    operationalLog("voice.booking.failed", "invalid_phone");
+    return { ok: false as const, reason: "A valid callback number in international format is needed." };
   }
+  const distinctId = getPostHogDistinctIdForBusinessSystem(input.businessId);
   try {
+    const service = await resolveActiveService(context, input.businessId, input.serviceName);
+    if (!service) {
+      operationalLog("voice.booking.failed", "service_unavailable");
+      await safeRecordProductEvent(context, { name: "appointment.booking_failed", businessId: input.businessId, distinctId, properties: { reason: "service_unavailable", requestedServiceName: input.serviceName, channel: input.channel, sourceChannel: input.channel } });
+      return { ok: false as const, reason: "Service is not available." };
+    }
     const appointment = await bookAppointment(context, {
       businessId: input.businessId,
       serviceId: service.id,
@@ -135,11 +144,13 @@ export async function bookForCaller(
       ...(input.smsConsentGranted ? { smsConsentGranted: true } : {}),
       ...(input.contactName ? { contactName: input.contactName } : {}),
     });
-    await safeRecordProductEvent(context, { name: "appointment.booked", businessId: input.businessId, distinctId, properties: { appointmentId: appointment.appointmentId, channel: input.channel, serviceId: service.id, sourceChannel: input.channel } });
+    if (!appointment.idempotent) await safeRecordProductEvent(context, { name: "appointment.booked", businessId: input.businessId, distinctId, properties: { appointmentId: appointment.appointmentId, channel: input.channel, serviceId: service.id, sourceChannel: input.channel } });
+    operationalLog("voice.booking.committed", "committed");
     return { ok: true as const, appointmentId: appointment.appointmentId, serviceName: service.name, startsAt: input.startsAt };
   } catch (error) {
     const reason = bookingFailureReason(error);
-    await safeRecordProductEvent(context, { name: "appointment.booking_failed", businessId: input.businessId, distinctId, properties: { reason, serviceId: service.id, requestedServiceName: input.serviceName, channel: input.channel, sourceChannel: input.channel } });
+    operationalLog("voice.booking.failed", reason);
+    await safeRecordProductEvent(context, { name: "appointment.booking_failed", businessId: input.businessId, distinctId, properties: { reason, requestedServiceName: input.serviceName, channel: input.channel, sourceChannel: input.channel } });
     return { ok: false as const, reason: reason === "slot_unavailable" ? "That time is no longer available." : "The booking could not be completed." };
   }
 }
