@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { lmcProviderEventSchema, type LmcProviderEvent, type LmcInboundProvider } from "@lobbystack/contracts";
 import { lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { routeReplyToken, verifyActionToken, verifyReplyToken } from "./capabilities";
@@ -9,6 +9,7 @@ import { enqueueLmcJob } from "./queue";
 import { suppressLmcEmail } from "./suppression";
 
 const digest=(value:string)=>createHash("sha256").update(value).digest("hex");
+const sesMessageId=(value:string)=>/^<[A-Za-z0-9.!#$%&'*+\-/=?^_`{|}~]+@email\.amazonses\.com>$/i.test(value);
 type ReceptionResult={accepted:boolean;reason?:string};
 type Input={database:Database;now:()=>Date;receivingDomain:string;signingSecret:string};
 
@@ -24,24 +25,47 @@ export class LmcEmailReception {
     if(event.kind==="suppression")return this.providerSuppression(event);
     const recipient=normalizeInboundRecipient(event.email.to);
     if(recipient?.startsWith("lead+")||recipient?.startsWith("forward+"))return new LmcInitialEmailIntake(this.input).receive(event);
-    const email=normalizeInboundEmail(event.email);
-    if(email.kind!=="message")return{accepted:false,reason:email.reason};
     const suffix=`@${this.input.receivingDomain}`;
-    if(!email.to.startsWith("reply+")||!email.to.endsWith(suffix))return{accepted:false,reason:"invalid_recipient"};
-    const token=email.to.slice(6,-suffix.length),tenantId=routeReplyToken(token);
+    if(!recipient?.startsWith("reply+")||!recipient.endsWith(suffix))return{accepted:false,reason:"invalid_recipient"};
+    const token=recipient.slice(6,-suffix.length),tenantId=routeReplyToken(token);
     if(!tenantId)return{accepted:false,reason:"invalid_recipient"};
+    const email=normalizeInboundEmail(event.email);
+    if(email.kind!=="message")return this.scoped(tenantId,async tx=>{
+      const [settings]=await tx.select({enabled:lmcSettings.enabled}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId)).limit(1);
+      if(settings)await this.recordRejection(tx,tenantId,event.id,email.reason);
+      return{accepted:false,reason:email.reason};
+    });
     const tokenHash=digest(token),now=this.input.now();
     return this.scoped(tenantId,async tx=>{
       let [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,tenantId),eq(lmcLeads.replyTokenHash,tokenHash))).limit(1);
       const [settings]=await tx.select({enabled:lmcSettings.enabled}).from(lmcSettings).where(eq(lmcSettings.tenantId,tenantId)).limit(1);
-      if(!lead||!settings?.enabled||!verifyReplyToken(token,tenantId,lead.replyTokenHash)||email.from!==lead.email)return{accepted:false,reason:"conversation_not_verified"};
+      if(!lead||!settings?.enabled||!verifyReplyToken(token,tenantId,lead.replyTokenHash)||email.from!==lead.email){
+        if(lead||settings)await this.recordRejection(tx,tenantId,event.id,"conversation_not_verified",lead?.id);
+        return{accepted:false,reason:"conversation_not_verified"};
+      }
       if(!email.optOut){
         [lead]=await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,tenantId),eq(lmcLeads.replyTokenHash,tokenHash))).for("update");
-        if(!lead)return{accepted:false,reason:"conversation_not_verified"};
+        if(!lead){
+          await this.recordRejection(tx,tenantId,event.id,"conversation_not_verified");
+          return{accepted:false,reason:"conversation_not_verified"};
+        }
       }
-      const references=[...email.references,...(email.inReplyTo?[email.inReplyTo]:[])];
-      const thread=references.length ? await tx.select({id:lmcMessages.id}).from(lmcMessages).where(and(eq(lmcMessages.tenantId,tenantId),eq(lmcMessages.leadId,lead.id),inArray(lmcMessages.direction,["assistant","human"]),eq(lmcMessages.status,"sent"),inArray(lmcMessages.messageId,references))).limit(1) : [];
-      if(!email.optOut&&!thread.length)return{accepted:false,reason:"thread_not_verified"};
+      const references=[...new Set([...email.references,...(email.inReplyTo?[email.inReplyTo]:[])])];
+      const providerIdentifiers=references.flatMap(reference=>{
+        const bare=reference.slice(1,-1),at=bare.lastIndexOf("@");
+        return at>0?[reference,bare,bare.slice(0,at)]:[reference,bare];
+      });
+      const thread=references.length ? await tx.select({id:lmcMessages.id}).from(lmcMessages).where(and(eq(lmcMessages.tenantId,tenantId),eq(lmcMessages.leadId,lead.id),inArray(lmcMessages.direction,["assistant","human"]),eq(lmcMessages.status,"sent"),or(inArray(lmcMessages.messageId,references),inArray(lmcMessages.providerId,providerIdentifiers)))).limit(1) : [];
+      let transportFallback=false;
+      if(!email.optOut&&!thread.length&&references.some(sesMessageId)&&lead.lastOutboundMessageId){
+        const sent=await tx.select({id:lmcMessages.id}).from(lmcMessages).where(and(eq(lmcMessages.tenantId,tenantId),eq(lmcMessages.leadId,lead.id),inArray(lmcMessages.direction,["assistant","human"]),eq(lmcMessages.status,"sent"),eq(lmcMessages.messageId,lead.lastOutboundMessageId))).limit(1);
+        transportFallback=sent.length>0;
+      }
+      if(!email.optOut&&!thread.length&&!transportFallback){
+        await this.recordRejection(tx,tenantId,event.id,"thread_not_verified",lead.id,references.length);
+        return{accepted:false,reason:"thread_not_verified"};
+      }
+      if(transportFallback)await tx.insert(lmcEvents).values({tenantId,leadId:lead.id,type:"email_thread_transport_fallback",externalId:`thread-fallback:${digest(event.id)}`,metadata:{provider:"ses",referenceCount:references.length},createdAt:now}).onConflictDoNothing({target:[lmcEvents.tenantId,lmcEvents.externalId]});
       const fingerprint=digest(JSON.stringify(email));
       const externalId=`inbound:${event.id}`;
       const [created]=await tx.insert(lmcEvents).values({tenantId,leadId:lead.id,type:"email_received",externalId,metadata:{fingerprint,attachmentsIgnored:email.attachmentsIgnored},createdAt:now})
@@ -88,6 +112,10 @@ export class LmcEmailReception {
   private async suppress(tx:DatabaseTransaction,tenantId:string,email:string,reason:"opt_out"|"bounce"|"complaint"){
     const now=this.input.now();
     await suppressLmcEmail(tx,tenantId,email,reason,now);
+  }
+
+  private async recordRejection(tx:DatabaseTransaction,tenantId:string,eventId:string,reason:string,leadId?:string,referenceCount=0){
+    await tx.insert(lmcEvents).values({tenantId,...(leadId?{leadId}:{}),type:"email_rejected",externalId:`rejected:${digest(eventId)}`,metadata:{reason,referenceCount},createdAt:this.input.now()}).onConflictDoNothing({target:[lmcEvents.tenantId,lmcEvents.externalId]});
   }
 
   private async providerSuppression(event:Extract<LmcProviderEvent,{kind:"suppression"}>):Promise<ReceptionResult>{
