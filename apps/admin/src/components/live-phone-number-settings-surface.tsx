@@ -41,7 +41,7 @@ function formatReclaimDate(value: number, locale: string): string {
   }).format(new Date(value));
 }
 
-export function LivePhoneNumberSettingsSurface() {
+export function LivePhoneNumberSettingsSurface({ pilotMode = false }: { pilotMode?: boolean }) {
   const { i18n, t } = useTranslation("settings");
   const queryClient = useQueryClient();
   const openUpgradePlanDialog = useOpenUpgradePlanDialog();
@@ -51,7 +51,9 @@ export function LivePhoneNumberSettingsSurface() {
   const businessId = business?.businessId ?? "";
   const canManageTenant = Boolean(business && ["business_owner", "business_admin"].includes(business.role));
   const numbers = useQuery({ queryKey: ["phone-numbers", businessId], refetchInterval: query => query.state.data?.activeClaim || query.state.data?.replacement.activeClaim ? 1000 : false, enabled: Boolean(businessId), queryFn: () => requestJson<NumbersResponse>(`/api/phone-numbers?businessId=${encodeURIComponent(businessId)}`) });
-  const billing = useQuery({ queryKey: ["billing", businessId], enabled: Boolean(businessId), queryFn: () => requestJson<BillingUsageViewModel>(`/api/billing?businessId=${encodeURIComponent(businessId)}`) });
+  // Pilot billing data is intentionally outside the HTTP allowlist. Number
+  // eligibility remains checked by the tenant-scoped claim API before purchase.
+  const billing = useQuery({ queryKey: ["billing", businessId], enabled: Boolean(businessId) && !pilotMode, queryFn: () => requestJson<BillingUsageViewModel>(`/api/billing?businessId=${encodeURIComponent(businessId)}`) });
   const primaryPhoneNumber = numbers.data ? numbers.data.phoneNumbers.find(number => number.status === "active" && !number.reclaimScheduledAt) ?? numbers.data.phoneNumbers[0] ?? null : undefined;
   const phoneNumberReplacementUsedAt = numbers.data?.replacement.usedAt;
   const rawPlan = billing.data?.account?.plan;
@@ -93,15 +95,13 @@ export function LivePhoneNumberSettingsSurface() {
     : null;
   const hasPhoneNumber = Boolean(primaryPhoneNumber);
   const hasUsedPhoneNumberChange = Boolean(phoneNumberReplacementUsedAt);
-  const canClaimDedicatedNumber =
-    billingStatus != null &&
-    (billingStatus.includedBusinessNumbers === null || billingStatus.includedBusinessNumbers > 0);
+  const canClaimDedicatedNumber = pilotMode || (billingStatus != null && (billingStatus.includedBusinessNumbers === null || billingStatus.includedBusinessNumbers > 0));
   const reclaimScheduledAt =
     (primaryPhoneNumber?.reclaimScheduledAt ? new Date(primaryPhoneNumber.reclaimScheduledAt).getTime() : null) ??
     billingStatus?.phoneNumberReclaimScheduledAt ??
     null;
   const showReclaimBanner = Boolean(hasPhoneNumber && reclaimScheduledAt);
-  const showPaidPlanRequired = !hasPhoneNumber && billingStatus != null && !canClaimDedicatedNumber;
+  const showPaidPlanRequired = !pilotMode && !hasPhoneNumber && billingStatus != null && !canClaimDedicatedNumber;
 
   function handleClaimed(result: Extract<ClaimResult, { status: "claimed" }>): void {
     toast.success(t(hasPhoneNumber ? "phoneNumber.toast.changed" : "phoneNumber.toast.added"));
@@ -114,6 +114,7 @@ export function LivePhoneNumberSettingsSurface() {
   return (
     <div className="flex flex-1 flex-col">
       <div className="w-full space-y-4">
+        {pilotMode ? <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">{t("phoneNumber.pilotSetupNotice")}</div> : null}
         {showReclaimBanner && reclaimScheduledAt ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
             <p className="text-sm font-medium text-foreground">
