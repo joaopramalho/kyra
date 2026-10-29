@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
-import { lmcJobs, withBusinessTransaction, withDispatcherTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
+import { lmcEvents, lmcJobs, withBusinessTransaction, withDispatcherTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 
 export const LMC_MAX_JOB_ATTEMPTS = 10;
 export const LMC_JOB_LEASE_MS = 60_000;
@@ -101,7 +101,9 @@ export class LmcJobQueue {
         availableAt: dead ? now : new Date(now.getTime()+Math.min(3_600_000,2**job.attempts*1_000)),
         lastError: classified.code, updatedAt: now })
         .where(and(eq(lmcJobs.tenantId,job.tenantId),eq(lmcJobs.id,job.id),eq(lmcJobs.leaseToken,job.leaseToken!),eq(lmcJobs.status,"running"))).returning({ id: lmcJobs.id });
-      return rows.length === 1;
+      if(rows.length!==1)return false;
+      await tx.insert(lmcEvents).values({tenantId:job.tenantId,leadId:job.leadId,type:"email_job_failed",externalId:`job-failed:${job.id}:${job.attempts}`,metadata:{kind:job.kind,code:classified.code,category:classified.category,attempts:job.attempts,terminal:dead},createdAt:now}).onConflictDoNothing({target:[lmcEvents.tenantId,lmcEvents.externalId]});
+      return true;
     });
     if (updated) this.input.onFailure?.({ kind: job.kind, code: classified.code, category: classified.category, attempts: job.attempts, terminal: dead });
     return updated;

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
-import { businesses, withBusinessTransaction } from "@lobbystack/db";
+import { businesses, lmcEvents, lmcJobs, withBusinessTransaction } from "@lobbystack/db";
 import { enqueueLmcJob, LmcJobQueue } from "../../packages/domain/src/server/lmc/queue";
 import { openLmcTestDatabase } from "./support/database";
 
@@ -19,6 +19,20 @@ beforeAll(async () => {
 afterAll(async () => { await db.admin.db.execute(sql`delete from businesses where id in (${a},${b})`); await db.close(); });
 
 describe("durable email work queue", () => {
+  it("durably records sanitized diagnostics for a failed job",async()=>{
+    await db.admin.db.insert(lmcJobs).values({tenantId:a,leadId:leadA,kind:"process",dedupeKey:"failure-event",payload:{messageId:randomUUID()}});
+    for(let attempt=1;attempt<=10;attempt++){
+      const [job]=await queue.claim(a);
+      expect(job?.attempts).toBe(attempt);
+      expect(await queue.fail(job!,"unsafe error containing a credential")).toBe(true);
+      now+=3_600_001;
+    }
+    expect(await queue.claim(a)).toEqual([]);
+    const failures=await withBusinessTransaction(db.worker.db,{businessId:a,actorType:"worker"},tx=>tx.select({type:lmcEvents.type,metadata:lmcEvents.metadata}).from(lmcEvents).where(sql`${lmcEvents.tenantId}=${a} and ${lmcEvents.leadId}=${leadA} and ${lmcEvents.type}='email_job_failed'`));
+    expect(failures).toHaveLength(10);
+    expect(failures).toContainEqual(expect.objectContaining({type:"email_job_failed",metadata:expect.objectContaining({kind:"process",code:"LMC_JOB_FAILED",category:"unknown",attempts:10,terminal:true})}));
+    expect(JSON.stringify(failures)).not.toMatch(/credential|messageId/);
+  });
   it("deduplicates concurrent enqueue and rejects conflicting use of the same key", async () => {
     const [one,two] = await Promise.all([enqueue(a,leadA,"same"),enqueue(a,leadA,"same")]);
     expect(one).toBe(two);
@@ -63,6 +77,10 @@ describe("durable email work queue", () => {
     expect(await queue.claim(a)).toEqual([]);
     const rows = await withBusinessTransaction(db.worker.db, { businessId: a, actorType: "worker" }, tx => tx.execute(sql`select status,last_error from lmc_jobs where dedupe_key='retries'`));
     expect(rows.rows).toEqual([{ status: "failed", last_error: "LMC_JOB_FAILED" }]);
+    const failures=await withBusinessTransaction(db.worker.db,{businessId:a,actorType:"worker"},tx=>tx.select({type:lmcEvents.type,metadata:lmcEvents.metadata}).from(lmcEvents).where(sql`${lmcEvents.tenantId}=${a} and ${lmcEvents.leadId}=${leadA} and ${lmcEvents.type}='email_job_failed'`));
+    expect(failures).toHaveLength(10);
+    expect(failures).toContainEqual(expect.objectContaining({metadata:expect.objectContaining({kind:"process",code:"LMC_JOB_FAILED",category:"unknown",attempts:10,terminal:true})}));
+    expect(JSON.stringify(failures)).not.toContain("credential");
   });
   it("rejects enqueue into B from a transaction scoped to A", async () => {
     await expect(withBusinessTransaction(db.app.db, { businessId: a, actorType: "system" }, tx => enqueueLmcJob(tx, { tenantId: b, leadId: leadB, kind: "send", dedupeKey: randomUUID(), payload: {} }))).rejects.toThrow();

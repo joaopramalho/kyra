@@ -58,6 +58,46 @@ describe("LMC lead-to-booking acceptance", () => {
     expect(await h.bookings()).toHaveLength(0);
   });
 
+  it("e: handles the reported HVAC reply by checking November 2 in the business timezone", async () => {
+    await h.close();
+    h = await createLmcHarness({now:"2026-10-29T15:00:00.000Z",serviceName:"HVAC maintenance",timezone:"America/New_York"});
+    const lead=await h.capture({email:"hvac@example.invalid",name:"Ana",message:"I need HVAC maintenance for a residential home in ZIP 33101."});
+    await h.work();
+    const first=h.mail.lastTo("hvac@example.invalid").text;
+    expect(first).toMatch(/Eastern Daylight Time/);
+    expect(first).not.toMatch(/2026-\d\d-\d\dT\d\d:\d\d/);
+    const previouslyOffered=(await h.lead(lead.id)).offeredSlots;
+    expect(previouslyOffered.length).toBeGreaterThan(0);
+
+    // Exact production wording reported by the operator; webhook HTTP 200 only
+    // confirms durable receipt, so assert the worker actually sends a reply.
+    await h.reply(lead.id,"Hmm, none of these work for me, do u guys work on November 2?");
+    await h.work();
+    const response=h.mail.lastTo("hvac@example.invalid").text;
+    expect(response).toContain("Monday, November 2");
+    expect(response).toMatch(/Eastern Standard Time/);
+    expect(response).not.toMatch(/2026-\d\d-\d\dT\d\d:\d\d/);
+    expect((await h.lead(lead.id))).toMatchObject({status:"qualified",aiPaused:false,reason:null});
+    const events=await h.events(lead.id);
+    expect(events).toContainEqual(expect.objectContaining({type:"email_processed",metadata:expect.objectContaining({intent:"availability"})}));
+    expect(h.jobFailures).toHaveLength(0);
+  });
+
+  it("e: rejection without a date offers only fresh calendar-verified alternatives", async () => {
+    const lead=await h.qualifiedLead("alternative@example.invalid");
+    const oldSlots=(await h.lead(lead.id)).offeredSlots;
+    await h.reply(lead.id,"None of those work for me. Do you have another day?");
+    await h.work();
+    const response=h.mail.lastTo("alternative@example.invalid").text;
+    const newSlots=(await h.lead(lead.id)).offeredSlots;
+    expect(newSlots.length).toBeGreaterThan(0);
+    expect(newSlots.every(slot=>h.allowedSlots.includes(slot))).toBe(true);
+    expect(newSlots.some(slot=>oldSlots.includes(slot))).toBe(false);
+    expect(response).toMatch(/Eastern Daylight Time|Eastern Standard Time/);
+    expect(response).not.toMatch(/2026-\d\d-\d\dT\d\d:\d\d/);
+    expect(h.jobFailures).toHaveLength(0);
+  });
+
   it("e: treats booking interest without a selected time as an availability request", async () => {
     const lead = await h.capture({
       email: "booking-interest@example.invalid",
@@ -108,6 +148,7 @@ describe("LMC lead-to-booking acceptance", () => {
     await h.reply(lead.id, "Thank you");
     await h.work();
     expect(h.mail.records).toHaveLength(count);
+    expect(await h.events(lead.id)).toContainEqual(expect.objectContaining({type:"email_processing_skipped",metadata:expect.objectContaining({reason:"automation_paused"})}));
   });
 
   it("i: sends at most three follow-ups with opt-out, then stops", async () => {
