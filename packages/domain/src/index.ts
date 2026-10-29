@@ -12,3 +12,4 @@ export * from "./server/lmc/handoff";
 export * from "./server/lmc/workspace";
 
 export * from "./server/lmc/worker";
+export { classifyLmcJobFailure } from "./server/lmc/queue";

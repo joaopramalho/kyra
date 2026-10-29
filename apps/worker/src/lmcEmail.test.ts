@@ -5,8 +5,10 @@ const mocks = vi.hoisted(() => ({
   construct: vi.fn(),
   drain: vi.fn(),
   realModel: vi.fn(),
+  classifyFailure: vi.fn(() => ({ code: "LMC_JOB_FAILED" })),
 }));
 vi.mock("@lobbystack/domain", () => ({
+  classifyLmcJobFailure: mocks.classifyFailure,
   LmcEmailWorker: class {
     constructor(input: unknown) {
       mocks.construct(input);
@@ -30,6 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 it("defaults to fakes even with real keys present and permits only explicit real production providers", () => {
   const runtime = createLmcEmailRuntime({
@@ -60,6 +63,7 @@ it("serializes iterations, recovers from queue failure and stops when aborted", 
   vi.useFakeTimers();
   const abort = new AbortController();
   const status = vi.fn();
+  const log = vi.spyOn(console,"error").mockImplementation(() => {});
   let release!: () => void;
   mocks.drain
     .mockImplementationOnce(
@@ -80,11 +84,20 @@ it("serializes iterations, recovers from queue failure and stops when aborted", 
   release();
   await vi.advanceTimersByTimeAsync(1000);
   expect(status).toHaveBeenCalledWith(false);
+  expect(log).toHaveBeenCalledWith(JSON.stringify({event:"lmc_email_worker_cycle_failed",code:"LMC_JOB_FAILED"}));
+  expect(log.mock.calls.flat().join(" ")).not.toContain("private SQL");
   abort.abort();
   await running;
   const calls = mocks.drain.mock.calls.length;
   await vi.advanceTimersByTimeAsync(3000);
   expect(mocks.drain).toHaveBeenCalledTimes(calls);
+});
+it("logs only sanitized structured diagnostics for durable email job failures",()=>{
+  const log=vi.spyOn(console,"error").mockImplementation(()=>{});
+  createLmcEmailRuntime({database:db,dispatcher:db,environment:{NODE_ENV:"test"}});
+  const options=mocks.construct.mock.calls[0]![0] as {onJobFailure:(value:{kind:string;code:string;category:string;attempts:number;terminal:boolean})=>void};
+  options.onJobFailure({kind:"send",code:"EMAIL_PROVIDER_UNAVAILABLE",category:"sending",attempts:3,terminal:false});
+  expect(log).toHaveBeenCalledWith(JSON.stringify({event:"lmc_email_job_failed",kind:"send",code:"EMAIL_PROVIDER_UNAVAILABLE",category:"sending",attempts:3,terminal:false}));
 });
 it("does not consume when already aborted and preserves opt-out of email startup", async () => {
   const runtime = createLmcEmailRuntime({

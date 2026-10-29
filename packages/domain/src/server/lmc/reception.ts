@@ -81,6 +81,7 @@ export class LmcEmailReception {
       if(email.injectionDetected)await tx.insert(lmcEvents).values({tenantId,leadId:lead.id,type:"prompt_injection_detected",metadata:{messageId},createdAt:now});
       const [suppressed]=await tx.select({email:lmcSuppressions.email}).from(lmcSuppressions).where(and(eq(lmcSuppressions.tenantId,tenantId),eq(lmcSuppressions.email,lead.email))).limit(1);
       if(!lead.aiPaused&&!suppressed&&!["opted_out","suppressed","declined"].includes(lead.status))await enqueueLmcJob(tx,{tenantId,leadId:lead.id,kind:"process",dedupeKey:`process:${messageId}`,payload:{messageId,replyToken:token,generation},availableAt:now});
+      else await tx.insert(lmcEvents).values({tenantId,leadId:lead.id,type:"email_processing_skipped",externalId:`skipped:${messageId}`,metadata:{messageId,reason:lead.aiPaused?"automation_paused":suppressed?"address_suppressed":lead.status},createdAt:now}).onConflictDoNothing({target:[lmcEvents.tenantId,lmcEvents.externalId]});
       return{accepted:true};
     });
   }
