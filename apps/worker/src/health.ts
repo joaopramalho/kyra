@@ -16,6 +16,17 @@ export function startHealthServer(port: number, state: WorkerHealthState, extraR
   const server = createServer(async (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     if (isPilotMode(process.env)) {
+      // This is the only non-health route exposed in pilot mode. The handler
+      // supplied by index.ts is the verified attach wrapper, which checks the
+      // internal token, bounded body, tenant/session/call association, and then
+      // invokes the existing live-call controller. Never fall through to any
+      // other worker controller from the pilot boundary.
+      if (path === "/internal/live/attach" && request.method === "POST") {
+        if (extraRoutes && await extraRoutes(request, response)) return;
+        response.writeHead(404, { "cache-control": "no-store" });
+        response.end();
+        return;
+      }
       // Gate before invoking any legacy controller, including authenticated calls.
       if (!PILOT_WORKER_HEALTH_PATHS.has(path)) {
         response.writeHead(404, { "cache-control": "no-store" });

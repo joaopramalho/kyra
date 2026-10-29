@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   controllers: 0,
@@ -9,17 +9,24 @@ const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(),
   recordProductEvent: vi.fn(async (..._args: unknown[]) => "event_1"),
   finishLiveCall: vi.fn(async (..._args: unknown[]) => false),
+  controllerStart: vi.fn(async () => undefined),
+  controllerCancel: vi.fn(),
+  StartupError: class LiveCallStartupError extends Error {
+    constructor(readonly reason: string, readonly errorCode?: string) { super(reason); }
+  },
 }));
 
 vi.mock("@lobbystack/agent-core", () => ({
   createAgentModel: () => ({}),
   createReceptionistAgent: () => ({}),
+  LiveCallStartupError: mocks.StartupError,
   LiveCallController: class {
     constructor(options: Record<string, (...args: never[]) => unknown>) {
       mocks.controllers += 1;
       mocks.controllerOptions.push(options);
     }
-    start() {}
+    start() { return mocks.controllerStart(); }
+    cancelStartup() { mocks.controllerCancel(); }
   },
 }));
 vi.mock("@lobbystack/domain", () => ({
@@ -38,9 +45,25 @@ function attachRequest(body: Record<string, unknown>): IncomingMessage {
 }
 
 function response(): ServerResponse {
-  return { writeHead: vi.fn(), end: vi.fn() } as unknown as ServerResponse;
+  let closeListener: (() => void) | undefined;
+  const result = {
+    writeHead: vi.fn(),
+    end: vi.fn(),
+    once: vi.fn((_event: string, listener: () => void) => { closeListener = listener; return result; }),
+    off: vi.fn(() => result),
+    destroyed: false,
+    writableEnded: false,
+    emitClose: () => { result.destroyed = true; closeListener?.(); },
+  };
+  return result as unknown as ServerResponse;
 }
 
+beforeEach(() => {
+  mocks.controllers = 0;
+  mocks.controllerOptions.length = 0;
+  mocks.controllerStart.mockReset().mockResolvedValue(undefined);
+  mocks.controllerCancel.mockReset();
+});
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("createLiveCallHandler", () => {
@@ -59,6 +82,60 @@ describe("createLiveCallHandler", () => {
     await Promise.all([first, second]);
     expect(mocks.controllers).toBe(1);
     expect(handler.activeCalls()).toBe(1);
+  });
+
+  it("does not acknowledge attach until controller startup has succeeded", async () => {
+    vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
+    vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mocks.snapshot.mockResolvedValue({ businessId: "biz_1", greeting: "Hi" });
+    let release!: () => void;
+    mocks.controllerStart.mockReturnValueOnce(new Promise<undefined>((resolve) => { release = () => resolve(undefined); }));
+    const handler = createLiveCallHandler({ domain: { db: {} as never } });
+    const res = response();
+    const attachBody = { sessionId: "live_ready", businessId: "biz_1", callId: "call_ready", channel: "voice" };
+    const pending = handler.handle(attachRequest(attachBody), res);
+    await vi.waitFor(() => expect(mocks.controllers).toBeGreaterThan(0));
+    const duplicateResponse = response();
+    const duplicate = handler.handle(attachRequest(attachBody), duplicateResponse);
+    await Promise.resolve();
+    expect(res.writeHead).not.toHaveBeenCalled();
+    expect(duplicateResponse.writeHead).not.toHaveBeenCalled();
+    release();
+    await Promise.all([pending, duplicate]);
+    expect(res.writeHead).toHaveBeenCalledWith(202, { "content-type": "application/json" });
+    expect(duplicateResponse.writeHead).toHaveBeenCalledWith(202, { "content-type": "application/json" });
+  });
+
+  it("cancels sideband startup when the Admin attach request disconnects", async () => {
+    vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
+    vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mocks.snapshot.mockResolvedValue({ businessId: "biz_1", greeting: "Hi" });
+    let failStartup!: () => void;
+    mocks.controllerStart.mockReturnValueOnce(new Promise<undefined>((_resolve, reject) => { failStartup = () => reject(new mocks.StartupError("sideband_connection_failed", "attach_request_cancelled")); }));
+    mocks.controllerCancel.mockImplementationOnce(() => failStartup());
+    const handler = createLiveCallHandler({ domain: { db: {} as never } });
+    const res = response() as ServerResponse & { emitClose: () => void };
+    const pending = handler.handle(attachRequest({ sessionId: "live_cancelled", businessId: "biz_1", callId: "call_cancelled", channel: "voice" }), res);
+    await vi.waitFor(() => expect(mocks.controllers).toBeGreaterThan(0));
+    res.emitClose();
+    await pending;
+    expect(mocks.controllerCancel).toHaveBeenCalledOnce();
+    expect(handler.activeCalls()).toBe(0);
+  });
+
+  it("returns a retryable startup failure instead of accepting a silent call", async () => {
+    vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
+    vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mocks.snapshot.mockResolvedValue({ businessId: "biz_1", greeting: "Hi" });
+    mocks.controllerStart.mockRejectedValueOnce(new mocks.StartupError("greeting_start_failed", "greeting_audio_timeout"));
+    const handler = createLiveCallHandler({ domain: { db: {} as never } });
+    const res = response();
+    await handler.handle(attachRequest({ sessionId: "live_silent", businessId: "biz_1", callId: "call_silent", channel: "voice" }), res);
+    expect(res.writeHead).toHaveBeenCalledWith(503, { "content-type": "application/json" });
+    expect(handler.activeCalls()).toBe(0);
   });
 });
 

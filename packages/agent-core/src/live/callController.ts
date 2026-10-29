@@ -56,11 +56,32 @@ export type LiveCallControllerOptions = {
 const MAX_ANSWER_CHARS = 1_200;
 // The caller's last words can arrive just after the delegation event.
 const TRANSCRIPT_WAIT_MS = 300;
-const GREETING_FALLBACK_MS = 1_500;
-// How long to wait for the receptionist to start speaking after a fallback
-// greeting before deciding GPT-Live ignored it.
-const GREETING_CONFIRM_MS = 1_500;
+const SIDEBAND_OPEN_TIMEOUT_MS = 4_000;
+const GREETING_AUDIO_TIMEOUT_MS = 4_000;
+const GREETING_EVENT_ID = "kyra_initial_greeting";
 const FALLBACK_ANSWER = "Sorry, I couldn't check that just now. Offer to take a message so the team can follow up.";
+type SidebandAudioEvents = {
+  on(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
+  off(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
+};
+
+export type LiveCallStartupFailureReason = "sideband_connection_failed" | "greeting_start_failed";
+
+export class LiveCallStartupError extends Error {
+  constructor(readonly reason: LiveCallStartupFailureReason, readonly errorCode?: string) {
+    super(reason);
+    this.name = "LiveCallStartupError";
+  }
+}
+
+function safeProviderCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const record = error as Record<string, unknown>;
+  const nested = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : undefined;
+  const deeper = nested?.error && typeof nested.error === "object" ? nested.error as Record<string, unknown> : undefined;
+  const code = record.code ?? nested?.code ?? deeper?.code;
+  return typeof code === "string" && /^[a-z0-9_.-]{1,80}$/i.test(code) ? code : undefined;
+}
 
 /**
  * Holds the sideband connection for one GPT-Live session for the whole call and
@@ -77,12 +98,19 @@ export class LiveCallController {
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
   private durationTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly latency = new LiveLatencyTracker();
+  private ready = false;
+  private greetingSent = false;
+  private mediaStartedNotified = false;
+  private startupFailureReject: ((error: LiveCallStartupError) => void) | undefined;
 
   constructor(private readonly options: LiveCallControllerOptions) {}
 
-  start(): void {
+  async start(): Promise<void> {
     const socket = new SidebandWS(this.options.client, { session_id: this.options.sessionId });
     this.socket = socket;
+    const startupFailure = new Promise<never>((_resolve, reject) => {
+      this.startupFailureReject = (error) => reject(error);
+    });
     socket.on("session.input_transcript.delta", (event) => {
       this.measure(() => this.latency.callerTranscript(event.start_ms, event.end_ms));
       this.appendTranscript("caller", event.delta, event.end_ms);
@@ -93,58 +121,131 @@ export class LiveCallController {
     });
     // OpenAI reflects output audio to the sideband with timeline offsets, but
     // the SDK's sideband event types leave it out. The socket still emits it.
-    (socket as unknown as { on(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): void })
-      .on("session.output_audio.delta", (event) => this.measure(() => this.latency.receptionistAudio(event.start_ms, event.end_ms)));
+    const audioEvents = socket as unknown as SidebandAudioEvents;
+    audioEvents.on("session.output_audio.delta", (event) => this.measure(() => this.latency.receptionistAudio(event.start_ms, event.end_ms)));
     socket.on("session.delegation.created", (event) => void this.handleDelegation(event));
-    socket.on("session.closed", (event) => this.finish(event.reason ?? undefined, event.usage?.seconds, true));
-    socket.on("error", (error) => console.error(`[live] ${this.options.sessionId} sideband error`, error.message));
-    socket.on("close", () => this.finish("sideband_closed"));
-    // GPT-Live waits for the caller by default. OpenAI's documented way to speak
-    // first is an instruction sent after session.started. The sideband replays
-    // the last 3 seconds, so a late attach still sees the event.
-    socket.on("session.started", () => {
-      this.started = true;
-      this.options.onStarted?.();
-      if (!this.fallbackGreetingSent) {
-        this.sendGreeting();
+    socket.on("session.closed", (event) => {
+      if (!this.ready) {
+        this.failStartup(this.greetingSent ? "greeting_start_failed" : "sideband_connection_failed");
         return;
       }
-      // The fallback greeting may have been ignored (sent before the session
-      // started) or accepted (session.started was only replayed late). If it
-      // was accepted, the receptionist starts speaking soon; greet again only
-      // if nobody has spoken by then.
-      this.greetingRetryTimer = setTimeout(() => this.sendGreeting(), GREETING_CONFIRM_MS);
+      this.finish(event.reason ?? undefined, event.usage?.seconds, true);
     });
-    this.resetSilenceTimer();
-    if (this.options.maxDurationMs) this.durationTimer = setTimeout(() => this.options.onTimeout?.("duration_limit"), this.options.maxDurationMs);
-    // If we attached after the replay window, session.started never arrives.
-    // Greet anyway unless the caller has already started talking.
-    setTimeout(() => {
-      if (!this.started && !this.turns.some((turn) => turn.role === "caller")) this.sendGreeting();
-    }, GREETING_FALLBACK_MS);
+    socket.on("error", (error) => {
+      const reason = this.greetingSent ? "greeting_start_failed" : "sideband_connection_failed";
+      const errorCode = safeProviderCode(error);
+      if (!this.ready) this.failStartup(reason, errorCode);
+      else console.error(JSON.stringify({ event: "live.sideband.error", operation: "sideband", sessionId: this.options.sessionId, reason, ...(errorCode ? { errorCode } : {}) }));
+    });
+    socket.on("close", () => {
+      if (!this.ready) {
+        this.failStartup(this.greetingSent ? "greeting_start_failed" : "sideband_connection_failed");
+        return;
+      }
+      this.finish("sideband_closed");
+    });
+    socket.on("session.started", () => undefined);
+    audioEvents.on("session.output_audio.delta", () => {
+      if (this.mediaStartedNotified) return;
+      this.mediaStartedNotified = true;
+      this.options.onStarted?.();
+    });
+
+    try {
+      await Promise.race([this.waitForSidebandOpen(socket), startupFailure]);
+      console.info(JSON.stringify({ event: "live.sideband.open", sessionId: this.options.sessionId }));
+      await Promise.race([this.waitForGreetingAudio(socket, startupFailure), startupFailure]);
+      console.info(JSON.stringify({ event: "live.greeting.audio_started", sessionId: this.options.sessionId }));
+      this.ready = true;
+      this.startupFailureReject = undefined;
+      this.resetSilenceTimer();
+      if (this.options.maxDurationMs) {
+        const remainingMs = Math.max(0, this.options.maxDurationMs - (Date.now() - this.startedAt));
+        this.durationTimer = setTimeout(() => this.options.onTimeout?.("duration_limit"), remainingMs);
+      }
+    } catch (error) {
+      const failure = error instanceof LiveCallStartupError
+        ? error
+        : new LiveCallStartupError(this.greetingSent ? "greeting_start_failed" : "sideband_connection_failed", safeProviderCode(error));
+      this.abortStartup();
+      throw failure;
+    }
   }
 
-  private started = false;
-  // GPT-Live ignores a greeting that arrives before the session starts, which
-  // the fallback can send on a slow connection. So the fallback and
-  // session.started each get one try, and session.started only greets again
-  // if nobody has spoken.
-  private fallbackGreetingSent = false;
-  private startedGreetingSent = false;
-  private greetingRetryTimer: ReturnType<typeof setTimeout> | undefined;
-
-  private sendGreeting(): void {
-    const greeting = this.options.greeting?.trim();
-    if (!greeting || this.turns.length > 0) return;
-    if (this.started ? this.startedGreetingSent : this.fallbackGreetingSent) return;
-    if (this.started) this.startedGreetingSent = true;
-    else this.fallbackGreetingSent = true;
-    this.socket?.send({
-      type: "session.instructions.append",
-      delegation_id: null,
-      content: `Start the conversation now: say exactly "${greeting}" in the language of that greeting, then stop and listen to the caller.`,
-      event_id: "greeting",
+  private async waitForSidebandOpen(socket: SidebandWS): Promise<void> {
+    const stream = socket.stream({ maxBufferedEvents: 64 });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new LiveCallStartupError("sideband_connection_failed", "sideband_open_timeout")), SIDEBAND_OPEN_TIMEOUT_MS);
     });
+    try {
+      const opened = (async () => {
+        for (;;) {
+          const next = await stream.next();
+          if (next.done) throw new LiveCallStartupError("sideband_connection_failed", "sideband_closed_before_open");
+          if (next.value.type === "open" || next.value.type === "reconnected") return;
+          if (next.value.type === "error") throw new LiveCallStartupError("sideband_connection_failed", safeProviderCode(next.value.error));
+          if (next.value.type === "close") throw new LiveCallStartupError("sideband_connection_failed", `sideband_close_${next.value.code}`);
+          if (next.value.type === "message" && next.value.message.type === "error") {
+            throw new LiveCallStartupError("sideband_connection_failed", safeProviderCode(next.value.message.error));
+          }
+        }
+      })();
+      await Promise.race([opened, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      void stream.return?.();
+    }
+  }
+
+  private async waitForGreetingAudio(socket: SidebandWS, startupFailure: Promise<never>): Promise<void> {
+    const greeting = this.options.greeting?.trim();
+    if (!greeting) throw new LiveCallStartupError("greeting_start_failed", "greeting_missing");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAudio: (() => void) | undefined;
+    const audio = new Promise<void>((resolve, reject) => {
+      onAudio = () => resolve();
+      timer = setTimeout(() => reject(new LiveCallStartupError("greeting_start_failed", "greeting_audio_timeout")), GREETING_AUDIO_TIMEOUT_MS);
+      (socket as unknown as SidebandAudioEvents).on("session.output_audio.delta", onAudio);
+      try {
+        // Commentary is Live's speakable-context event. instructions.append
+        // only adds context and does not make the model produce audio.
+        this.greetingSent = true;
+        socket.send({ type: "session.commentary.append", delegation_id: null, content: greeting, event_id: GREETING_EVENT_ID });
+        console.info(JSON.stringify({ event: "live.greeting.sent", sessionId: this.options.sessionId, eventId: GREETING_EVENT_ID }));
+      } catch (error) {
+        reject(new LiveCallStartupError("greeting_start_failed", safeProviderCode(error)));
+      }
+    });
+    try {
+      await Promise.race([audio, startupFailure]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (onAudio) (socket as unknown as SidebandAudioEvents).off("session.output_audio.delta", onAudio);
+    }
+  }
+
+  private failStartup(reason: LiveCallStartupFailureReason, errorCode?: string): void {
+    this.startupFailureReject?.(new LiveCallStartupError(reason, errorCode));
+  }
+
+  /** Tear down a failed startup without racing Admin's setup_failed finalization. */
+  private abortStartup(): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.abort.abort();
+    clearTimeout(this.silenceTimer);
+    clearTimeout(this.durationTimer);
+    this.socket?.close({ code: 1000, reason: "voice startup failed" });
+  }
+
+  /** The HTTP attach owner timed out or disconnected while startup was pending. */
+  cancelStartup(): void {
+    if (this.ready) {
+      this.finish("sideband_closed");
+      return;
+    }
+    this.failStartup("sideband_connection_failed", "attach_request_cancelled");
   }
 
   // Latency is telemetry: a failure here must never affect the call.
@@ -247,7 +348,8 @@ export class LiveCallController {
     } catch (error) {
       failed = true;
       if (this.abort.signal.aborted) return;
-      console.error(`[live] ${this.options.sessionId} delegation ${delegationId} failed`, error instanceof Error ? error.message : error);
+      const errorCode = safeProviderCode(error);
+      console.error(JSON.stringify({ event: "live.delegation.failed", operation: "agent_generate", sessionId: this.options.sessionId, delegationId, ...(errorCode ? { errorCode } : {}) }));
     }
     const answeredAt = performance.now();
 
@@ -278,7 +380,6 @@ export class LiveCallController {
     if (!sessionClosed) this.sessionEnded = this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined, () => undefined);
     clearTimeout(this.silenceTimer);
     clearTimeout(this.durationTimer);
-    clearTimeout(this.greetingRetryTimer);
     this.abort.abort();
     this.socket?.close({ code: 1000, reason: "session finished" });
     this.emitFinishedTurns(true);

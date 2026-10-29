@@ -92,12 +92,12 @@ export async function startCall(
     maxDurationMs?: number;
     billable?: boolean;
   },
-): Promise<{ callId: string; conversationId: string; contactId: string; duplicate: boolean; blocked: boolean; webCallMaxDurationMs?: number }> {
+): Promise<{ callId: string; conversationId: string; contactId: string; duplicate: boolean; blocked: boolean; ended: boolean; webCallMaxDurationMs?: number }> {
   const result = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
-    const existing = await tx.select({ id: calls.id, conversationId: calls.conversationId, contactId: calls.contactId, webCallMaxDurationMs: calls.webCallMaxDurationMs }).from(calls).where(and(eq(calls.provider, input.provider), eq(calls.providerCallId, input.providerCallId))).limit(1);
+    const existing = await tx.select({ id: calls.id, conversationId: calls.conversationId, contactId: calls.contactId, endedAt: calls.endedAt, webCallMaxDurationMs: calls.webCallMaxDurationMs }).from(calls).where(and(eq(calls.provider, input.provider), eq(calls.providerCallId, input.providerCallId))).limit(1);
     if (existing[0]?.conversationId && existing[0]?.contactId) {
       const contact = (await tx.select({ operatorBlockedAt: contacts.operatorBlockedAt }).from(contacts).where(and(eq(contacts.id, existing[0].contactId), eq(contacts.businessId, input.businessId))).limit(1))[0];
-      return { callId: existing[0].id, conversationId: existing[0].conversationId, contactId: existing[0].contactId, duplicate: true, blocked: Boolean(contact?.operatorBlockedAt), ...(existing[0].webCallMaxDurationMs !== null ? { webCallMaxDurationMs: existing[0].webCallMaxDurationMs } : {}) };
+      return { callId: existing[0].id, conversationId: existing[0].conversationId, contactId: existing[0].contactId, duplicate: true, blocked: Boolean(contact?.operatorBlockedAt), ended: existing[0].endedAt !== null, ...(existing[0].webCallMaxDurationMs !== null ? { webCallMaxDurationMs: existing[0].webCallMaxDurationMs } : {}) };
     }
     const anonymousWebCaller = input.from === "web";
     const existingContacts = anonymousWebCaller ? [] : await tx.select({ id: contacts.id, operatorBlockedAt: contacts.operatorBlockedAt }).from(contacts).where(and(eq(contacts.businessId, input.businessId), eq(contacts.phone, input.from))).limit(1);
@@ -170,7 +170,7 @@ export async function startCall(
       dedupeKey: `call:${callId}:started`,
       payload: { type: "call.started", entityId: callId, revision: 0 },
     });
-    return { callId, conversationId, contactId, duplicate: false, blocked, ...(webCallMaxDurationMs !== undefined ? { webCallMaxDurationMs } : {}) };
+    return { callId, conversationId, contactId, duplicate: false, blocked, ended: false, ...(webCallMaxDurationMs !== undefined ? { webCallMaxDurationMs } : {}) };
   });
   if (!result.duplicate) {
     await recordVoiceLifecycleEvent(context, {
