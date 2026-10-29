@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       }
       const greetingOverride = `Hi, this is ${ASSISTANT_NAME}, the virtual receptionist for ${snapshot.displayName}, returning your call. This call may be recorded. How can I help?`;
       return await answerCall(client, { sessionId, businessId: callback.businessId, snapshot, from: context.callerPhone, to: phoneFromSipHeader(header("from")) ?? "callback", greetingOverride });
-    } catch (error) {
+    } catch {
       console.error(JSON.stringify({ event: "live.callback.failed", reason: "answer_setup_failed", sessionId }));
       await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
       return new NextResponse(null, { status: 200 });
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       ? await getAppDatabase().db.execute<{ business_id: string | null }>(sql`select app.resolve_lmc_live_business_by_phone(${to}) as business_id`)
       : await getAppDatabase().db.execute<{ business_id: string | null }>(sql`select app.resolve_business_by_phone(${to}) as business_id`);
     businessId = resolved.rows[0]?.business_id;
-  } catch (error) {
+  } catch {
     // Ownership is unknown: don't reject a call that may belong to the other
     // deployment. A 503 makes OpenAI deliver the event again.
     console.error(JSON.stringify({ event: "live.inbound.lookup_failed", reason: "tenant_resolution_unavailable", sessionId }));
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       return new NextResponse(null, { status: 200 });
     }
     return await answerCall(client, { sessionId, businessId, snapshot, from, to });
-  } catch (error) {
+  } catch {
     console.error(JSON.stringify({ event: "live.inbound.failed", reason: "answer_setup_failed", sessionId, businessId }));
     await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
     return new NextResponse(null, { status: 200 });
