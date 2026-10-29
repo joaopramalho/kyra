@@ -3,8 +3,15 @@ import { NextResponse } from "next/server";
 import { completeVoiceFollowUpTasks, getCallDetail } from "@lobbystack/domain";
 import { asApiResponse, readJson, requireOperatorBusiness, withOperatorTransaction } from "@/lib/api-helpers";
 import { createDomainContext } from "@/lib/domain-context";
+import { isPilotMode } from "@lobbystack/shared";
 
 export const dynamic = "force-dynamic";
+
+export function OPTIONS() {
+  // The follow-up PATCH exists for legacy workspaces but is not in the pilot allowlist.
+  const methods = isPilotMode(process.env) ? "GET, HEAD, OPTIONS" : "GET, HEAD, PATCH, OPTIONS";
+  return new Response(null, { status: 204, headers: { Allow: methods } });
+}
 
 export async function GET(request: Request, { params }: { params: Promise<{ callId: string }> }) {
   try {
