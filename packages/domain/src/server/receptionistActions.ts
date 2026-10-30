@@ -13,6 +13,7 @@ import { appendMessage, getOrCreateConversation } from "./conversations";
 import { queueOperatorAlert } from "./notifications";
 import { recordProductEvent } from "./productEvents";
 import { createVoiceFollowUpTask } from "./voice";
+import type { ServiceIntake } from "./service-intake";
 
 // Actions the receptionist agent takes on a business's behalf, whatever the
 // channel. Each one opens its own tenant-scoped transaction.
@@ -115,7 +116,7 @@ export async function checkOpening(
 
 export async function bookForCaller(
   context: DomainContext,
-  input: { businessId: string; serviceName: string; startsAt: string; timezone: string; contactPhone: string; contactName?: string; smsConsentGranted?: boolean; channel: ReceptionistChannel; callId?: string; sessionId?: string },
+  input: { businessId: string; serviceName: string; startsAt: string; timezone: string; contactPhone: string; contactName?: string; smsConsentGranted?: boolean; intake?: ServiceIntake; channel: ReceptionistChannel; callId?: string; sessionId?: string },
 ) {
   const startedAt = Date.now();
   const operationalLog = (event: string, reasonCode: string) => {
@@ -143,11 +144,18 @@ export async function bookForCaller(
       ...(input.callId ? { callId: input.callId } : {}),
       ...(input.smsConsentGranted ? { smsConsentGranted: true } : {}),
       ...(input.contactName ? { contactName: input.contactName } : {}),
+      ...(input.intake ? { intake: input.intake } : {}),
     });
     if (!appointment.idempotent) await safeRecordProductEvent(context, { name: "appointment.booked", businessId: input.businessId, distinctId, properties: { appointmentId: appointment.appointmentId, channel: input.channel, serviceId: service.id, sourceChannel: input.channel } });
     operationalLog("voice.booking.committed", "committed");
     return { ok: true as const, appointmentId: appointment.appointmentId, serviceName: service.name, startsAt: input.startsAt };
   } catch (error) {
+    const intakeError = error as Error & { code?: string; missingFields?: string[] };
+    if (intakeError.code === "missing_required_fields" || intakeError.code === "invalid_service_address" || intakeError.code === "outside_service_area") {
+      operationalLog("voice.booking.intake_incomplete", intakeError.code);
+      const reason = intakeError.code === "outside_service_area" ? "That location is outside the configured service area. Do not offer an onsite appointment; offer to take a message for the team instead." : intakeError.code === "invalid_service_address" ? "The service address needs clarification. Ask only for the missing or invalid part." : "The appointment is not booked yet. Ask only for the required intake details listed below, then retry.";
+      return { ok: false as const, reasonCode: intakeError.code, reason, missingFields: intakeError.missingFields ?? [] };
+    }
     const reason = bookingFailureReason(error);
     operationalLog("voice.booking.failed", reason);
     await safeRecordProductEvent(context, { name: "appointment.booking_failed", businessId: input.businessId, distinctId, properties: { reason, requestedServiceName: input.serviceName, channel: input.channel, sourceChannel: input.channel } });
@@ -202,7 +210,7 @@ export async function rescheduleForCaller(
 
 export async function takeMessageForStaff(
   context: DomainContext,
-  input: { businessId: string; message: string; channel: ReceptionistChannel; callerName?: string; callbackPhone?: string; urgency?: string; callbackWindow?: string; callId?: string; conversationId?: string },
+  input: { businessId: string; message: string; channel: ReceptionistChannel; callerName?: string; callbackPhone?: string; urgency?: string; callbackWindow?: string; requestKind?: "appointment_request"; callId?: string; conversationId?: string },
 ) {
   const alert = { eventKind: "voiceMessage" as const, subject: "New voice message", body: "A caller left a voice message. Open the inbox to review it." };
   // A website chat's conversation is the visitor's own thread: a staff note
@@ -228,6 +236,7 @@ export async function takeMessageForStaff(
     ...(input.callbackPhone ? { callbackPhone: input.callbackPhone } : {}),
     ...(input.urgency ? { urgency: input.urgency } : {}),
     ...(input.callbackWindow ? { callbackWindow: input.callbackWindow } : {}),
+    ...(input.requestKind ? { requestKind: input.requestKind } : {}),
   });
   if (inVisitorThread) await queueOperatorAlert(context, { businessId: input.businessId, eventKey: `${alert.eventKind}:${task.inboxItemId}`, ...alert });
   return { ok: true as const, inboxItemId: task.inboxItemId };

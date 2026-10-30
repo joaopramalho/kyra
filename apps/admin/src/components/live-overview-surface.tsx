@@ -116,7 +116,7 @@ export function LiveOverviewSurface() {
                             const details = parseFollowUpTaskBody(item.body);
                             const displayTitle = getActionDisplayTitle(item, t);
                             const destination =
-                              item.kind === "voice_message" && item.callId
+                              (item.kind === "voice_message" || item.kind === "appointment_request") && item.callId
                                 ? {
                                     pathname: `/calls/${encodeURIComponent(String(item.callId))}`,
                                   }
@@ -311,6 +311,10 @@ function getActionKindLabel(
     return t("home.actionRequired.kinds.voice_message");
   }
 
+  if (kind === "appointment_request") {
+    return t("home.actionRequired.kinds.appointment_request");
+  }
+
   if (kind === "human_handoff") {
     return t("home.actionRequired.kinds.human_handoff");
   }
@@ -319,7 +323,7 @@ function getActionKindLabel(
 }
 
 function getActionKindIcon(kind: DashboardSummary["actionRequired"][number]["kind"]): ReactNode {
-  if (kind === "voice_message") {
+  if (kind === "voice_message" || kind === "appointment_request") {
     return <PhoneCall className="size-4 text-muted-foreground" />;
   }
 

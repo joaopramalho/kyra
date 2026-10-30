@@ -137,18 +137,23 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
 
   };
 
+  // Service facts and intake policies are already present in the per-call
+  // voice snapshot; another delegation only repeats known context.
+  if (channel === "voice" || channel === "web_voice") delete tools.getBusinessServices;
+
   // Email side effects are always owned by the verified domain workflow. Even
   // if a caller forgets the explicit policy, never expose them to the agent.
   if (context.toolPolicy === "information" || channel === "email") return tools;
 
   tools.takeMessage = tool({
-      description: "Save a message for the team to follow up on: a callback request, a question you couldn't answer, or anything the caller wants passed on. Get their name and a callback number first.",
+      description: "Save a message for the team to follow up on: a callback request, or an appointment the caller could not complete because required details were declined or the service is out of area. Get permission before saving; this is a pending follow-up, not a confirmed booking.",
       inputSchema: z.object({
         message: z.string().describe("What the caller needs, summarized for staff."),
         callerName: z.string().optional(),
         callbackPhone: phone.optional(),
         urgency: z.enum(["low", "normal", "urgent"]).optional(),
         callbackWindow: z.string().optional().describe("When the caller prefers to be called back, in their words."),
+        requestKind: z.enum(["appointment_request"]).optional().describe("Use appointment_request only when the caller consented to team follow-up because booking intake was incomplete; the request is not booked."),
       }),
       execute: async (input) => {
         const callbackPhone = input.callbackPhone ?? context.callerPhone;
@@ -160,6 +165,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           ...(input.callerName ? { callerName: input.callerName } : {}),
           ...(input.urgency ? { urgency: input.urgency } : {}),
           ...(input.callbackWindow ? { callbackWindow: input.callbackWindow } : {}),
+          ...(input.requestKind ? { requestKind: input.requestKind } : {}),
           ...(context.callId ? { callId: context.callId } : {}),
           ...(context.conversationId ? { conversationId: context.conversationId } : {}),
         });
@@ -180,8 +186,8 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         const cacheKey = JSON.stringify([serviceName.trim().toLowerCase(), date, preferredTime ?? ""]);
         const cached = availabilityCache.get(cacheKey);
         if (cached) return await cached;
-        const [hour, minute] = (preferredTime ?? "").split(":").map(Number);
         const startedAt = Date.now();
+        const [hour, minute] = (preferredTime ?? "").split(":").map(Number);
         const lookup = findOpenings(domain, {
           businessId,
           serviceName,
@@ -205,13 +211,15 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
       },
     });
     tools.bookAppointment = tool({
-      description: "Book an appointment at a time findAvailability returned, after the caller confirms the service and time. On phone calls, ask first whether you may text a confirmation and reminder, and pass their answer.",
+      description: "Book an appointment at an exact time findAvailability returned after the caller confirms it. Include only configured intake information the caller provided or confirmed. The backend rejects missing required fields; if it does, ask only for those fields and retry. Never claim success unless ok is true. On phone calls, SMS consent must be asked separately.",
       inputSchema: z.object({
         serviceName: z.string(),
         startsAt: z.string().describe("The exact startsAt value returned by findAvailability."),
         contactName: z.string().optional(),
         contactPhone: phone.optional().describe("Only set if caller explicitly chose a different callback number; otherwise use trusted Caller ID."),
         smsConsentGranted: z.boolean().describe("True only if the caller agreed to receive a confirmation and reminder text."),
+        serviceLocation: z.object({ line1: z.string(), unit: z.string().optional(), city: z.string(), region: z.string().optional(), postalCode: z.string().optional(), country: z.string(), instructions: z.string().optional() }).optional().describe("The job location, not the contact's default address. Only include details the caller provided or confirmed."),
+        intakeAnswers: z.record(z.string(), z.string()).optional().describe("Configured service intake answers already provided by the caller, such as issueDescription or equipmentDetails."),
       }),
       execute: async (input) => {
         const startedAt = Date.now();
@@ -244,6 +252,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           contactPhone: selected,
           channel,
           smsConsentGranted: input.smsConsentGranted,
+          intake: { ...(input.serviceLocation ? { serviceLocation: { line1: input.serviceLocation.line1, city: input.serviceLocation.city, country: input.serviceLocation.country, ...(input.serviceLocation.unit ? { unit: input.serviceLocation.unit } : {}), ...(input.serviceLocation.region ? { region: input.serviceLocation.region } : {}), ...(input.serviceLocation.postalCode ? { postalCode: input.serviceLocation.postalCode } : {}), ...(input.serviceLocation.instructions ? { instructions: input.serviceLocation.instructions } : {}) } } : {}), ...(input.intakeAnswers ? { answers: input.intakeAnswers } : {}) },
           ...(input.contactName ? { contactName: input.contactName } : {}),
           ...(context.callId ? { callId: context.callId } : {}),
           ...(context.sessionId ? { sessionId: context.sessionId } : {}),

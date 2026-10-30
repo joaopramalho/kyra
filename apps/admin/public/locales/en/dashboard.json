@@ -129,6 +129,7 @@
       },
       "kinds": {
         "voice_message": "Callback",
+        "appointment_request": "Appointment follow-up (not booked)",
         "human_handoff": "Handoff",
         "other": "Open"
       }

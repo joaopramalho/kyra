@@ -13,6 +13,6 @@ describe("GPT-Live phone session configuration", () => {
       delegation: { type: "client" },
       store: true,
     });
-    expect(config.instructions).toContain("The application sends the initial greeting");
+    expect(config.instructions).toContain("Do not introduce yourself or repeat the greeting");
   });
 });

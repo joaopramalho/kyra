@@ -15,6 +15,7 @@ vi.mock("openai/resources/live/sideband/ws", () => ({
     send(event: unknown) {
       this.sent.push(event);
       if (behavior.autoAudio && (event as { type?: string }).type === "session.commentary.append") {
+        this.emit("session.commentary.appended", { client_event_id: (event as { event_id?: string }).event_id });
         this.emit("session.output_audio.delta", { delta: "audio" });
       }
     }
@@ -64,14 +65,22 @@ beforeEach(() => { sockets.length = 0; behavior.autoAudio = true; behavior.openF
 afterEach(() => { vi.useRealTimers(); });
 
 describe("LiveCallController startup and media", () => {
-  it("sends one speakable greeting after sideband opens and reports readiness only on output audio", async () => {
+  it("sends one speakable greeting and requires its context acknowledgement plus output audio", async () => {
     behavior.autoAudio = false;
     const state = createController();
+    let ready = false;
+    const startup = state.start.then(() => { ready = true; });
     await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", event_id: "kyra_initial_greeting", content: "Thanks for calling Northside Plumbing." })));
     expect(state.onStarted).not.toHaveBeenCalled();
     state.socket.emit("session.output_audio.delta", { delta: "first chunk" });
-    await state.start;
+    await Promise.resolve();
     expect(state.onStarted).toHaveBeenCalledOnce();
+    expect(ready).toBe(false);
+    state.socket.emit("session.commentary.appended", { client_event_id: "unrelated_event" });
+    expect(ready).toBe(false);
+    state.socket.emit("session.commentary.appended", { client_event_id: "kyra_initial_greeting" });
+    await startup;
+    expect(ready).toBe(true);
     expect(state.socket.sent.filter((event) => (event as { event_id?: string }).event_id === "kyra_initial_greeting")).toHaveLength(1);
   });
 
@@ -102,6 +111,16 @@ describe("LiveCallController startup and media", () => {
     socket.emit("session.delegation.created", { delegation: { id: "item_1" }, offset_ms: 900 });
     await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "item_1", content: "We're open until 5." })));
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.stringContaining("Caller: Are you open today?") }));
+  });
+
+  it("ignores duplicate delegation events rather than repeating backend work", async () => {
+    const { socket, generate } = await setup();
+    socket.emit("session.input_transcript.delta", { delta: "Are you open today?", end_ms: 1_000 });
+    const event = { delegation: { id: "item_duplicate" }, offset_ms: 900 };
+    socket.emit("session.delegation.created", event);
+    socket.emit("session.delegation.created", event);
+    await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "item_duplicate" })));
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it("waits for the final farewell audio drain and hangs up exactly once", async () => {

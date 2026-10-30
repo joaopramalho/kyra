@@ -15,6 +15,7 @@ import { getMeter } from "@lobbystack/telemetry/node";
 import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
 import { advanceOnboardingStageInTransaction } from "./onboarding";
 import { recordProductEvent } from "./productEvents";
+import { effectiveServiceIntakePolicy } from "./service-intake";
 
 const ragMeter = getMeter("lobbystack-rag");
 const searchDuration = ragMeter.createHistogram("rag.search.duration_ms", { unit: "ms" });
@@ -557,6 +558,7 @@ export async function refreshBusinessSnapshot(
       closures: closureRows.map((row) => ({ startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString(), reason: row.reason })),
       services: serviceRows.map((row) => ({
         id: row.id, name: row.name, durationMinutes: row.durationMinutes,
+        intakePolicy: effectiveServiceIntakePolicy(currentProfile?.intakePolicy, row.intakePolicy),
         ...(row.description ? { description: row.description } : {}),
         ...(row.localizedNames ? { localizedNames: {
           ...(typeof row.localizedNames.en === "string" ? { en: row.localizedNames.en } : {}),

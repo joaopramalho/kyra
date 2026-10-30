@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   controllers: 0,
   controllerOptions: [] as Array<Record<string, (...args: never[]) => unknown>>,
   snapshot: vi.fn(),
+  loadCaller: vi.fn(),
+  createAgent: vi.fn(() => ({})),
   recordProductEvent: vi.fn(async (..._args: unknown[]) => "event_1"),
   finishLiveCall: vi.fn(async (..._args: unknown[]) => false),
   controllerStart: vi.fn(async () => undefined),
@@ -18,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@lobbystack/agent-core", () => ({
   createAgentModel: () => ({}),
-  createReceptionistAgent: () => ({}),
+  createReceptionistAgent: mocks.createAgent,
   LiveCallStartupError: mocks.StartupError,
   LiveCallController: class {
     constructor(options: Record<string, (...args: never[]) => unknown>) {
@@ -31,6 +33,7 @@ vi.mock("@lobbystack/agent-core", () => ({
 }));
 vi.mock("@lobbystack/domain", () => ({
   getCachedBusinessSnapshot: mocks.snapshot,
+  loadLiveCallForPricing: mocks.loadCaller,
   finishLiveCall: mocks.finishLiveCall,
   LIVE_CALL_PROVIDER: "openai_live",
   recordProductEvent: mocks.recordProductEvent,
@@ -63,10 +66,24 @@ beforeEach(() => {
   mocks.controllerOptions.length = 0;
   mocks.controllerStart.mockReset().mockResolvedValue(undefined);
   mocks.controllerCancel.mockReset();
+  mocks.createAgent.mockClear();
+  mocks.loadCaller.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("createLiveCallHandler", () => {
+  it("recovers trusted Caller ID from the tenant-scoped call record when SIP does not provide a valid number", async () => {
+    vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
+    vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mocks.snapshot.mockResolvedValue({ businessId: "biz_1", greeting: "Hi" });
+    mocks.loadCaller.mockResolvedValue({ startedAt: new Date(), callerPhone: "+14165550100" });
+    const handler = createLiveCallHandler({ domain: { db: {} as never } });
+    await handler.handle(attachRequest({ sessionId: "live_caller_id", businessId: "biz_1", callId: "call_caller_id", channel: "voice" }), response());
+    expect(mocks.loadCaller).toHaveBeenCalledWith({ db: {} }, { businessId: "biz_1", callId: "call_caller_id" });
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ callerPhone: "+14165550100" }) }));
+  });
+
   it("opens one sideband when two attaches for a session overlap", async () => {
     vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
     vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");

@@ -6,6 +6,7 @@ import {
   blockLiveCaller,
   finishLiveCall,
   getCachedBusinessSnapshot,
+  loadLiveCallForPricing,
   markLiveCallMediaStarted,
   persistCallRecording,
   prepareLiveCallTransfer,
@@ -210,6 +211,10 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
     if (signal?.aborted) throw new LiveCallStartupError("sideband_connection_failed", "attach_request_cancelled");
     const phone = request.channel === "voice";
     const call = { businessId: request.businessId, callId: request.callId };
+    const requestPhoneIsValid = typeof request.callerPhone === "string" && /^\+[1-9]\d{7,14}$/.test(request.callerPhone);
+    const callRecordPhone = phone && !requestPhoneIsValid ? (await loadLiveCallForPricing(input.domain, call))?.callerPhone : undefined;
+    const callerPhone = requestPhoneIsValid ? request.callerPhone : callRecordPhone ?? request.callerPhone;
+    if (callRecordPhone && !requestPhoneIsValid) console.info(JSON.stringify({ event: "live.caller_id.recovered_from_call_record", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId }));
     const telemetryCall = { ...call, channel: request.channel, ...(request.conversationId ? { conversationId: request.conversationId } : {}) };
     let end: LiveCallEnd | undefined;
     let controller: LiveCallController | undefined;
@@ -253,7 +258,7 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
         sessionId: request.sessionId,
         ...(request.conversationId ? { conversationId: request.conversationId } : {}),
         callControl,
-        ...(request.callerPhone ? { callerPhone: request.callerPhone } : {}),
+        ...(callerPhone ? { callerPhone } : {}),
         ...(request.intakeOnly ? { intakeOnly: true } : {}),
       },
     });

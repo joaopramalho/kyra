@@ -16,6 +16,7 @@ describe("pilot dashboard capabilities", () => {
     ["/agent", "voice"],
     ["/agent/rules", "voice"],
     ["/calls", "voice"],
+    ["/appointments", "voice"],
     ["/calls/00000000-0000-4000-8000-000000000001", "voice"],
     ["/contacts", "contacts"],
     ["/contacts/713b15f6-85ec-47b2-b8dd-e06be2c7690b", "contacts"],

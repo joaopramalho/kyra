@@ -85,6 +85,7 @@ export const SCHEMA_MIGRATIONS = [
   "0077_lmc_message_sending_status.sql",
   "0078_lmc_inbound_voice.sql",
   "0079_voice_booking_idempotency.sql",
+  "0080_voice_intake.sql",
 ] as const;
 
 const CONCURRENT_INDEX_DIRECTIVE = /^-- lobbystack:concurrent-index ([a-z][a-z0-9_]*)$/m;
