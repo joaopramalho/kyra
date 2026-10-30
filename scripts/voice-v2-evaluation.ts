@@ -118,8 +118,15 @@ export function compareVoiceEval(baseline: VoiceEvalCase[] | null, candidate: Vo
 }
 
 async function readDataset(path: string): Promise<VoiceEvalCase[]> {
-  const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-  return voiceEvalDatasetSchema.parse(parsed);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    throw new Error("VOICE_EVAL_INVALID_JSON");
+  }
+  const result = voiceEvalDatasetSchema.safeParse(parsed);
+  if (!result.success) throw new Error("VOICE_EVAL_INVALID_DATASET");
+  return result.data;
 }
 
 async function runCli(): Promise<void> {
