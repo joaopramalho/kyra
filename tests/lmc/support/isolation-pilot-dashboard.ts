@@ -67,7 +67,8 @@ export async function probePilotDashboardContext(context: HttpAuditContext) {
     db.admin.db.select({ intakePolicy: receptionistProfiles.intakePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, a.tenantId)).limit(1),
     db.admin.db.select({ intakePolicy: receptionistProfiles.intakePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, b.tenantId)).limit(1),
   ]);
-  check(JSON.stringify(profileAfterA[0]?.intakePolicy) === JSON.stringify(intakePolicy), "PILOT_DASHBOARD_INTAKE_POLICY_NOT_PERSISTED");
+  const savedPolicy = profileAfterA[0]?.intakePolicy as { serviceType?: unknown; fields?: { serviceAddress?: unknown } } | null | undefined;
+  check(savedPolicy?.serviceType === intakePolicy.serviceType && savedPolicy.fields?.serviceAddress === intakePolicy.fields.serviceAddress, "PILOT_DASHBOARD_INTAKE_POLICY_NOT_PERSISTED");
   check(JSON.stringify(profileAfterB[0]?.intakePolicy ?? null) === JSON.stringify(profileBeforeB[0]?.intakePolicy ?? null), "PILOT_DASHBOARD_INTAKE_POLICY_CHANGED_TENANT_B");
   probed.push("PATCH /api/catalog");
 

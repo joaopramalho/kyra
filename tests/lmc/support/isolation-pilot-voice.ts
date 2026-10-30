@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { appointments, businesses, calls } from "@lobbystack/db";
+import { appointments, businesses, calls, contacts, services, staff } from "@lobbystack/db";
 import { renewVoicePresenceGateway } from "@lobbystack/jobs";
 import { PILOT_ADMIN_ROUTES } from "@lobbystack/shared";
 import type { HttpAuditContext } from "./isolation-http";
@@ -145,9 +145,24 @@ export async function probePilotVoiceContext(context: HttpAuditContext) {
   // isolation rather than merely observing the capability's 404 boundary.
   await db.admin.db.update(businesses).set({ lmcVoiceEnabled: true }).where(eq(businesses.id, b.tenantId));
   try {
-    const [appointmentA] = await db.admin.db.select({ id: appointments.id }).from(appointments).where(eq(appointments.businessId, a.tenantId)).limit(1);
-    const [appointmentB] = await db.admin.db.select({ id: appointments.id }).from(appointments).where(eq(appointments.businessId, b.tenantId)).limit(1);
-    check(Boolean(appointmentA?.id && appointmentB?.id), "PILOT_VOICE_APPOINTMENT_FIXTURE_MISSING");
+    const [contactA] = await db.admin.db.select({ id: contacts.id }).from(contacts).where(eq(contacts.businessId, a.tenantId)).limit(1);
+    const [serviceA] = await db.admin.db.select({ id: services.id }).from(services).where(eq(services.businessId, a.tenantId)).limit(1);
+    const [staffA] = await db.admin.db.select({ id: staff.id }).from(staff).where(eq(staff.businessId, a.tenantId)).limit(1);
+    const [contactB] = await db.admin.db.select({ id: contacts.id }).from(contacts).where(eq(contacts.businessId, b.tenantId)).limit(1);
+    const [serviceB] = await db.admin.db.select({ id: services.id }).from(services).where(eq(services.businessId, b.tenantId)).limit(1);
+    const [staffB] = await db.admin.db.select({ id: staff.id }).from(staff).where(eq(staff.businessId, b.tenantId)).limit(1);
+    check(Boolean(contactA?.id && serviceA?.id && staffA?.id && contactB?.id && serviceB?.id && staffB?.id), "PILOT_VOICE_APPOINTMENT_FIXTURE_DEPENDENCY_MISSING");
+    const appointmentStartsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const appointmentEndsAt = new Date(appointmentStartsAt.getTime() + 60 * 60 * 1000);
+    const appointmentIds = [randomUUID(), randomUUID()];
+    if (contactA?.id && serviceA?.id && staffA?.id && contactB?.id && serviceB?.id && staffB?.id) {
+      await db.admin.db.insert(appointments).values([
+        { id: appointmentIds[0], businessId: a.tenantId, contactId: contactA.id, serviceId: serviceA.id, staffId: staffA.id, startsAt: appointmentStartsAt, endsAt: appointmentEndsAt, timezone: "UTC", status: "confirmed", sourceChannel: "voice" },
+        { id: appointmentIds[1], businessId: b.tenantId, contactId: contactB.id, serviceId: serviceB.id, staffId: staffB.id, startsAt: appointmentStartsAt, endsAt: appointmentEndsAt, timezone: "UTC", status: "confirmed", sourceChannel: "voice" },
+      ]);
+    }
+    const appointmentA = { id: appointmentIds[0]! };
+    const appointmentB = { id: appointmentIds[1]! };
     if (appointmentA?.id && appointmentB?.id) {
       const [listAResponse, listBResponse] = await Promise.all([
         request("/api/appointments", cookieA, a.tenantId),
@@ -160,7 +175,13 @@ export async function probePilotVoiceContext(context: HttpAuditContext) {
       check(listAResponse.status === 200 && listA.appointments?.some((item) => item.id === appointmentA.id) && !listA.appointments?.some((item) => item.id === appointmentB.id), `PILOT_VOICE_APPOINTMENT_LIST_A:${listAResponse.status}`);
       check(listBResponse.status === 200 && listB.appointments?.some((item) => item.id === appointmentB.id) && !listB.appointments?.some((item) => item.id === appointmentA.id), `PILOT_VOICE_APPOINTMENT_LIST_B:${listBResponse.status}`);
       probed.push("GET /api/appointments");
-      await head("/api/appointments");
+      const [headA, headB] = await Promise.all([
+        request("/api/appointments", cookieA, a.tenantId, "HEAD"),
+        request("/api/appointments", cookieB, b.tenantId, "HEAD"),
+      ]);
+      check(headA.status === 200 && await headA.text() === "", `PILOT_VOICE_APPOINTMENT_HEAD_A:${headA.status}`);
+      check(headB.status === 200 && await headB.text() === "", `PILOT_VOICE_APPOINTMENT_HEAD_B:${headB.status}`);
+      probed.push("HEAD /api/appointments");
       await options("/api/appointments");
 
       const appointmentPath = `/api/appointments/${appointmentA.id}`;
