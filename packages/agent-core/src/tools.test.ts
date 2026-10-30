@@ -69,6 +69,21 @@ describe("createReceptionistTools", () => {
     expect(domainMocks.findOpenings).toHaveBeenCalledTimes(1);
   });
 
+  it("checks the revised preferred time instead of reusing a mismatched availability result", async () => {
+    domainMocks.findOpenings.mockResolvedValue({ ok: true, openings: [
+      { startsAt: "2030-01-01T14:00:00.000Z", displayTime: "9 AM" },
+      { startsAt: "2030-01-01T17:00:00.000Z", displayTime: "12 PM" },
+      { startsAt: "2030-01-01T20:00:00.000Z", displayTime: "3 PM" },
+    ] });
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", snapshot: demoSnapshot });
+    const execute = tools.findAvailability!.execute! as (input: object, options: object) => Promise<{ openings: Array<{ startsAt: string }> }>;
+    await execute({ serviceName: "HVAC maintenance", date: "2030-01-01", preferredTime: "09:00" }, { toolCallId: "7", messages: [] });
+    const revised = await execute({ serviceName: "HVAC maintenance", date: "2030-01-01", preferredTime: "15:00" }, { toolCallId: "8", messages: [] });
+    expect(domainMocks.findOpenings).toHaveBeenCalledTimes(2);
+    expect(domainMocks.findOpenings).toHaveBeenNthCalledWith(2, expect.anything(), expect.objectContaining({ preferredHour24: 15 }));
+    expect(revised.openings[0]?.startsAt).toBe("2030-01-01T14:00:00.000Z");
+  });
+
   it("books directly by default", () => {
     expect(toolNames()).toEqual(["bookAppointment", "findAvailability", "getBusinessHours", "getBusinessServices", "searchKnowledge", "takeMessage"]);
   });
@@ -82,7 +97,7 @@ describe("createReceptionistTools", () => {
 
   it("offers no booking actions when booking is off", () => {
     const names = toolNames({ bookingMode: "off", channel: "voice", callerPhone: "+14165550100" });
-    expect(names).toEqual(["getBusinessHours", "getBusinessServices", "searchKnowledge", "takeMessage"]);
+    expect(names).toEqual(["getBusinessHours", "searchKnowledge", "takeMessage"]);
   });
 
   it("exposes only read-only business intelligence to email reasoning", () => {
@@ -104,7 +119,12 @@ describe("createReceptionistTools", () => {
   });
 
   it("limits prospect demos to answering questions and taking messages", () => {
-    expect(toolNames({ channel: "web_voice", intakeOnly: true, callControl })).toEqual(["endCall", "getBusinessHours", "getBusinessServices", "searchKnowledge", "takeMessage"]);
+    expect(toolNames({ channel: "web_voice", intakeOnly: true, callControl })).toEqual(["endCall", "getBusinessHours", "searchKnowledge", "takeMessage"]);
+  });
+
+  it("uses the voice snapshot rather than a repeated service-discovery delegation", () => {
+    expect(toolNames({ channel: "voice" })).not.toContain("getBusinessServices");
+    expect(toolNames({ channel: "web_chat" })).toContain("getBusinessServices");
   });
 
   it("offers hang-up but not transfer on browser calls", () => {

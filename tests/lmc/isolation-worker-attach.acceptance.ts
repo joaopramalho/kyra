@@ -29,8 +29,10 @@ vi.mock("openai/resources/live/sideband/ws", () => ({
     }
     send(event: unknown) {
       this.sent.push(event);
-      if ((event as { event_id?: string }).event_id === "kyra_initial_greeting")
+      if ((event as { event_id?: string }).event_id === "kyra_initial_greeting") {
+        this.emit("session.commentary.appended", { client_event_id: "kyra_initial_greeting" });
         this.emit("session.output_audio.delta", { delta: "fixture-audio" });
+      }
     }
     async *stream() {
       yield { type: "open" };

@@ -74,6 +74,11 @@ type SidebandAudioEvents = {
   off(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
 };
 
+type GreetingAckEvents = {
+  on(event: "session.commentary.appended", listener: (event: { client_event_id?: string }) => void): void;
+  off(event: "session.commentary.appended", listener: (event: { client_event_id?: string }) => void): void;
+};
+
 export type LiveCallStartupFailureReason = "sideband_connection_failed" | "greeting_start_failed";
 
 export class LiveCallStartupError extends Error {
@@ -100,6 +105,8 @@ export class LiveCallController {
   private readonly startedAt = Date.now();
   private readonly turns: Turn[] = [];
   private readonly delegations: DelegationTiming[] = [];
+  private readonly seenDelegations = new Set<string>();
+  private latestDelegationOffsetMs = -1;
   private readonly abort = new AbortController();
   private socket: SidebandWS | undefined;
   private transcriptWaiters: Array<{ offsetMs: number; resolve: () => void }> = [];
@@ -178,7 +185,7 @@ export class LiveCallController {
       await Promise.race([this.waitForSidebandOpen(socket), startupFailure]);
       console.info(JSON.stringify({ event: "live.sideband.open", sessionId: this.options.sessionId }));
       await Promise.race([this.waitForGreetingAudio(socket, startupFailure), startupFailure]);
-      console.info(JSON.stringify({ event: "live.greeting.audio_started", sessionId: this.options.sessionId }));
+      console.info(JSON.stringify({ event: "live.greeting.audio_transport_observed", delivery: "unverified", sessionId: this.options.sessionId }));
       this.ready = true;
       this.startupFailureReject = undefined;
       this.resetSilenceTimer();
@@ -226,16 +233,31 @@ export class LiveCallController {
     if (!greeting) throw new LiveCallStartupError("greeting_start_failed", "greeting_missing");
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAudio: (() => void) | undefined;
+    let onAccepted: ((event: { client_event_id?: string }) => void) | undefined;
+    let contextAccepted = false;
+    let audioTransportObserved = false;
     const audio = new Promise<void>((resolve, reject) => {
-      onAudio = () => resolve();
+      const finishIfReady = () => { if (contextAccepted && audioTransportObserved) resolve(); };
+      onAudio = () => {
+        if (!audioTransportObserved) console.info(JSON.stringify({ event: "live.greeting.audio_transport_observed", sessionId: this.options.sessionId, eventId: GREETING_EVENT_ID, audibleDelivery: "unverified" }));
+        audioTransportObserved = true;
+        finishIfReady();
+      };
+      onAccepted = (event) => {
+        if (event.client_event_id !== GREETING_EVENT_ID) return;
+        contextAccepted = true;
+        console.info(JSON.stringify({ event: "live.greeting.context_accepted", sessionId: this.options.sessionId, eventId: GREETING_EVENT_ID }));
+        finishIfReady();
+      };
       timer = setTimeout(() => reject(new LiveCallStartupError("greeting_start_failed", "greeting_audio_timeout")), GREETING_AUDIO_TIMEOUT_MS);
       (socket as unknown as SidebandAudioEvents).on("session.output_audio.delta", onAudio);
+      (socket as unknown as GreetingAckEvents).on("session.commentary.appended", onAccepted);
       try {
         // Commentary is Live's speakable-context event. instructions.append
         // only adds context and does not make the model produce audio.
         this.greetingSent = true;
         socket.send({ type: "session.commentary.append", delegation_id: null, content: greeting, event_id: GREETING_EVENT_ID });
-        console.info(JSON.stringify({ event: "live.greeting.sent", sessionId: this.options.sessionId, eventId: GREETING_EVENT_ID }));
+        console.info(JSON.stringify({ event: "live.greeting.sent", sessionId: this.options.sessionId, eventId: GREETING_EVENT_ID, deliveryStatus: "awaiting_context_ack_and_audio_transport" }));
       } catch (error) {
         reject(new LiveCallStartupError("greeting_start_failed", safeProviderCode(error)));
       }
@@ -245,6 +267,7 @@ export class LiveCallController {
     } finally {
       if (timer) clearTimeout(timer);
       if (onAudio) (socket as unknown as SidebandAudioEvents).off("session.output_audio.delta", onAudio);
+      if (onAccepted) (socket as unknown as GreetingAckEvents).off("session.commentary.appended", onAccepted);
     }
   }
 
@@ -378,6 +401,13 @@ export class LiveCallController {
 
   private async handleDelegation(event: DelegationCreatedEvent): Promise<void> {
     const delegationId = event.delegation.id;
+    if (this.seenDelegations.has(delegationId)) return;
+    this.seenDelegations.add(delegationId);
+    if (event.offset_ms < this.latestDelegationOffsetMs) {
+      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "stale_offset" }));
+      return;
+    }
+    this.latestDelegationOffsetMs = event.offset_ms;
     const receivedAt = performance.now();
     await this.waitForCallerTranscript(event.offset_ms);
     const transcriptReadyAt = performance.now();
@@ -397,6 +427,10 @@ export class LiveCallController {
       if (this.abort.signal.aborted) return;
       const errorCode = safeProviderCode(error);
       console.error(JSON.stringify({ event: "live.delegation.failed", operation: "agent_generate", sessionId: this.options.sessionId, delegationId, ...(errorCode ? { errorCode } : {}) }));
+    }
+    if (this.latestDelegationOffsetMs > event.offset_ms) {
+      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "superseded" }));
+      return;
     }
     const answeredAt = performance.now();
 

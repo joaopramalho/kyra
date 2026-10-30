@@ -8,6 +8,7 @@ export * from "./analytics";
 export * from "./booking";
 export * from "./calendar";
 export * from "./catalog";
+export * from "./service-intake";
 export * from "./compliance";
 export * from "./contacts";
 export * from "./context";

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { businessHours, calls, conversations, conversationSessions, messages, storageObjects, transcripts, websiteIngestionJobs } from "@lobbystack/db";
-import { affiliateCommissions, affiliatePayoutItems, affiliateProfiles, billingAccounts, billingTransactions, appointments, auditLogs, businessMemberships, contacts, productEvents, providerEvents, services, staff, users, businesses, notifications, outboxMessages, withBusinessTransaction, claimOutboxBatch, createDatabaseClient, enqueueOutbox, markOutboxFailed, markOutboxPublished, type Database, type DatabaseTransaction } from "@lobbystack/db";
+import { affiliateCommissions, affiliatePayoutItems, affiliateProfiles, billingAccounts, billingTransactions, appointments, auditLogs, businessMemberships, contacts, productEvents, providerEvents, services, staff, users, businesses, notifications, outboxMessages, receptionistProfiles, withBusinessTransaction, claimOutboxBatch, createDatabaseClient, enqueueOutbox, markOutboxFailed, markOutboxPublished, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { generateAffiliatePayoutRun } from "./affiliates";
 import { reconcileBillingProviderEvent } from "./billing";
 import { DASHBOARD_TEST_CALL_WIDGET_ID } from "@lobbystack/shared";
@@ -40,6 +40,41 @@ async function rollbackTest(run: (tx: DatabaseTransaction) => Promise<void>) {
 }
 
 describe.skipIf(!testUrl)("reliability against dedicated PostgreSQL roles", () => {
+  it("enforces configured onsite intake and persists the service address atomically with an idempotent booking", async () => {
+    await rollbackTest(async (tx) => {
+      const businessId = randomUUID();
+      const callerContactId = randomUUID();
+      const conversationId = randomUUID();
+      const callId = randomUUID();
+      const staffId = randomUUID();
+      const serviceId = randomUUID();
+      const now = new Date();
+      await tx.insert(businesses).values({ id: businessId, slug: businessId, name: "Intake integration", timezone: "UTC", businessType: "test", telemetryEnabled: false });
+      await tx.insert(contacts).values({ id: callerContactId, businessId, phone: "+14165550101", name: "Existing caller" });
+      await tx.insert(conversations).values({ id: conversationId, businessId, contactId: callerContactId, channel: "voice" });
+      await tx.insert(calls).values({ id: callId, businessId, conversationId, contactId: callerContactId, providerCallId: randomUUID(), transport: "phone", status: "active", startedAt: now });
+      await tx.insert(staff).values({ id: staffId, businessId, name: "Technician", timezone: "UTC" });
+      await tx.insert(services).values({ id: serviceId, businessId, name: "HVAC maintenance", slug: "hvac-maintenance", durationMinutes: 30, intakePolicy: { serviceType: "onsite", fields: { serviceAddress: "required" } } });
+      await tx.insert(businessHours).values(Array.from({ length: 7 }, (_, dayOfWeek) => ({ businessId, dayOfWeek, openMinutes: 0, closeMinutes: 1440 })));
+      await tx.execute(sql`set local role lobbystack_worker`);
+      const context = { db: tx as unknown as Database };
+      const booking = { businessId, serviceName: "HVAC maintenance", startsAt: "2030-01-01T15:00:00.000Z", timezone: "UTC", contactPhone: "+14165550101", contactName: "Jamie", channel: "voice" as const, callId, smsConsentGranted: false };
+      const incomplete = await bookForCaller(context, booking);
+      expect(incomplete).toMatchObject({ ok: false, reasonCode: "missing_required_fields", missingFields: ["serviceAddress"] });
+      expect(await tx.select({ id: appointments.id }).from(appointments).where(eq(appointments.businessId, businessId))).toHaveLength(0);
+
+      const completeBooking = { ...booking, intake: { serviceLocation: { line1: "123 Main Street", city: "Miami", region: "FL", postalCode: "33101", country: "us" }, answers: { issueDescription: "AC is not cooling" } } };
+      const first = await bookForCaller(context, completeBooking);
+      const retry = await bookForCaller(context, completeBooking);
+      expect(first).toMatchObject({ ok: true });
+      expect(retry).toEqual(first);
+      await tx.execute(sql`reset role`);
+      const persisted = await tx.select({ serviceLocation: appointments.serviceLocation, intakeAnswers: appointments.intakeAnswers, intakeCompletionStatus: appointments.intakeCompletionStatus }).from(appointments).where(eq(appointments.businessId, businessId));
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]).toMatchObject({ serviceLocation: { line1: "123 Main Street", city: "Miami", postalCode: "33101", country: "US" }, intakeAnswers: { issueDescription: "AC is not cooling" }, intakeCompletionStatus: "complete" });
+    });
+  });
+
   it("books once for an explicit alternate phone without changing the phone call's Caller ID contact", async () => {
     await rollbackTest(async (tx) => {
       const businessId = randomUUID();

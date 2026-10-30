@@ -129,6 +129,7 @@
       },
       "kinds": {
         "voice_message": "Rappel",
+        "appointment_request": "Suivi de rendez-vous (non réservé)",
         "human_handoff": "Transfert",
         "other": "Ouvert"
       }

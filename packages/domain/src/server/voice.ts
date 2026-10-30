@@ -574,7 +574,7 @@ export async function getCallDetail(
 
 export async function createVoiceFollowUpTask(
   context: DomainContext,
-  input: { businessId: string; callId?: string; callerName?: string; callbackPhone?: string; urgency?: string; callbackWindow?: string; message: string; channel?: string },
+  input: { businessId: string; callId?: string; callerName?: string; callbackPhone?: string; urgency?: string; callbackWindow?: string; message: string; channel?: string; requestKind?: "appointment_request" },
 ): Promise<{ inboxItemId: string }> {
   return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
     if (input.callId) {
@@ -583,8 +583,9 @@ export async function createVoiceFollowUpTask(
       const [call] = await tx.select({ id: calls.id }).from(calls).where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId))).limit(1).for("update");
       if (!call) throw new Error("Call not found in this business.");
     }
-    const title = `Voice message from ${input.callerName?.trim() || input.callbackPhone?.trim() || "unknown caller"}`;
+    const title = `${input.requestKind === "appointment_request" ? "Appointment follow-up" : "Voice message"} from ${input.callerName?.trim() || input.callbackPhone?.trim() || "unknown caller"}`;
     const body = [
+      input.requestKind === "appointment_request" ? "Follow-up type: Appointment request (not booked)" : null,
       input.callbackPhone?.trim() ? `Callback: ${input.callbackPhone.trim()}` : null,
       input.urgency?.trim() ? `Urgency: ${input.urgency.trim()}` : null,
       input.callbackWindow?.trim() ? `Preferred callback: ${input.callbackWindow.trim()}` : null,
@@ -592,7 +593,7 @@ export async function createVoiceFollowUpTask(
       input.message.trim(),
     ].filter((line): line is string => line !== null).join("\n");
     const retentionPlan = isContentRetentionEnabled() ? await resolveBusinessBillingPlan(tx, input.businessId) : null;
-    const metadata = Object.fromEntries(Object.entries({ callerName: input.callerName?.trim(), callbackPhone: input.callbackPhone?.trim(), urgency: input.urgency?.trim(), callbackWindow: input.callbackWindow?.trim(), channel: input.channel }).filter(([, value]) => value));
+    const metadata = Object.fromEntries(Object.entries({ callerName: input.callerName?.trim(), callbackPhone: input.callbackPhone?.trim(), urgency: input.urgency?.trim(), callbackWindow: input.callbackWindow?.trim(), channel: input.channel, requestKind: input.requestKind }).filter(([, value]) => value));
     const values = { businessId: input.businessId, kind: "voice_message", title, body, metadata, contentExpiresAt: retentionPlan ? contentExpiryForPlan(retentionPlan, "follow_ups") : null, ...(input.callId ? { relatedCallId: input.callId } : {}) };
     const existing = input.callId ? (await tx.select({ id: inboxItems.id }).from(inboxItems).where(and(eq(inboxItems.businessId, input.businessId), eq(inboxItems.relatedCallId, input.callId), eq(inboxItems.kind, "voice_message"), eq(inboxItems.status, "open"))).orderBy(desc(inboxItems.createdAt)).limit(1))[0] : null;
     const [item] = existing
@@ -625,7 +626,7 @@ export async function completeVoiceFollowUpTasks(
 export async function listOpenVoiceFollowUps(tx: DatabaseTransaction, businessId: string) {
   const group = sql`coalesce(${inboxItems.relatedCallId}, ${inboxItems.id})`;
   const latest = tx.selectDistinctOn([group], {
-    id: inboxItems.id, title: visibleFollowUpTitle, body: visibleFollowUpBody,
+    id: inboxItems.id, title: visibleFollowUpTitle, body: visibleFollowUpBody, metadata: inboxItems.metadata,
     relatedCallId: inboxItems.relatedCallId, createdAt: inboxItems.createdAt,
   }).from(inboxItems).where(and(eq(inboxItems.businessId, businessId), eq(inboxItems.kind, "voice_message"), eq(inboxItems.status, "open")))
     .orderBy(group, desc(inboxItems.createdAt), desc(inboxItems.id)).as("latest_voice_follow_ups");

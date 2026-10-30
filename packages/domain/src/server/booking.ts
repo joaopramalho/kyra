@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { lmcBookingRulesSchema } from "@lobbystack/contracts";
 import { and, asc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 
-import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, calls, closures, contacts, enqueueOutbox, lmcSettings, notifications, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, calls, closures, contacts, enqueueOutbox, lmcSettings, notifications, receptionistProfiles, services, smsConsentEvents, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
 import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
 
 import { computeAvailability } from "../availability";
@@ -14,6 +14,8 @@ import { consumeAppointmentChangeVerificationInTransaction } from "./appointment
 import { recordProductEvent } from "./productEvents";
 import { rescheduleAppointmentReminderInTransaction } from "./notifications";
 import { emitWebhookEventInTransaction } from "./publicApi/webhooks";
+import { effectiveServiceIntakePolicy, validateServiceIntake, type ServiceIntake } from "./service-intake";
+import type { ServiceIntakePolicy } from "@lobbystack/shared";
 
 type BookingInput = {
   callId?: string;
@@ -27,6 +29,7 @@ type BookingInput = {
   sourceChannel: string;
   preferredStaffId?: string;
   smsConsentGranted?: boolean;
+  intake?: ServiceIntake;
   /** Set when the public API or the MCP server made the booking; recorded in the audit log. */
   apiAudit?: ApiAudit;
 };
@@ -46,6 +49,7 @@ type AvailabilityReference = {
   serviceId: string;
   serviceName: string;
   serviceDurationMinutes: number;
+  intakePolicy: ServiceIntakePolicy;
   timezone: string;
   startsAt: Date;
   endsAt: Date;
@@ -61,7 +65,8 @@ type AvailabilityReference = {
  * waiting for an advisory lock so they do not validate against stale rules.
  */
 async function loadAvailabilityReference(tx: DatabaseTransaction, input: { businessId: string; serviceId: string; startsAt: string }): Promise<AvailabilityReference> {
-  const [service] = await tx.select({ id: services.id, name: services.name, durationMinutes: services.durationMinutes }).from(services).where(and(eq(services.id, input.serviceId), eq(services.businessId, input.businessId), eq(services.active, true))).limit(1);
+  const [service] = await tx.select({ id: services.id, name: services.name, durationMinutes: services.durationMinutes, intakePolicy: services.intakePolicy }).from(services).where(and(eq(services.id, input.serviceId), eq(services.businessId, input.businessId), eq(services.active, true))).limit(1);
+  const [profile] = await tx.select({ intakePolicy: receptionistProfiles.intakePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, input.businessId)).limit(1);
   const [business] = await tx.select({ timezone: businesses.timezone }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1);
   if (!service || !business) throw new Error("Service is not available.");
   const startsAt = new Date(input.startsAt);
@@ -80,6 +85,7 @@ async function loadAvailabilityReference(tx: DatabaseTransaction, input: { busin
     serviceId: input.serviceId,
     serviceName: service.name,
     serviceDurationMinutes: service.durationMinutes,
+    intakePolicy: effectiveServiceIntakePolicy(profile?.intakePolicy, service.intakePolicy),
     timezone: business.timezone,
     startsAt,
     endsAt,
@@ -177,6 +183,12 @@ export async function bookAppointment(
     // The first read discovers a stable, sorted lock set. Reference data is
     // reloaded after each candidate lock because it may change while we wait.
     const initialReference = await loadAvailabilityReference(tx, { businessId: input.businessId, serviceId: input.serviceId, startsAt: input.startsAt });
+    const callerName = input.contactName?.trim() || input.intake?.answers?.customerName?.trim();
+    const intake = validateServiceIntake(initialReference.intakePolicy, {
+      ...(input.intake ?? {}),
+      answers: { ...(input.intake?.answers ?? {}), ...(callerName ? { customerName: callerName } : {}), callbackPhone: input.contactPhone },
+    });
+    if (!intake.ok) throw Object.assign(new Error(intake.reason), { code: intake.reason, missingFields: intake.missingFields });
     const candidates = initialReference.activeStaffIds.filter((id) => !input.preferredStaffId || id === input.preferredStaffId);
     let selectedStaff: { id: string } | undefined;
     let selectedReference: AvailabilityReference | undefined;
@@ -208,7 +220,7 @@ export async function bookAppointment(
     const contactId = existingContacts[0]?.id ?? (await tx.insert(contacts).values({
       businessId: input.businessId,
       phone: input.contactPhone,
-      ...(input.contactName !== undefined ? { name: input.contactName } : {}),
+      ...(callerName ? { name: callerName } : {}),
     }).returning({ id: contacts.id }))[0]?.id;
     if (!contactId) {
       throw new Error("Contact could not be created.");
@@ -231,6 +243,9 @@ export async function bookAppointment(
       sourceChannel: input.sourceChannel,
       ...(input.callId ? { originCallId: input.callId } : {}),
       ...(idempotencyKey ? { idempotencyKey } : {}),
+      ...(intake.serviceLocation ? { serviceLocation: intake.serviceLocation as unknown as Record<string, unknown> } : {}),
+      ...(Object.keys(intake.answers).length ? { intakeAnswers: intake.answers } : {}),
+      intakeCompletionStatus: intake.required ? "complete" : "not_required",
       calendarSyncState: "pending",
     }).returning({ id: appointments.id, revision: appointments.revision });
     if (!appointment) {
