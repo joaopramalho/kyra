@@ -33,7 +33,15 @@ These verify opening acknowledgement/audio ordering, duplicate delegation suppre
 
 For PostgreSQL commit-time verification, apply migrations to a dedicated local test database and run the `configured onsite intake` case in `packages/domain/src/server/reliability.integration.test.ts` with `LOBBYSTACK_RELIABILITY_TEST_DATABASE_URL` set to that database. It confirms missing-address rejection, one successful appointment, one idempotent retry, and structured persisted location.
 
-The incident-provided baseline is 217 billed seconds and seven delegations for one HVAC booking, with two failed booking tool results. This is an incident report, not a fresh database measurement. The repository does not contain the exact production transcript/event fixture, so the local harness does not claim a before/after latency, address-accuracy, cost, or success-rate improvement. Production performance should be compared using `voice.delegation_completed`, `voice.call_latency_recorded`, and call billing events after rollout.
+The local aggregate evaluator is:
+
+```sh
+pnpm voice-v2:evaluate -- --candidate /path/to/candidate-eval.json --baseline /path/to/baseline-eval.json
+```
+
+`--baseline` is optional; if omitted the report explicitly says `baseline_not_supplied`. The strict, PII-free input schema is exported as `voiceEvalCaseSchema` from `scripts/voice-v2-evaluation.ts`. It summarizes repeated greetings/questions, unnecessary questions, service and availability lookup counts, tool calls per completed booking, mean/p95 delegation and first-useful-response latency, booking and intake success, annotated address/service-area accuracy, hangup rate, call duration, billed seconds, and estimated cost. A human or deterministic simulated test must provide the conversational and address-accuracy annotations; the tool does not infer words from audio, accept transcripts/addresses/phone numbers, or claim an address was geographically verified. Its aggregation and validation behavior is covered by `scripts/voice-v2-evaluation.test.ts`.
+
+The incident-provided baseline is 217 billed seconds and seven delegations for one HVAC booking, with two failed booking tool results. This is an incident report, not a fresh database measurement. The repository does not contain the exact production transcript/event fixture or per-call cost/latency/address annotations, so no full baseline dataset or numerical before/after improvement is claimed. Preserve sanitized annotations separately and compare them with the same evaluator after rollout. Production performance can also be reviewed using `voice.delegation_completed`, `voice.call_latency_recorded`, and call billing events.
 
 ## Pilot release checklist
 
