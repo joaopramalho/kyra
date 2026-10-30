@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { businesses, calls } from "@lobbystack/db";
+import { appointments, businesses, calls } from "@lobbystack/db";
 import { renewVoicePresenceGateway } from "@lobbystack/jobs";
 import { PILOT_ADMIN_ROUTES } from "@lobbystack/shared";
 import type { HttpAuditContext } from "./isolation-http";
@@ -140,4 +140,40 @@ export async function probePilotVoiceContext(context: HttpAuditContext) {
   await webhook.arrayBuffer();
   probed.push("POST /api/webhooks/openai/live");
   await options(webhookPath);
+
+  // Both tenants must have the voice capability enabled so this probes data
+  // isolation rather than merely observing the capability's 404 boundary.
+  await db.admin.db.update(businesses).set({ lmcVoiceEnabled: true }).where(eq(businesses.id, b.tenantId));
+  try {
+    const [appointmentA] = await db.admin.db.select({ id: appointments.id }).from(appointments).where(eq(appointments.businessId, a.tenantId)).limit(1);
+    const [appointmentB] = await db.admin.db.select({ id: appointments.id }).from(appointments).where(eq(appointments.businessId, b.tenantId)).limit(1);
+    check(Boolean(appointmentA?.id && appointmentB?.id), "PILOT_VOICE_APPOINTMENT_FIXTURE_MISSING");
+    if (appointmentA?.id && appointmentB?.id) {
+      const [listAResponse, listBResponse] = await Promise.all([
+        request("/api/appointments", cookieA, a.tenantId),
+        request("/api/appointments", cookieB, b.tenantId),
+      ]);
+      const [listA, listB] = await Promise.all([
+        listAResponse.json() as Promise<{ appointments?: Array<{ id: string }> }>,
+        listBResponse.json() as Promise<{ appointments?: Array<{ id: string }> }>,
+      ]);
+      check(listAResponse.status === 200 && listA.appointments?.some((item) => item.id === appointmentA.id) && !listA.appointments?.some((item) => item.id === appointmentB.id), `PILOT_VOICE_APPOINTMENT_LIST_A:${listAResponse.status}`);
+      check(listBResponse.status === 200 && listB.appointments?.some((item) => item.id === appointmentB.id) && !listB.appointments?.some((item) => item.id === appointmentA.id), `PILOT_VOICE_APPOINTMENT_LIST_B:${listBResponse.status}`);
+      probed.push("GET /api/appointments");
+      await head("/api/appointments");
+      await options("/api/appointments");
+
+      const appointmentPath = `/api/appointments/${appointmentA.id}`;
+      const foreignUpdate = await request(appointmentPath, cookieB, b.tenantId, "PATCH", {}, { serviceLocation: { line1: "12 Main Street", city: "Austin", postalCode: "78701", country: "US" } });
+      check(foreignUpdate.status === 404, `PILOT_VOICE_APPOINTMENT_CROSS_TENANT:${foreignUpdate.status}`);
+      await foreignUpdate.arrayBuffer();
+      const ownUpdate = await request(appointmentPath, cookieA, a.tenantId, "PATCH", {}, { serviceLocation: { line1: "12 Main Street", city: "Austin", postalCode: "78701", country: "US" } });
+      check(ownUpdate.status === 200, `PILOT_VOICE_APPOINTMENT_LOCATION_UPDATE:${ownUpdate.status}`);
+      await ownUpdate.arrayBuffer();
+      probed.push("PATCH /api/appointments/[appointmentId]");
+      await options("/api/appointments/[appointmentId]", appointmentPath);
+    }
+  } finally {
+    await db.admin.db.update(businesses).set({ lmcVoiceEnabled: false }).where(eq(businesses.id, b.tenantId));
+  }
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 
-import { businesses, contacts, users } from "@lobbystack/db";
+import { businesses, contacts, receptionistProfiles, users } from "@lobbystack/db";
 import { PILOT_ADMIN_ROUTES } from "@lobbystack/shared";
 import type { HttpAuditContext } from "./isolation-http";
 
@@ -57,6 +57,19 @@ export async function probePilotDashboardContext(context: HttpAuditContext) {
   probed.push("GET /api/catalog");
   await head("/api/catalog");
   await options("/api/catalog");
+
+  const intakePolicy = { serviceType: "onsite", fields: { serviceAddress: "required" } } as const;
+  const profileBeforeB = await db.admin.db.select({ intakePolicy: receptionistProfiles.intakePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, b.tenantId)).limit(1);
+  const businessIntakeUpdate = await request("/api/catalog", cookieA, a.tenantId, "PATCH", {}, { intakePolicy });
+  check(businessIntakeUpdate.status === 200, `PILOT_DASHBOARD_INTAKE_POLICY_PATCH:${businessIntakeUpdate.status}`);
+  await businessIntakeUpdate.arrayBuffer();
+  const [profileAfterA, profileAfterB] = await Promise.all([
+    db.admin.db.select({ intakePolicy: receptionistProfiles.intakePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, a.tenantId)).limit(1),
+    db.admin.db.select({ intakePolicy: receptionistProfiles.intakePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, b.tenantId)).limit(1),
+  ]);
+  check(JSON.stringify(profileAfterA[0]?.intakePolicy) === JSON.stringify(intakePolicy), "PILOT_DASHBOARD_INTAKE_POLICY_NOT_PERSISTED");
+  check(JSON.stringify(profileAfterB[0]?.intakePolicy ?? null) === JSON.stringify(profileBeforeB[0]?.intakePolicy ?? null), "PILOT_DASHBOARD_INTAKE_POLICY_CHANGED_TENANT_B");
+  probed.push("PATCH /api/catalog");
 
   const serviceCreate = await request("/api/catalog", cookieA, a.tenantId, "POST", {}, { name: "Audit service", slug: `audit-${randomUUID()}`, durationMinutes: 45 });
   const servicePayload = await serviceCreate.json() as { serviceId?: string };

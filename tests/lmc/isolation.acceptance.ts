@@ -10,7 +10,8 @@ describe("LMC exhaustive tenant-isolation acceptance", () => {
     expect(report.tableInventory.length).toBeGreaterThanOrEqual(88);
     expect(report.routeInventory.length).toBeGreaterThanOrEqual(238);
     expect([...report.probedTables].sort()).toEqual([...report.tableInventory].sort());
-    expect([...report.probedRoutes].sort()).toEqual([...report.routeInventory].sort());
+    const unprobedRoutes = report.routeInventory.filter((route) => !report.probedRoutes.includes(route));
+    expect([...report.probedRoutes].sort(), `Unprobed pilot API methods: ${unprobedRoutes.join(", ")}`).toEqual([...report.routeInventory].sort());
     expect(report.skipped).toEqual([]);
     expect(report.failures, report.failures.join("\n")).toEqual([]);
     expect(report.runtimeRoles.every((role) => !role.superuser && !role.bypassRls)).toBe(true);
