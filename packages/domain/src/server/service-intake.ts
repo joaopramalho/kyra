@@ -33,7 +33,7 @@ export type ServiceIntake = { serviceLocation?: ServiceAddress; answers?: Partia
 export type IntakeCheck = { ok: true; serviceLocation?: ServiceAddress; answers: Record<string, string>; required: boolean } | { ok: false; reason: "missing_required_fields" | "outside_service_area" | "invalid_service_address"; missingFields: IntakeField[]; validationIssues?: Array<{ field: string; code: string }> };
 
 function normalizeAddress(raw: ServiceAddress): ServiceAddress {
-  const country = raw.country.trim().toUpperCase();
+  const country = String(raw.country ?? "").trim().toUpperCase();
   const normalizedCountry = ({ "UNITED STATES": "US", "UNITED STATES OF AMERICA": "US", USA: "US", "U.S.A.": "US", CANADA: "CA" } as Record<string, string>)[country] ?? country;
   const region = raw.region?.trim();
   const florida = normalizedCountry === "US" && region?.toUpperCase() === "FLORIDA";

@@ -26,6 +26,7 @@ describe("service-specific intake", () => {
     const policy = effectiveServiceIntakePolicy(undefined, { serviceType: "onsite", fields: { serviceAddress: "required" } });
     expect(validateServiceIntake(policy, { serviceLocation: { line1: "123 Main Street", city: "Miami", region: "Florida", postalCode: "33101", country: "United States" } })).toMatchObject({ ok: true, serviceLocation: { country: "US", region: "FL" } });
     expect(validateServiceIntake(policy, { serviceLocation: { line1: "123 Main Street", city: "Miami", country: "United States of Atlantis" } })).toMatchObject({ ok: false, validationIssues: [{ field: "country", code: "invalid_country_code" }] });
+    expect(validateServiceIntake(policy, { serviceLocation: { line1: "123 Main Street", city: "Miami" } as never })).toMatchObject({ ok: false, validationIssues: [{ field: "country", code: "invalid_country_code" }] });
   });
 
   it("asks only for a required postal code and validates a configured exact service area", () => {
