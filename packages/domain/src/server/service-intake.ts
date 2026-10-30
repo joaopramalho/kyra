@@ -30,7 +30,16 @@ export function effectiveServiceIntakePolicy(business: unknown, service: unknown
 }
 
 export type ServiceIntake = { serviceLocation?: ServiceAddress; answers?: Partial<Record<IntakeField, string>> };
-export type IntakeCheck = { ok: true; serviceLocation?: ServiceAddress; answers: Record<string, string>; required: boolean } | { ok: false; reason: "missing_required_fields" | "outside_service_area" | "invalid_service_address"; missingFields: IntakeField[] };
+export type IntakeCheck = { ok: true; serviceLocation?: ServiceAddress; answers: Record<string, string>; required: boolean } | { ok: false; reason: "missing_required_fields" | "outside_service_area" | "invalid_service_address"; missingFields: IntakeField[]; validationIssues?: Array<{ field: string; code: string }> };
+
+function normalizeAddress(raw: ServiceAddress): ServiceAddress {
+  const country = raw.country.trim().toUpperCase();
+  const normalizedCountry = ({ "UNITED STATES": "US", "UNITED STATES OF AMERICA": "US", USA: "US", "U.S.A.": "US", CANADA: "CA" } as Record<string, string>)[country] ?? country;
+  const region = raw.region?.trim();
+  const florida = normalizedCountry === "US" && region?.toUpperCase() === "FLORIDA";
+  const postalCode = raw.postalCode?.trim().replace(/\s+/g, "");
+  return { ...raw, country: normalizedCountry, ...(region ? { region: florida ? "FL" : region } : {}), ...(postalCode ? { postalCode } : {}) };
+}
 
 export function validateServiceIntake(policy: ServiceIntakePolicy, input: ServiceIntake): IntakeCheck {
   const answers: Record<string, string> = {};
@@ -49,11 +58,14 @@ export function validateServiceIntake(policy: ServiceIntakePolicy, input: Servic
   const rawAddress = addressAllowed ? input.serviceLocation : undefined;
   const addressNeeded = required.includes("serviceAddress") || required.includes("postalCode");
   if (rawAddress) {
-    const parsed = serviceAddressSchema.safeParse(rawAddress);
-    if (!parsed.success) return { ok: false, reason: "invalid_service_address", missingFields: ["serviceAddress"] };
+    const parsed = serviceAddressSchema.safeParse(normalizeAddress(rawAddress));
+    if (!parsed.success) {
+      const field = parsed.error.issues[0]?.path[0]?.toString() ?? "serviceAddress";
+      return { ok: false, reason: "invalid_service_address", missingFields: [field === "postalCode" ? "postalCode" : "serviceAddress"], validationIssues: [{ field, code: field === "country" ? "invalid_country_code" : `invalid_${field}` }] };
+    }
     const address = parsed.data;
     serviceLocation = { line1: address.line1, city: address.city, country: address.country.toUpperCase(), ...(address.unit ? { unit: address.unit } : {}), ...(address.region ? { region: address.region } : {}), ...(address.postalCode ? { postalCode: address.postalCode.trim().toUpperCase() } : {}), ...(address.instructions ? { instructions: address.instructions } : {}) };
-    if (!validPostalCode(serviceLocation.country, serviceLocation.postalCode)) return { ok: false, reason: "invalid_service_address", missingFields: ["postalCode"] };
+    if (!validPostalCode(serviceLocation.country, serviceLocation.postalCode)) return { ok: false, reason: "invalid_service_address", missingFields: ["postalCode"], validationIssues: [{ field: "postalCode", code: "invalid_postal_code" }] };
   }
   for (const field of required) {
     if (field === "serviceAddress") { if (!serviceLocation) missingFields.push(field); }

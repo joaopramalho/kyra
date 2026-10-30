@@ -150,11 +150,12 @@ export async function bookForCaller(
     operationalLog("voice.booking.committed", "committed");
     return { ok: true as const, appointmentId: appointment.appointmentId, serviceName: service.name, startsAt: input.startsAt };
   } catch (error) {
-    const intakeError = error as Error & { code?: string; missingFields?: string[] };
+    const intakeError = error as Error & { code?: string; missingFields?: string[]; validationIssues?: Array<{ field: string; code: string }> };
     if (intakeError.code === "missing_required_fields" || intakeError.code === "invalid_service_address" || intakeError.code === "outside_service_area") {
       operationalLog("voice.booking.intake_incomplete", intakeError.code);
-      const reason = intakeError.code === "outside_service_area" ? "That location is outside the configured service area. Do not offer an onsite appointment; offer to take a message for the team instead." : intakeError.code === "invalid_service_address" ? "The service address needs clarification. Ask only for the missing or invalid part." : "The appointment is not booked yet. Ask only for the required intake details listed below, then retry.";
-      return { ok: false as const, reasonCode: intakeError.code, reason, missingFields: intakeError.missingFields ?? [] };
+      const invalidField = intakeError.validationIssues?.[0]?.field;
+      const reason = intakeError.code === "outside_service_area" ? "That location is outside the configured service area. Do not offer an onsite appointment; offer to take a message for the team instead." : intakeError.code === "invalid_service_address" ? `The service address needs clarification. Ask only about ${invalidField ?? "the invalid address field"}; do not ask for the entire address again.` : "The appointment is not booked yet. Ask only for the required intake details listed below, then retry.";
+      return { ok: false as const, reasonCode: intakeError.code, reason, missingFields: intakeError.missingFields ?? [], validationIssues: intakeError.validationIssues ?? [] };
     }
     const reason = bookingFailureReason(error);
     operationalLog("voice.booking.failed", reason);
