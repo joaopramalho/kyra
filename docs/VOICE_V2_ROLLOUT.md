@@ -20,6 +20,8 @@ When a caller declines required details, Kyra must not call the booking successf
 
 Calendar events intentionally do not receive service addresses in this release. The existing synchronization path does not have an explicit address-sharing consent setting, and service addresses can be sensitive. An operator correction updates the appointment and dashboard, not external calendar recipients.
 
+Contacts currently have no structured default-address field. Voice therefore asks for the appointment's service location rather than guessing from caller ID or reusing an address. A future saved-address flow needs verified customer identity, explicit confirmation of the selected address, and a correction path before it is safe to add.
+
 ## Local regression harness and baseline
 
 Run the repeatable deterministic tests:
