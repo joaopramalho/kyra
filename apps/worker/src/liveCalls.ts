@@ -74,6 +74,17 @@ function endFromCloseReason(reason: string | undefined): LiveCallEnd {
   }
 }
 
+export function actualLiveCallEnd(summary: Pick<LiveCallSummary, "closeReason" | "sessionConfirmedClosed" | "providerHangupOutcome" | "providerCallDisconnected">, requestedEnd: LiveCallEnd | undefined, channel: LiveChannel): LiveCallEnd {
+  if (requestedEnd === "transferred") return "transferred";
+  if (summary.closeReason === "remote_hangup") return "caller_hung_up";
+  if (summary.closeReason === "expired") return "session_expired";
+  if (summary.closeReason === "content") return "content_blocked";
+  if (!summary.sessionConfirmedClosed) return "connection_lost";
+  if (channel === "voice" && !summary.providerCallDisconnected) return "connection_lost";
+  if (summary.closeReason === "close_requested" && summary.providerHangupOutcome === "accepted") return requestedEnd ?? "caller_finished";
+  return endFromCloseReason(summary.closeReason);
+}
+
 export function isLivePrototypeEnabled(): boolean {
   return process.env.LIVE_PROTOTYPE_ENABLED === "true";
 }
@@ -222,14 +233,8 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
     const hangup = async () => {
       // SIP calls hang up at the provider; closing the session ends a browser call.
       if (phone) {
-        try {
-          await client.live.sessions.hangup(request.sessionId);
-          return "provider" as const;
-        } catch (error) {
-          console.error(JSON.stringify({ event: "live.hangup_failed", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, operation: "provider_hangup" }));
-          controller?.endSession();
-          throw error;
-        }
+        await client.live.sessions.hangup(request.sessionId);
+        return "provider" as const;
       }
       controller?.endSession();
       return "session" as const;
@@ -276,7 +281,8 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
     const finish = async (summary: LiveCallSummary) => {
       const seconds = providerSeconds(summary, request.channel);
       const measuredSeconds = summary.durationMs / 1000;
-      const completed = await finishLiveCall(input.domain, { ...call, seconds, measuredSeconds, end: end ?? endFromCloseReason(summary.closeReason), channel: request.channel });
+      const actualEnd = actualLiveCallEnd(summary, end, request.channel);
+      const completed = await finishLiveCall(input.domain, { ...call, seconds, measuredSeconds, end: actualEnd, channel: request.channel });
       // Only the attach that finished the call keeps its recording and reports
       // its latency, so a late retry that re-attaches to an ended call doesn't
       // copy the recording or record the call's latency twice.
@@ -288,6 +294,8 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
     controller = new LiveCallController({
       client,
       sessionId: request.sessionId,
+      callId: request.callId,
+      channel: request.channel,
       agent,
       greeting: request.greetingOverride ?? snapshot.greeting,
       silenceTimeoutMs: SILENCE_TIMEOUT_MS,
@@ -298,12 +306,12 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
         end = reason;
         controller?.endCallNow(reason);
       },
-      onEndIntent: (reason) => {
+      onEndIntent: (reason, source) => {
         end = reason;
-        console.info(JSON.stringify({ event: "live.end_intent", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason }));
+        console.info(JSON.stringify({ event: "live.end_intent", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason, source }));
       },
       onHangup: async (reason) => {
-        console.info(JSON.stringify({ event: "live.provider_hangup.requested", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason }));
+        console.info(JSON.stringify({ event: "live.provider_hangup.requested", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason, transport: phone ? "sip" : "session" }));
         const transport = await hangup();
         console.info(JSON.stringify({ event: "live.provider_hangup.accepted", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason, transport }));
       },
@@ -314,7 +322,24 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
       onClose: (summary) => {
         active.delete(request.sessionId);
         setPresence(request, false);
-        console.info(JSON.stringify({ event: "live.closed", sessionId: summary.sessionId, channel: request.channel, durationMs: summary.durationMs, billedSeconds: summary.billedSeconds, end, delegations: summary.delegations.length }));
+        console.info(JSON.stringify({
+          event: "live.closed",
+          businessId: request.businessId,
+          callId: request.callId,
+          sessionId: summary.sessionId,
+          channel: request.channel,
+          durationMs: summary.durationMs,
+          billedSeconds: summary.billedSeconds,
+          end: actualLiveCallEnd(summary, end, request.channel),
+          requestedEnd: end,
+          closeReason: summary.closeReason,
+          hangupState: summary.hangupState,
+          hangupSource: summary.hangupSource,
+          providerHangupOutcome: summary.providerHangupOutcome,
+          sessionConfirmedClosed: summary.sessionConfirmedClosed,
+          providerCallDisconnected: summary.providerCallDisconnected,
+          delegations: summary.delegations.length,
+        }));
         const pending = finish(summary).catch(logError(request.sessionId, "finish failed"));
         finishing.add(pending);
         void pending.finally(() => finishing.delete(pending));

@@ -57,6 +57,12 @@ OpenAI handles turn-taking. GPT-Live listens while it speaks, stops when the cal
 
 In the browser, the microphone runs with echo cancellation, noise suppression, and automatic gain control turned on. Phone audio arrives at OpenAI as the carrier sends it.
 
+## Verify caller hangup
+
+The worker detects explicit hangup requests from caller input transcript deltas, aggregates fragments briefly, and stops accepting delegations once closing begins. It sends the farewell and then calls the Live SIP hangup endpoint. Output audio deltas do not include a documented completion event, so the final-audio drain uses a bounded quiet/max-duration heuristic; it cannot prove what the caller physically heard.
+
+For a real inbound SIP smoke test, use an authorized test number and caller, say “I called by mistake. Can you please hang up?”, and verify the caller hears one farewell and the call disconnects. Correlate `live.hangup_intent.detected`, `live.provider_hangup.requested`, `live.provider_hangup.accepted`, `live.hangup_succeeded`, and `live.closed` by `callId` and `sessionId`. Confirm `live.closed.closeReason`, `providerHangupOutcome`, `sessionConfirmedClosed`, and `providerCallDisconnected`; an accepted HTTP request or a Sideband close alone does not confirm SIP disconnection. If the provider request fails or times out, `session.close` is attempted only as recovery and is not reported as proof of a phone hangup. Do not use a production caller or number for this smoke test without the business’s required consent and recording disclosures.
+
 ## Configure the runtime
 
 The admin and worker read these variables:

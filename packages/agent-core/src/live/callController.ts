@@ -28,6 +28,12 @@ export type DelegationTiming = {
 
 export type LiveCallSummary = {
   sessionId: string;
+  callId?: string;
+  hangupState: LiveCallHangupState;
+  hangupSource?: LiveCallEndSource;
+  providerHangupOutcome: "not_requested" | "accepted" | "failed" | "unconfirmed";
+  sessionConfirmedClosed: boolean;
+  providerCallDisconnected: boolean;
   durationMs: number;
   /** Session length OpenAI bills for, when the session closed normally. */
   billedSeconds?: number;
@@ -42,10 +48,14 @@ export type LiveCallTurn = { sequence: number; speaker: "caller" | "assistant"; 
 
 export type LiveCallTimeout = "silence_timeout" | "duration_limit";
 export type LiveCallEndReason = "caller_finished" | "spam" | "abuse" | LiveCallTimeout | "caller_hung_up" | "transferred" | "connection_lost";
+export type LiveCallEndSource = "caller_intent" | "model_tool" | "timeout" | "provider";
+export type LiveCallHangupState = "active" | "closing_requested" | "farewell_in_progress" | "hangup_requested" | "closed" | "hangup_failed";
 
 export type LiveCallControllerOptions = {
   client: OpenAI;
   sessionId: string;
+  callId?: string;
+  channel?: "voice" | "web_voice";
   agent: ReceptionistAgent;
   /** Spoken as soon as the call connects, so the caller doesn't have to speak first. */
   greeting?: string;
@@ -57,7 +67,7 @@ export type LiveCallControllerOptions = {
   onStarted?: () => void;
   onTurn?: (turn: LiveCallTurn) => void;
   onTimeout?: (reason: LiveCallTimeout) => void;
-  onEndIntent?: (reason: LiveCallEndReason) => void;
+  onEndIntent?: (reason: LiveCallEndReason, source: LiveCallEndSource) => void;
   onHangup?: (reason: LiveCallEndReason) => Promise<void> | void;
   onDelegation?: (timing: DelegationTiming) => void;
   onClose?: (summary: LiveCallSummary) => void;
@@ -82,8 +92,12 @@ const GREETING_EVENT_ID = "kyra_initial_greeting";
 const FINAL_AUDIO_IDLE_MS = 900;
 const FINAL_AUDIO_START_GRACE_MS = 2_000;
 const FINAL_AUDIO_MAX_DRAIN_MS = 4_500;
-const HANGUP_CLOSE_TIMEOUT_MS = 5_000;
 const FINAL_QUESTION_TIMEOUT_MS = 12_000;
+// The SDK has no final input-transcript event. Match the transcript assembler's
+// fragment window so an early delta cannot close a call before later text arrives.
+const CALLER_INTENT_QUIET_MS = CALLER_FRAGMENT_GAP_MS;
+const HANGUP_CONFIRMATION_TIMEOUT_MS = 5_000;
+const HANGUP_RECOVERY_TIMEOUT_MS = 2_000;
 const FALLBACK_ANSWER = "Sorry, I couldn't check that just now. Offer to take a message so the team can follow up.";
 type SidebandAudioEvents = {
   on(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
@@ -113,6 +127,18 @@ function safeProviderCode(error: unknown): string | undefined {
   return typeof code === "string" && /^[a-z0-9_.-]{1,80}$/i.test(code) ? code : undefined;
 }
 
+const NEGATIVE_HANGUP_INTENT = /\b(?:don t|do not|not ready to|not going to|what happens if|what if|can you hang up on|could you hang up on|would you hang up on)\b/;
+const DIRECT_HANGUP_INTENT = /^(?:(?:okay|ok|yes|sure)[ ,]+)?(?:(?:i called by mistake|this was a mistake)[ ,]+)?(?:(?:can|could|would) you |you can |i want to )?(?:please )?(?:hang up(?: now)?|disconnect(?: now)?|end (?:this |the )?call(?: now)?)[.! ]*$/;
+const FAREWELL_HANGUP_INTENT = /^(?:goodbye|good bye|bye|that s all|that s it|i m done|i am done|take care)[.! ]*$/;
+
+/** This classifier is called only with caller input transcript text, never assistant output. */
+export function detectsExplicitCallerHangup(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/[’']/g, " ").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ")
+    .replace(/^(?:(?:hello|hi|hey|um|uh|well|okay|ok|yes|sure|please)\s+)+/, "");
+  if (!normalized || NEGATIVE_HANGUP_INTENT.test(normalized)) return false;
+  return DIRECT_HANGUP_INTENT.test(normalized) || FAREWELL_HANGUP_INTENT.test(normalized);
+}
+
 /**
  * Holds the sideband connection for one GPT-Live session for the whole call and
  * answers every delegation with the receptionist agent.
@@ -138,14 +164,22 @@ export class LiveCallController {
   private pendingEndReason: LiveCallEndReason | undefined;
   private finalAudioIdleTimer: ReturnType<typeof setTimeout> | undefined;
   private finalAudioMaxTimer: ReturnType<typeof setTimeout> | undefined;
-  private hangupCloseTimer: ReturnType<typeof setTimeout> | undefined;
   private finalQuestionAudioIdleTimer: ReturnType<typeof setTimeout> | undefined;
   private finalQuestionTimer: ReturnType<typeof setTimeout> | undefined;
+  private callerIntentTimer: ReturnType<typeof setTimeout> | undefined;
+  private callerFarewellFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  private hangupConfirmationTimer: ReturnType<typeof setTimeout> | undefined;
+  private hangupRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
   private callerTurnCount = 0;
   private pendingEndCallerTurnCount = 0;
   private finalAudioStarted = false;
-  private hangupRequested = false;
+  private hangupState: LiveCallHangupState = "active";
+  private hangupSource: LiveCallEndSource | undefined;
+  private providerHangupOutcome: LiveCallSummary["providerHangupOutcome"] = "not_requested";
+  private farewellStartedAt: number | undefined;
   private finalQuestionPending = false;
+  private latestCallerInputForIntent: CallerInput | undefined;
+  private callerResponseAudioObserved = false;
 
   constructor(private readonly options: LiveCallControllerOptions) {}
 
@@ -169,6 +203,12 @@ export class LiveCallController {
     audioEvents.on("session.output_audio.delta", (event) => {
       this.measure(() => this.latency.receptionistAudio(event.start_ms, event.end_ms));
       if (this.finalQuestionPending) this.scheduleFinalQuestionAudioIdle();
+      if (this.hangupState === "closing_requested") {
+        clearTimeout(this.callerFarewellFallbackTimer);
+        this.startFarewellFromModelAudio();
+      } else if (this.hangupState === "active") {
+        this.callerResponseAudioObserved = true;
+      }
       if (this.pendingEndReason === "caller_finished") {
         this.finalAudioStarted = true;
         this.scheduleFinalAudioIdleHangup();
@@ -325,6 +365,66 @@ export class LiveCallController {
     }
   }
 
+  private logHangup(event: string, details: Record<string, string | number | boolean | undefined>): void {
+    console.info(JSON.stringify({ event, ...(this.options.callId ? { callId: this.options.callId } : {}), sessionId: this.options.sessionId, ...details }));
+  }
+
+  private scheduleCallerIntentDetection(input: CallerInput): void {
+    this.latestCallerInputForIntent = input;
+    clearTimeout(this.callerIntentTimer);
+    this.callerIntentTimer = setTimeout(() => {
+      if (this.hangupState !== "active" || this.latestCallerInputForIntent !== input) return;
+      if (detectsExplicitCallerHangup(input.text)) {
+        this.beginCallerIntentClosing();
+        if (this.callerResponseAudioObserved) this.startFarewellFromModelAudio();
+      }
+    }, CALLER_INTENT_QUIET_MS);
+  }
+
+  private beginCallerIntentClosing(): void {
+    if (this.finished || this.hangupState !== "active") return;
+    this.clearFinalQuestionTimeout();
+    this.pendingEndReason = "caller_finished";
+    this.pendingEndCallerTurnCount = this.callerTurnCount;
+    this.finalAudioStarted = false;
+    this.hangupSource = "caller_intent";
+    this.hangupState = "closing_requested";
+    this.latestDelegationOffsetMs = Number.POSITIVE_INFINITY;
+    this.clearTranscriptWaiters();
+    this.logHangup("live.hangup_intent.detected", { source: this.hangupSource });
+    this.logHangup("live.end_intent", { reason: this.pendingEndReason, source: this.hangupSource });
+    this.logHangup("live.hangup_closing.started", { reason: this.pendingEndReason, source: this.hangupSource });
+    this.options.onEndIntent?.(this.pendingEndReason, this.hangupSource);
+    this.scheduleFarewellFallback();
+  }
+
+  private scheduleFarewellFallback(): void {
+    clearTimeout(this.callerFarewellFallbackTimer);
+    this.callerFarewellFallbackTimer = setTimeout(() => {
+      if (this.finished || this.hangupState !== "closing_requested") return;
+      this.startFarewell("Of course. Take care!");
+    }, FINAL_AUDIO_START_GRACE_MS);
+  }
+
+  private startFarewell(text?: string, delegationId: string | null = null, eventId = `caller_farewell_${this.options.sessionId}`): void {
+    if (this.finished || this.hangupState !== "closing_requested") return;
+    this.hangupState = "farewell_in_progress";
+    this.farewellStartedAt = Date.now();
+    this.finalAudioStarted = false;
+    this.logHangup("live.hangup_farewell.started", { source: this.hangupSource ?? "provider" });
+    if (text) this.socket?.send({ type: "session.commentary.append", delegation_id: delegationId, content: text, event_id: eventId });
+    this.beginFinalAudioDrain();
+  }
+
+  private startFarewellFromModelAudio(): void {
+    if (this.hangupState !== "closing_requested") return;
+    clearTimeout(this.callerFarewellFallbackTimer);
+    this.hangupState = "farewell_in_progress";
+    this.farewellStartedAt = Date.now();
+    this.logHangup("live.hangup_farewell.started", { source: this.hangupSource ?? "provider", audioSource: "live_model" });
+    this.beginFinalAudioDrain();
+  }
+
   /** Stops handling the call and ends its session. Resolves once OpenAI has been asked to hang up. */
   close(): Promise<void> {
     this.finish("sideband_closed");
@@ -332,21 +432,29 @@ export class LiveCallController {
   }
 
   /** Record an end intent; caller-finished waits until its farewell is appended. */
-  requestEndCall(reason: LiveCallEndReason): void {
-    if (this.finished || this.hangupRequested || this.pendingEndReason) return;
+  requestEndCall(reason: LiveCallEndReason, source: LiveCallEndSource = "model_tool"): void {
+    if (this.finished || this.hangupState !== "active") return;
     this.clearFinalQuestionTimeout();
     this.pendingEndReason = reason;
     this.pendingEndCallerTurnCount = this.callerTurnCount;
     this.finalAudioStarted = false;
-    this.options.onEndIntent?.(reason);
+    this.hangupSource = source;
+    this.hangupState = "closing_requested";
+    this.logHangup("live.end_intent", { reason, source: this.hangupSource });
+    this.options.onEndIntent?.(reason, this.hangupSource);
+    this.logHangup("live.hangup_closing.started", { reason, source: this.hangupSource });
     if (reason !== "caller_finished") void this.requestProviderHangup(reason);
+    else this.scheduleFarewellFallback();
   }
 
   /** Safety endings such as abuse and duration limits do not wait for speech. */
   endCallNow(reason: LiveCallEndReason): void {
-    if (this.finished || this.hangupRequested) return;
+    if (this.finished || this.hangupState !== "active") return;
     this.pendingEndReason = reason;
-    this.options.onEndIntent?.(reason);
+    this.hangupSource = "timeout";
+    this.hangupState = "closing_requested";
+    this.logHangup("live.end_intent", { reason, source: this.hangupSource });
+    this.options.onEndIntent?.(reason, this.hangupSource);
     void this.requestProviderHangup(reason);
   }
 
@@ -381,7 +489,9 @@ export class LiveCallController {
 
   private appendTranscript(role: Turn["role"], delta: string, startMs: number, endMs: number): void {
     this.resetSilenceTimer();
+    if (this.hangupState !== "active") return;
     let startsNewCallerInput = false;
+    let callerInput: CallerInput | undefined;
     if (role === "caller") {
       const input = this.callerInputs.at(-1);
       const continuesConsumedInput = input?.consumed && input.consumedAtOffsetMs !== undefined && startMs < input.consumedAtOffsetMs;
@@ -390,8 +500,10 @@ export class LiveCallController {
         input.startMs = Math.min(input.startMs, startMs);
         input.endMs = Math.max(input.endMs, endMs);
         input.text += delta;
+        callerInput = input;
       } else {
-        this.callerInputs.push({ startMs, endMs, text: delta, consumed: false });
+        callerInput = { startMs, endMs, text: delta, consumed: false };
+        this.callerInputs.push(callerInput);
         startsNewCallerInput = true;
       }
     }
@@ -414,6 +526,8 @@ export class LiveCallController {
       }
       return;
     }
+    this.callerResponseAudioObserved = false;
+    if (callerInput) this.scheduleCallerIntentDetection(callerInput);
     this.clearFinalQuestionTimeout();
     this.callerTurnCount += 1;
     if (this.pendingEndReason === "caller_finished" && this.callerTurnCount > this.pendingEndCallerTurnCount) {
@@ -491,6 +605,10 @@ export class LiveCallController {
 
   private async handleDelegation(event: DelegationCreatedEvent): Promise<void> {
     const delegationId = event.delegation.id;
+    if (this.hangupState !== "active") {
+      this.logHangup("live.delegation.ignored", { delegationId, reasonCode: "call_closing" });
+      return;
+    }
     console.info(JSON.stringify({ event: "live.delegation.received", sessionId: this.options.sessionId, delegationId, delegationOffsetMs: event.offset_ms }));
     if (this.seenDelegations.has(delegationId)) {
       console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "duplicate_delegation" }));
@@ -505,8 +623,8 @@ export class LiveCallController {
     const receivedAt = performance.now();
     const callerInput = await this.waitForCallerTranscript(event.offset_ms);
     const transcriptReadyAt = performance.now();
-    if (this.finished || this.abort.signal.aborted) return;
-    if (this.latestDelegationOffsetMs > event.offset_ms) {
+    if (this.finished || this.abort.signal.aborted || this.hangupState !== "active") return;
+    if (this.latestDelegationOffsetMs > event.offset_ms && this.hangupState === "active") {
       console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "superseded_delegation", delegationOffsetMs: event.offset_ms }));
       return;
     }
@@ -537,6 +655,13 @@ export class LiveCallController {
       const errorCode = safeProviderCode(error);
       console.error(JSON.stringify({ event: "live.delegation.failed", operation: "agent_generate", sessionId: this.options.sessionId, delegationId, ...(errorCode ? { errorCode } : {}) }));
     }
+    if (this.hangupState !== "active") {
+      if (this.hangupState === "closing_requested" && this.hangupSource === "model_tool" && this.pendingEndReason === "caller_finished") {
+        clearTimeout(this.callerFarewellFallbackTimer);
+        this.startFarewell(failed ? "Of course. Take care!" : answer, delegationId, `answer_${delegationId}`);
+      }
+      return;
+    }
     if (this.latestDelegationOffsetMs > event.offset_ms) {
       console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "superseded_delegation", delegationOffsetMs: event.offset_ms }));
       return;
@@ -544,7 +669,6 @@ export class LiveCallController {
     const answeredAt = performance.now();
 
     this.socket?.send({ type: "session.commentary.append", delegation_id: delegationId, content: answer, event_id: `answer_${delegationId}` });
-    if (this.pendingEndReason === "caller_finished" && this.pendingEndCallerTurnCount === this.callerTurnCount) this.beginFinalAudioDrain();
 
     const timing: DelegationTiming = {
       delegationId,
@@ -567,32 +691,38 @@ export class LiveCallController {
     clearTimeout(this.finalAudioIdleTimer);
     clearTimeout(this.finalAudioMaxTimer);
     this.finalAudioMaxTimer = setTimeout(() => {
-      if (this.pendingEndReason === "caller_finished") void this.requestProviderHangup("caller_finished");
+      if (this.pendingEndReason === "caller_finished" && this.hangupState === "farewell_in_progress") void this.requestProviderHangup("caller_finished");
     }, FINAL_AUDIO_MAX_DRAIN_MS);
     clearTimeout(this.finalAudioIdleTimer);
     this.finalAudioIdleTimer = setTimeout(() => {
-      if (this.pendingEndReason === "caller_finished") void this.requestProviderHangup("caller_finished");
+      if (this.pendingEndReason === "caller_finished" && this.hangupState === "farewell_in_progress") {
+        this.logHangup("live.hangup_farewell.completed", { source: this.hangupSource ?? "provider", ...(this.farewellStartedAt ? { durationMs: Date.now() - this.farewellStartedAt } : {}) });
+        void this.requestProviderHangup("caller_finished");
+      }
     }, this.finalAudioStarted ? FINAL_AUDIO_IDLE_MS : FINAL_AUDIO_START_GRACE_MS);
   }
 
   private scheduleFinalAudioIdleHangup(): void {
     clearTimeout(this.finalAudioIdleTimer);
     this.finalAudioIdleTimer = setTimeout(() => {
-      if (this.pendingEndReason === "caller_finished") void this.requestProviderHangup("caller_finished");
+      if (this.pendingEndReason === "caller_finished" && this.hangupState === "farewell_in_progress") {
+        this.logHangup("live.hangup_farewell.completed", { source: this.hangupSource ?? "provider", ...(this.farewellStartedAt ? { durationMs: Date.now() - this.farewellStartedAt } : {}) });
+        void this.requestProviderHangup("caller_finished");
+      }
     }, FINAL_AUDIO_IDLE_MS);
   }
 
   private scheduleFinalQuestionAudioIdle(): void {
     clearTimeout(this.finalQuestionAudioIdleTimer);
     this.finalQuestionAudioIdleTimer = setTimeout(() => {
-      if (!this.finalQuestionPending || this.finished) return;
+      if (!this.finalQuestionPending || this.finished || this.hangupState !== "active") return;
       clearTimeout(this.finalQuestionTimer);
       this.finalQuestionTimer = setTimeout(() => {
-        if (!this.finalQuestionPending || this.finished || this.hangupRequested) return;
+        if (!this.finalQuestionPending || this.finished || this.hangupState !== "active") return;
         this.finalQuestionPending = false;
         this.socket?.send({ type: "session.commentary.append", delegation_id: null, content: "I haven't heard back, so I'll let you go. Goodbye.", event_id: `final_silence_${this.options.sessionId}` });
-        this.requestEndCall("caller_finished");
-        this.beginFinalAudioDrain();
+        this.requestEndCall("caller_finished", "timeout");
+        this.startFarewell();
       }, FINAL_QUESTION_TIMEOUT_MS);
     }, FINAL_AUDIO_IDLE_MS);
   }
@@ -604,46 +734,106 @@ export class LiveCallController {
   }
 
   private async requestProviderHangup(reason: LiveCallEndReason): Promise<void> {
-    if (this.hangupRequested || this.finished) return;
-    this.hangupRequested = true;
+    if (["hangup_requested", "closed", "hangup_failed"].includes(this.hangupState) || this.finished) return;
+    this.hangupState = "hangup_requested";
+    this.providerHangupOutcome = "unconfirmed";
     clearTimeout(this.finalAudioIdleTimer);
     clearTimeout(this.finalAudioMaxTimer);
-    this.hangupCloseTimer = setTimeout(() => this.finish(reason, undefined, true), HANGUP_CLOSE_TIMEOUT_MS);
+    let timedOut = false;
+    const confirmationTimeout = new Promise<never>((_resolve, reject) => {
+      this.hangupConfirmationTimer = setTimeout(() => {
+        timedOut = true;
+        this.providerHangupOutcome = this.providerHangupOutcome === "accepted" ? "unconfirmed" : "failed";
+        this.hangupState = "hangup_failed";
+        this.logHangup("live.provider_hangup.failed", { reasonCode: this.providerHangupOutcome === "unconfirmed" ? "session_close_confirmation_timeout" : "provider_request_timeout" });
+        this.logHangup("live.hangup_failed", { reason, source: this.hangupSource ?? "provider" });
+        this.requestSessionCloseRecovery(reason);
+        reject(new Error("hangup_confirmation_timeout"));
+      }, HANGUP_CONFIRMATION_TIMEOUT_MS);
+    });
     try {
-      this.sessionEnded = this.options.onHangup
+      const providerRequest = this.options.onHangup
         ? Promise.resolve(this.options.onHangup(reason)).then(() => undefined)
         : this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined);
+      this.sessionEnded = Promise.race([providerRequest, confirmationTimeout]);
       await this.sessionEnded;
-      console.info(JSON.stringify({ event: "live.hangup_succeeded", sessionId: this.options.sessionId, reason, finalAudioObserved: this.finalAudioStarted }));
+      if (!timedOut && !this.finished) {
+        this.providerHangupOutcome = "accepted";
+      }
     } catch (error) {
-      // The provider may still close by its own timeout; retain bounded local finalization.
-      console.error(JSON.stringify({ event: "live.hangup_failed", sessionId: this.options.sessionId, reason, ...(safeProviderCode(error) ? { errorCode: safeProviderCode(error) } : {}) }));
+      if (!timedOut) {
+        this.providerHangupOutcome = "failed";
+        this.hangupState = "hangup_failed";
+        this.logHangup("live.provider_hangup.failed", { reason, source: this.hangupSource ?? "provider", ...(safeProviderCode(error) ? { errorCode: safeProviderCode(error) } : {}) });
+        this.logHangup("live.hangup_failed", { reason, source: this.hangupSource ?? "provider" });
+        this.requestSessionCloseRecovery(reason);
+      }
     }
+  }
+
+  private requestSessionCloseRecovery(reason: LiveCallEndReason): void {
+    if (this.finished || this.hangupRecoveryTimer) return;
+    this.logHangup("live.session_close.recovery_requested", { reason, outcomeIsSipDisconnect: false });
+    try {
+      this.endSession();
+    } catch {
+      this.logHangup("live.session_close.recovery_failed", { reason });
+    }
+    this.hangupRecoveryTimer = setTimeout(() => {
+      if (this.finished) return;
+      this.logHangup("live.hangup_failed", { reason, reasonCode: "session_close_not_confirmed" });
+      this.finish("hangup_recovery_timeout", undefined, false);
+    }, HANGUP_RECOVERY_TIMEOUT_MS);
   }
 
   private finish(closeReason?: string, billedSeconds?: number, sessionClosed = false): void {
     if (this.finished) return;
-    this.finished = true;
-    this.clearTranscriptWaiters();
-    // Without the sideband nobody answers delegations, so end the session
-    // rather than leave the caller talking to it while OpenAI keeps billing.
-    if (!sessionClosed && !this.hangupRequested) {
-      this.hangupRequested = true;
-      this.sessionEnded = this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined, () => undefined);
+    if (!sessionClosed && this.hangupState === "active") {
+      this.hangupSource = "provider";
+      void this.requestProviderHangup("connection_lost");
     }
+    if (sessionClosed) {
+      if (closeReason === "close_requested" && this.hangupState === "hangup_requested" && this.providerHangupOutcome === "unconfirmed") {
+        // The terminal Live event raced the HTTP response. It confirms closure;
+        // the Worker still records the endpoint response independently.
+        this.providerHangupOutcome = "accepted";
+      }
+      this.hangupState = "closed";
+    } else if (this.hangupState !== "hangup_failed") {
+      if (this.providerHangupOutcome === "accepted") this.providerHangupOutcome = "unconfirmed";
+      this.hangupState = "hangup_failed";
+    }
+    this.finished = true;
+    clearTimeout(this.hangupConfirmationTimer);
+    clearTimeout(this.hangupRecoveryTimer);
+    this.clearTranscriptWaiters();
     clearTimeout(this.silenceTimer);
     clearTimeout(this.durationTimer);
     clearTimeout(this.finalAudioIdleTimer);
     clearTimeout(this.finalAudioMaxTimer);
-    clearTimeout(this.hangupCloseTimer);
     this.clearFinalQuestionTimeout();
+    clearTimeout(this.callerIntentTimer);
+    clearTimeout(this.callerFarewellFallbackTimer);
     this.abort.abort();
     this.socket?.close({ code: 1000, reason: "session finished" });
     this.emitFinishedTurns(true);
     let latency: LiveCallLatency | undefined;
     this.measure(() => { latency = this.latency.summarize(); });
+    const providerCallDisconnected = this.options.channel === "voice" && sessionClosed && (
+      closeReason === "remote_hangup" || (closeReason === "close_requested" && this.providerHangupOutcome === "accepted")
+    );
+    if (providerCallDisconnected) this.logHangup("live.provider_call.disconnected", { closeReason, source: this.hangupSource ?? "provider" });
+    if (sessionClosed && closeReason === "close_requested" && this.providerHangupOutcome === "accepted") {
+      this.logHangup("live.hangup_succeeded", { source: this.hangupSource ?? "provider", closeReason });
+    }
     this.options.onClose?.({
       sessionId: this.options.sessionId,
+      ...(this.options.callId ? { callId: this.options.callId } : {}),
+      hangupState: this.hangupState,
+      ...(this.hangupSource ? { hangupSource: this.hangupSource } : {}),
+      providerHangupOutcome: this.providerHangupOutcome,
+      sessionConfirmedClosed: sessionClosed,
+      providerCallDisconnected,
       durationMs: Date.now() - this.startedAt,
       delegations: this.delegations,
       ...(billedSeconds !== undefined ? { billedSeconds } : {}),

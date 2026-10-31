@@ -28,5 +28,6 @@ describe("voice intake instructions", () => {
     expect(live).toContain("retain and combine every caller fact across turns");
     expect(live).toContain("Cancel only after verification succeeds and the caller explicitly confirms");
     expect(live).toContain("After a successful cancellation or saved follow-up");
+    expect(live).toContain("the application independently detects that request");
   });
 });

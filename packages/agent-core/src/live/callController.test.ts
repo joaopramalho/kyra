@@ -28,9 +28,9 @@ vi.mock("openai/resources/live/sideband/ws", () => ({
   },
 }));
 
-import { LiveCallController, LiveCallStartupError, type LiveCallSummary, type LiveCallTurn } from "./callController";
+import { detectsExplicitCallerHangup, LiveCallController, LiveCallStartupError, type LiveCallSummary, type LiveCallTurn } from "./callController";
 
-function createController(options: { silenceTimeoutMs?: number; onGenerate?: () => void; onHangup?: (reason: string) => void; toolNames?: string[] } = {}) {
+function createController(options: { silenceTimeoutMs?: number; onGenerate?: () => void; onHangup?: (reason: string) => void | Promise<void>; toolNames?: string[]; channel?: "voice" | "web_voice" } = {}) {
   const generate = vi.fn(async () => { options.onGenerate?.(); return { text: "We're open until 5.", steps: [{ toolCalls: (options.toolNames ?? ["getBusinessHours"]).map((toolName) => ({ toolName })) }] }; });
   const turns: LiveCallTurn[] = [];
   const closed: LiveCallSummary[] = [];
@@ -65,6 +65,29 @@ beforeEach(() => { sockets.length = 0; behavior.autoAudio = true; behavior.openF
 afterEach(() => { vi.useRealTimers(); });
 
 describe("LiveCallController startup and media", () => {
+  it.each([
+    "Can you please hang up?",
+    "Please hang up.",
+    "I want to end this call.",
+    "Please disconnect.",
+    "You can end the call now.",
+    "Hello, um, I called by mistake. Can you please hang up",
+    "Goodbye",
+    "That's all",
+  ])("detects explicit caller hangup: %s", (text) => {
+    expect(detectsExplicitCallerHangup(text)).toBe(true);
+  });
+
+  it.each([
+    "Don't hang up.",
+    "I'm not ready to hang up.",
+    "What happens if I hang up?",
+    "Can you hang up on someone else?",
+    "What does hang up mean?",
+  ])("does not treat ambiguous or negative wording as a hangup: %s", (text) => {
+    expect(detectsExplicitCallerHangup(text)).toBe(false);
+  });
+
   it("sends one speakable greeting and requires its context acknowledgement plus output audio", async () => {
     behavior.autoAudio = false;
     const state = createController();
@@ -266,20 +289,22 @@ describe("LiveCallController startup and media", () => {
     expect(providerHangup).toHaveBeenCalledWith("caller_finished");
   });
 
-  it("does not hang up after the caller interrupts a pending farewell", async () => {
+  it("does not reopen a call after the caller has requested hangup", async () => {
     let requestEnd: () => void = () => {};
     const state = createController({ onGenerate: () => requestEnd() });
     requestEnd = () => state.controller.requestEndCall("caller_finished");
     await state.start;
-    state.socket.emit("session.input_transcript.delta", { delta: "Goodbye.", start_ms: 800, end_ms: 1_000 });
+    state.socket.emit("session.input_transcript.delta", { delta: "We are all set.", start_ms: 800, end_ms: 1_000 });
     state.socket.emit("session.delegation.created", { delegation: { id: "bye_2" }, offset_ms: 900 });
     await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "bye_2" })));
     state.socket.emit("session.input_transcript.delta", { delta: "Actually, one more thing.", start_ms: 1_800, end_ms: 2_000 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "late_after_end" }, offset_ms: 2_100 });
     await new Promise((resolve) => setTimeout(resolve, 950));
-    expect(state.onHangup).not.toHaveBeenCalled();
+    expect(state.onHangup).toHaveBeenCalledOnce();
+    expect(state.generate).toHaveBeenCalledOnce();
   });
 
-  it("closes after silence only when a final team follow-up question was asked", async () => {
+  it("uses the explicit final-question signal and closes after twelve seconds of silence", async () => {
     const state = await setup();
     vi.useFakeTimers();
     state.socket.emit("session.output_transcript.delta", { delta: "Would you like me to have the team follow up with you?", start_ms: 1_000, end_ms: 1_500 });
@@ -299,6 +324,64 @@ describe("LiveCallController startup and media", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     expect(state.socket.sent).not.toContainEqual(expect.objectContaining({ event_id: "final_silence_live_1" }));
     expect(state.onHangup).not.toHaveBeenCalled();
+  });
+
+  it("reproduces the repeated-greeting call without reopening or double-hanging up", async () => {
+    const state = await setup({ channel: "voice" });
+    vi.useFakeTimers();
+    state.socket.emit("session.input_transcript.delta", { delta: "Hello, um, I called by mistake. Can you please hang ", start_ms: 800, end_ms: 1_000 });
+    await vi.advanceTimersByTimeAsync(400);
+    state.socket.emit("session.input_transcript.delta", { delta: "up", start_ms: 1_000, end_ms: 1_100 });
+    state.socket.emit("session.output_transcript.delta", { delta: "Sure, I'll hang up now. Take care!", start_ms: 1_200, end_ms: 1_500 });
+    state.socket.emit("session.output_audio.delta", { delta: "farewell audio", start_ms: 1_200, end_ms: 1_500 });
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(state.generate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(state.onHangup).toHaveBeenCalledTimes(1);
+
+    state.socket.emit("session.input_transcript.delta", { delta: "Take care", start_ms: 1_600, end_ms: 1_700 });
+    state.socket.emit("session.input_transcript.delta", { delta: ". Hello", start_ms: 1_700, end_ms: 1_800 });
+    state.socket.emit("session.output_transcript.delta", { delta: "Hi there, how can I help?", start_ms: 1_900, end_ms: 2_100 });
+    state.socket.emit("session.input_transcript.delta", { delta: "Um, can you please hang up", start_ms: 2_200, end_ms: 2_500 });
+    state.socket.emit("session.output_transcript.delta", { delta: "Okay, ending the call.", start_ms: 2_600, end_ms: 2_800 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "late_goodbye" }, offset_ms: 2_200 });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(state.generate).not.toHaveBeenCalled();
+    expect(state.onHangup).toHaveBeenCalledTimes(1);
+    expect(state.socket.sent.filter((event) => (event as { event_id?: string }).event_id === "kyra_initial_greeting")).toHaveLength(1);
+    expect(state.socket.sent.filter((event) => (event as { type?: string }).type === "session.commentary.append" && (event as { event_id?: string }).event_id !== "kyra_initial_greeting")).toHaveLength(0);
+
+    state.socket.emit("session.closed", { reason: "close_requested", usage: { seconds: 4 } });
+    expect(state.turns.filter((turn) => turn.speaker === "assistant" && turn.text.includes("hang up"))).toHaveLength(1);
+    expect(state.closed).toEqual([expect.objectContaining({ providerCallDisconnected: true, providerHangupOutcome: "accepted", hangupState: "closed" })]);
+  });
+
+  it("waits for later transcript fragments before acting on an early farewell word", async () => {
+    const state = await setup();
+    vi.useFakeTimers();
+    state.socket.emit("session.input_transcript.delta", { delta: "Goodbye", start_ms: 800, end_ms: 900 });
+    await vi.advanceTimersByTimeAsync(1_000);
+    state.socket.emit("session.input_transcript.delta", { delta: ", actually I have one more question", start_ms: 900, end_ms: 1_400 });
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(state.onHangup).not.toHaveBeenCalled();
+    expect(state.generate).not.toHaveBeenCalled();
+  });
+
+  it("never detects hangup intent from assistant transcript output", async () => {
+    const state = await setup();
+    vi.useFakeTimers();
+    state.socket.emit("session.output_transcript.delta", { delta: "Please hang up now.", start_ms: 800, end_ms: 1_000 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(state.onHangup).not.toHaveBeenCalled();
+  });
+
+  it("uses session.close only as explicit recovery when the SIP hangup endpoint fails", async () => {
+    const state = await setup({ channel: "voice", onHangup: async () => { throw Object.assign(new Error("provider failed"), { code: "hangup_rejected" }); } });
+    vi.useFakeTimers();
+    state.controller.endCallNow("abuse");
+    await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({ type: "session.close" })));
+    state.socket.emit("session.closed", { reason: "close_requested" });
+    expect(state.closed).toEqual([expect.objectContaining({ sessionConfirmedClosed: true, providerCallDisconnected: false, providerHangupOutcome: "failed" })]);
   });
 
   it("reports finished turns in order and billed seconds on close", async () => {
@@ -324,10 +407,10 @@ describe("LiveCallController startup and media", () => {
   });
 
   it("hangs up and finalizes when the sideband drops mid-call", async () => {
-    const { socket, closed, hangup } = await setup();
+    const { socket, closed, onHangup } = await setup();
     socket.emit("close");
-    expect(hangup).toHaveBeenCalledWith("live_1");
-    expect(closed).toEqual([expect.objectContaining({ closeReason: "sideband_closed" })]);
+    expect(onHangup).toHaveBeenCalledWith("connection_lost");
+    expect(closed).toEqual([expect.objectContaining({ closeReason: "sideband_closed", sessionConfirmedClosed: false, providerCallDisconnected: false })]);
   });
 
   it("times out after a stretch of silence", async () => {
