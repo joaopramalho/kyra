@@ -188,7 +188,7 @@ export async function bookAppointment(
       ...(input.intake ?? {}),
       answers: { ...(input.intake?.answers ?? {}), ...(callerName ? { customerName: callerName } : {}), callbackPhone: input.contactPhone },
     });
-    if (!intake.ok) throw Object.assign(new Error(intake.reason), { code: intake.reason, missingFields: intake.missingFields });
+    if (!intake.ok) throw Object.assign(new Error(intake.reason), { code: intake.reason, missingFields: intake.missingFields, validationIssues: intake.validationIssues });
     const candidates = initialReference.activeStaffIds.filter((id) => !input.preferredStaffId || id === input.preferredStaffId);
     let selectedStaff: { id: string } | undefined;
     let selectedReference: AvailabilityReference | undefined;

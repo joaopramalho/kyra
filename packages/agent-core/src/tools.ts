@@ -11,7 +11,7 @@ import {
   verifyCallerForChange,
   type DomainContext,
 } from "@lobbystack/domain";
-import { isTransferPermitted, normalizeAppointmentChangePolicy, normalizeBookingMode, type BusinessContextSnapshot } from "@lobbystack/shared";
+import { isTransferPermitted, normalizeAppointmentChangePolicy, normalizeBookingMode, type BusinessContextSnapshot, type ServiceAddress } from "@lobbystack/shared";
 import { tool, type ToolSet } from "ai";
 import { DateTime } from "luxon";
 import { z } from "zod";
@@ -175,6 +175,10 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
   if (bookingMode === "instant") {
     const availabilityCache = new Map<string, ReturnType<typeof findOpenings>>();
     const offeredSlots = new Set<string>();
+    // These records belong to this agent instance, which is created for one call.
+    // A correction replaces only the field the caller changed.
+    let addressState: Partial<ServiceAddress> = {};
+    const bookingAttempts = new Map<string, Promise<Awaited<ReturnType<typeof bookForCaller>>>>();
     tools.findAvailability = tool({
       description: "Find open appointment times for one service on one date. Never state availability without calling this.",
       inputSchema: z.object({
@@ -200,7 +204,10 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         availabilityCache.set(cacheKey, lookup);
         try {
           const result = await lookup;
-          if (result.ok) for (const opening of result.openings) offeredSlots.add(JSON.stringify([serviceName.trim().toLowerCase(), opening.startsAt]));
+          if (result.ok) for (const opening of result.openings) {
+            offeredSlots.add(JSON.stringify([serviceName.trim().toLowerCase(), opening.startsAt]));
+            offeredSlots.add(JSON.stringify([result.serviceName.trim().toLowerCase(), opening.startsAt]));
+          }
           logOperational("voice.availability.completed", { operation: "find_availability", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: result.ok ? "completed" : "unavailable", resultCount: result.ok ? result.openings.length : 0, durationMs: Date.now() - startedAt });
           return result;
         } catch {
@@ -218,11 +225,12 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         contactName: z.string().optional(),
         contactPhone: phone.optional().describe("Only set if caller explicitly chose a different callback number; otherwise use trusted Caller ID."),
         smsConsentGranted: z.boolean().describe("True only if the caller agreed to receive a confirmation and reminder text."),
-        serviceLocation: z.object({ line1: z.string(), unit: z.string().optional(), city: z.string(), region: z.string().optional(), postalCode: z.string().optional(), country: z.string(), instructions: z.string().optional() }).optional().describe("The job location, not the contact's default address. Only include details the caller provided or confirmed."),
+        serviceLocation: z.object({ line1: z.string().optional(), unit: z.string().optional(), city: z.string().optional(), region: z.string().optional(), postalCode: z.string().optional(), country: z.string().optional(), instructions: z.string().optional() }).optional().describe("New or corrected job-location fields. Supply only details the caller provided or confirmed; previously supplied fields are retained for this call."),
         intakeAnswers: z.record(z.string(), z.string()).optional().describe("Configured service intake answers already provided by the caller, such as issueDescription or equipmentDetails."),
       }),
       execute: async (input) => {
         const startedAt = Date.now();
+        if (input.serviceLocation) addressState = { ...addressState, ...Object.fromEntries(Object.entries(input.serviceLocation).filter(([, value]) => value !== undefined)) };
         const offeredSlotKey = JSON.stringify([input.serviceName.trim().toLowerCase(), input.startsAt]);
         if (!offeredSlots.has(offeredSlotKey)) {
           logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "slot_not_offered", durationMs: Date.now() - startedAt });
@@ -243,8 +251,19 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           logOperational("voice.booking.failed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: "business_did_ambiguous", durationMs: Date.now() - startedAt });
           return { ok: false, reason: "That number is the business line, not a caller callback number. Clarify whether to use the number they are calling from or ask for another number." };
         }
+        if (input.serviceLocation && (!addressState.line1 || !addressState.city || !addressState.country)) {
+          const missingFields = (["line1", "city", "country"] as const).filter((field) => !addressState[field]);
+          return { ok: false, reasonCode: "missing_required_fields", reason: `The job address is incomplete. Ask only for ${missingFields.join(", ")}.`, missingFields };
+        }
+        const serviceLocation = addressState.line1 && addressState.city && addressState.country ? addressState as ServiceAddress : undefined;
+        const attemptKey = JSON.stringify([input.serviceName.trim().toLowerCase(), input.startsAt, selected, input.contactName ?? "", input.smsConsentGranted, serviceLocation ?? null, input.intakeAnswers ?? null]);
+        const previousAttempt = bookingAttempts.get(attemptKey);
+        if (previousAttempt) {
+          logOperational("voice.booking.duplicate_suppressed", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), reasonCode: "unchanged_input" });
+          return await previousAttempt;
+        }
         logOperational("voice.booking.attempt", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}) });
-        return await bookForCaller(domain, {
+        const attempt = bookForCaller(domain, {
           businessId,
           serviceName: input.serviceName,
           startsAt: input.startsAt,
@@ -252,7 +271,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           contactPhone: selected,
           channel,
           smsConsentGranted: input.smsConsentGranted,
-          intake: { ...(input.serviceLocation ? { serviceLocation: { line1: input.serviceLocation.line1, city: input.serviceLocation.city, country: input.serviceLocation.country, ...(input.serviceLocation.unit ? { unit: input.serviceLocation.unit } : {}), ...(input.serviceLocation.region ? { region: input.serviceLocation.region } : {}), ...(input.serviceLocation.postalCode ? { postalCode: input.serviceLocation.postalCode } : {}), ...(input.serviceLocation.instructions ? { instructions: input.serviceLocation.instructions } : {}) } } : {}), ...(input.intakeAnswers ? { answers: input.intakeAnswers } : {}) },
+          intake: { ...(serviceLocation ? { serviceLocation } : {}), ...(input.intakeAnswers ? { answers: input.intakeAnswers } : {}) },
           ...(input.contactName ? { contactName: input.contactName } : {}),
           ...(context.callId ? { callId: context.callId } : {}),
           ...(context.sessionId ? { sessionId: context.sessionId } : {}),
@@ -260,6 +279,8 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
           logOperational("voice.booking.result", { operation: "book_appointment", businessId, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}), reasonCode: result.ok ? "committed" : "not_committed", durationMs: Date.now() - startedAt });
           return result;
         });
+        bookingAttempts.set(attemptKey, attempt);
+        try { return await attempt; } catch (error) { bookingAttempts.delete(attemptKey); throw error; }
       },
     });
   }

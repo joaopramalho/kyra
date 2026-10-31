@@ -20,6 +20,7 @@ import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@
 import { PageHeader } from "@/components/page-header";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { surfaceClassName } from "@/components/ui/surface";
 import { useTelemetry } from "@/components/product-analytics";
 
@@ -62,6 +63,11 @@ export function LiveIntegrationsSurface() {
     onSuccess: async (_, input) => { await queryClient.invalidateQueries({ queryKey: ["integrations", business?.businessId] }); if (input.method === "DELETE") { if (business) telemetry.track("web.integration.calendar_disconnect_completed", { businessId: business.businessId, provider: "google", scope: google?.staffId ? "staff" : "business" }); setDialogOpen(false); toast.success(t("integrations.google.disconnectedSuccess")); } else if (input.method === "PATCH") toast.success(t("integrations.google.calendarSaved")); },
     onError: (error) => toast.error(error.message),
   });
+  const updateAddressSharing = useMutation({
+    mutationFn: (enabled: boolean) => requestJson(`/api/integrations?businessId=${encodeURIComponent(business!.businessId)}`, { method: "PATCH", body: JSON.stringify({ shareServiceAddress: enabled }) }),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["integrations", business?.businessId] }); toast.success(t("integrations.google.addressSharingSaved")); },
+    onError: (error) => toast.error(error.message),
+  });
 
   async function connect() { if (!business) return; telemetry.track("web.integration.calendar_connect_started", { businessId: business.businessId, provider: "google" }); try { const result = await requestJson<{ url: string }>(`/api/calendar/google/start?businessId=${encodeURIComponent(business.businessId)}`); window.location.assign(result.url); } catch (error) { telemetry.track("web.integration.calendar_connect_failed", { businessId: business.businessId, provider: "google" }); toast.error(error instanceof Error ? error.message : t("integrations.google.connectFailed")); } }
 
@@ -102,6 +108,7 @@ export function LiveIntegrationsSurface() {
             <Button disabled={!canManage || update.isPending} onClick={() => update.mutate({ method: "DELETE" })} size="sm" variant="outline"><Trash2 data-icon="inline-start" />{t("integrations.google.disconnect")}</Button>
           </div>
         </section> : null}
+        {google ? <section className="rounded-xl border p-4"><Field orientation="horizontal"><Switch aria-label={t("integrations.google.addressSharingLabel")} checked={integrations.data?.calendarShareServiceAddress === true} disabled={!canManage || updateAddressSharing.isPending} id="calendar-address-sharing" onCheckedChange={(enabled) => updateAddressSharing.mutate(enabled)} /><FieldContent><FieldLabel htmlFor="calendar-address-sharing">{t("integrations.google.addressSharingLabel")}</FieldLabel><FieldDescription>{t("integrations.google.addressSharingDescription")}</FieldDescription></FieldContent></Field></section> : null}
       </div>
     </DialogContent></Dialog>
   </>;

@@ -195,6 +195,7 @@ export const businesses = pgTable(
     phoneNumberReplacementUsedAt: timestamp("phone_number_replacement_used_at", { withTimezone: true }),
     telemetryEnabled: boolean("telemetry_enabled").default(true).notNull(),
     lmcVoiceEnabled: boolean("lmc_voice_enabled").default(false).notNull(),
+    calendarShareServiceAddress: boolean("calendar_share_service_address").default(false).notNull(),
     ...legacyId,
     ...timestamps,
   },
