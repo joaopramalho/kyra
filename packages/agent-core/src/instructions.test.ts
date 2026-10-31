@@ -22,5 +22,8 @@ describe("voice intake instructions", () => {
     expect(live).toContain("small talk is not a new call");
     expect(live).toContain("last question across delegations");
     expect(live).toContain("A successful booking tool result is the only authority");
+    expect(live).toContain("Never speak as the customer");
+    expect(live).toContain("wait for actual caller input");
+    expect(live).toContain("never create fictional dialogue to fill silence");
   });
 });

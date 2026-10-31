@@ -5,7 +5,15 @@ import { SidebandWS } from "openai/resources/live/sideband/ws";
 import type { ReceptionistAgent } from "../agent";
 import { LiveLatencyTracker, type LiveCallLatency } from "./latency";
 
-type Turn = { role: "caller" | "receptionist"; text: string; endMs: number };
+type Turn = { role: "caller" | "receptionist"; text: string; startMs: number; endMs: number };
+type CallerInput = { startMs: number; endMs: number; text: string; consumed: boolean; consumedAtOffsetMs?: number };
+type TranscriptWaiter = {
+  offsetMs: number;
+  resolve: (input: CallerInput | null) => void;
+  deadlineTimer: ReturnType<typeof setTimeout>;
+  quietTimer?: ReturnType<typeof setTimeout>;
+  candidate?: CallerInput;
+};
 
 export type DelegationTiming = {
   delegationId: string;
@@ -59,6 +67,13 @@ export type LiveCallControllerOptions = {
 const MAX_ANSWER_CHARS = 1_200;
 // The caller's last words can arrive just after the delegation event.
 const TRANSCRIPT_WAIT_MS = 300;
+const TRANSCRIPT_QUIET_MS = 80;
+const CALLER_FRAGMENT_GAP_MS = 1_500;
+// Transcript events describe the media interval; delegation events describe
+// when work was handed off. Allow small timeline skew while keeping the input
+// tied to speech immediately preceding the delegation.
+const DELEGATION_INPUT_SKEW_MS = 1_500;
+const MAX_CALLER_INPUT_AGE_MS = 10_000;
 const SIDEBAND_OPEN_TIMEOUT_MS = 4_000;
 const GREETING_AUDIO_TIMEOUT_MS = 4_000;
 const GREETING_EVENT_ID = "kyra_initial_greeting";
@@ -109,7 +124,8 @@ export class LiveCallController {
   private latestDelegationOffsetMs = -1;
   private readonly abort = new AbortController();
   private socket: SidebandWS | undefined;
-  private transcriptWaiters: Array<{ offsetMs: number; resolve: () => void }> = [];
+  private transcriptWaiters: TranscriptWaiter[] = [];
+  private readonly callerInputs: CallerInput[] = [];
   private emittedTurns = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
   private durationTimer: ReturnType<typeof setTimeout> | undefined;
@@ -137,11 +153,11 @@ export class LiveCallController {
     });
     socket.on("session.input_transcript.delta", (event) => {
       this.measure(() => this.latency.callerTranscript(event.start_ms, event.end_ms));
-      this.appendTranscript("caller", event.delta, event.end_ms);
+      this.appendTranscript("caller", event.delta, event.start_ms, event.end_ms);
     });
     socket.on("session.output_transcript.delta", (event) => {
       this.measure(() => this.latency.receptionistTranscript(event.start_ms, event.end_ms));
-      this.appendTranscript("receptionist", event.delta, event.end_ms);
+      this.appendTranscript("receptionist", event.delta, event.start_ms, event.end_ms);
     });
     // OpenAI reflects output audio to the sideband with timeline offsets, but
     // the SDK's sideband event types leave it out. The socket still emits it.
@@ -279,6 +295,7 @@ export class LiveCallController {
   private abortStartup(): void {
     if (this.finished) return;
     this.finished = true;
+    this.clearTranscriptWaiters();
     this.abort.abort();
     clearTimeout(this.silenceTimer);
     clearTimeout(this.durationTimer);
@@ -338,6 +355,15 @@ export class LiveCallController {
     this.silenceTimer = setTimeout(() => this.options.onTimeout?.("silence_timeout"), this.options.silenceTimeoutMs);
   }
 
+  private clearTranscriptWaiters(): void {
+    for (const waiter of this.transcriptWaiters) {
+      clearTimeout(waiter.deadlineTimer);
+      if (waiter.quietTimer) clearTimeout(waiter.quietTimer);
+      waiter.resolve(null);
+    }
+    this.transcriptWaiters = [];
+  }
+
   // Report every turn except the one still in progress.
   private emitFinishedTurns(includeLast: boolean): void {
     const ready = includeLast ? this.turns.length : this.turns.length - 1;
@@ -347,14 +373,31 @@ export class LiveCallController {
     }
   }
 
-  private appendTranscript(role: Turn["role"], delta: string, endMs: number): void {
+  private appendTranscript(role: Turn["role"], delta: string, startMs: number, endMs: number): void {
     this.resetSilenceTimer();
+    let startsNewCallerInput = false;
+    if (role === "caller") {
+      const input = this.callerInputs.at(-1);
+      const continuesConsumedInput = input?.consumed && input.consumedAtOffsetMs !== undefined && startMs < input.consumedAtOffsetMs;
+      const continuesOpenInput = input && !input.consumed && startMs >= input.startMs && startMs <= input.endMs + CALLER_FRAGMENT_GAP_MS;
+      if (input && (continuesConsumedInput || continuesOpenInput)) {
+        input.startMs = Math.min(input.startMs, startMs);
+        input.endMs = Math.max(input.endMs, endMs);
+        input.text += delta;
+      } else {
+        this.callerInputs.push({ startMs, endMs, text: delta, consumed: false });
+        startsNewCallerInput = true;
+      }
+    }
+
     const last = this.turns.at(-1);
-    if (last?.role === role) {
+    const startsNewTurn = last?.role !== role || (role === "caller" && startsNewCallerInput);
+    if (!startsNewTurn && last?.role === role) {
       last.text += delta;
-      last.endMs = endMs;
+      last.startMs = Math.min(last.startMs, startMs);
+      last.endMs = Math.max(last.endMs, endMs);
     } else {
-      this.turns.push({ role, text: delta, endMs });
+      this.turns.push({ role, text: delta, startMs, endMs });
       this.emitFinishedTurns(false);
     }
     if (role !== "caller") return;
@@ -364,23 +407,56 @@ export class LiveCallController {
       clearTimeout(this.finalAudioIdleTimer);
       clearTimeout(this.finalAudioMaxTimer);
     }
-    this.transcriptWaiters = this.transcriptWaiters.filter((waiter) => {
-      if (endMs < waiter.offsetMs) return true;
-      waiter.resolve();
-      return false;
-    });
+    for (const waiter of [...this.transcriptWaiters]) {
+      if (this.latestDelegationOffsetMs > waiter.offsetMs) {
+        this.finishTranscriptWaiter(waiter, null);
+        continue;
+      }
+      const match = this.matchCallerInput(waiter.offsetMs);
+      if (match) {
+        waiter.candidate = match;
+        this.scheduleTranscriptQuietCompletion(waiter);
+      }
+    }
   }
 
-  private async waitForCallerTranscript(offsetMs: number): Promise<void> {
-    const lastCaller = [...this.turns].reverse().find((turn) => turn.role === "caller");
-    if (lastCaller && lastCaller.endMs >= offsetMs) return;
-    await new Promise<void>((resolve) => {
-      const waiter = { offsetMs, resolve };
+  private finishTranscriptWaiter(waiter: TranscriptWaiter, input: CallerInput | null): void {
+    clearTimeout(waiter.deadlineTimer);
+    if (waiter.quietTimer) clearTimeout(waiter.quietTimer);
+    this.transcriptWaiters = this.transcriptWaiters.filter((item) => item !== waiter);
+    waiter.resolve(input);
+  }
+
+  private scheduleTranscriptQuietCompletion(waiter: TranscriptWaiter): void {
+    if (waiter.quietTimer) clearTimeout(waiter.quietTimer);
+    waiter.quietTimer = setTimeout(() => {
+      if (waiter.candidate && this.matchCallerInput(waiter.offsetMs) === waiter.candidate) {
+        this.finishTranscriptWaiter(waiter, waiter.candidate);
+      }
+    }, TRANSCRIPT_QUIET_MS);
+  }
+
+  private matchCallerInput(offsetMs: number): CallerInput | null {
+    return this.callerInputs.filter((input) =>
+      !input.consumed && input.text.trim().length > 0 && input.startMs <= offsetMs && input.endMs <= offsetMs + DELEGATION_INPUT_SKEW_MS && offsetMs - input.endMs <= MAX_CALLER_INPUT_AGE_MS,
+    ).sort((left, right) => right.endMs - left.endMs)[0] ?? null;
+  }
+
+  private async waitForCallerTranscript(offsetMs: number): Promise<CallerInput | null> {
+    return new Promise<CallerInput | null>((resolve) => {
+      const waiter: TranscriptWaiter = {
+        offsetMs,
+        resolve,
+        deadlineTimer: setTimeout(() => {
+          this.finishTranscriptWaiter(waiter, null);
+        }, TRANSCRIPT_WAIT_MS),
+      };
       this.transcriptWaiters.push(waiter);
-      setTimeout(() => {
-        this.transcriptWaiters = this.transcriptWaiters.filter((item) => item !== waiter);
-        resolve();
-      }, TRANSCRIPT_WAIT_MS);
+      const existing = this.matchCallerInput(offsetMs);
+      if (existing) {
+        waiter.candidate = existing;
+        this.scheduleTranscriptQuietCompletion(waiter);
+      }
     });
   }
 
@@ -401,16 +477,35 @@ export class LiveCallController {
 
   private async handleDelegation(event: DelegationCreatedEvent): Promise<void> {
     const delegationId = event.delegation.id;
-    if (this.seenDelegations.has(delegationId)) return;
+    console.info(JSON.stringify({ event: "live.delegation.received", sessionId: this.options.sessionId, delegationId, delegationOffsetMs: event.offset_ms }));
+    if (this.seenDelegations.has(delegationId)) {
+      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "duplicate_delegation" }));
+      return;
+    }
     this.seenDelegations.add(delegationId);
     if (event.offset_ms < this.latestDelegationOffsetMs) {
-      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "stale_offset" }));
+      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "stale_delegation_offset", delegationOffsetMs: event.offset_ms }));
       return;
     }
     this.latestDelegationOffsetMs = event.offset_ms;
     const receivedAt = performance.now();
-    await this.waitForCallerTranscript(event.offset_ms);
+    const callerInput = await this.waitForCallerTranscript(event.offset_ms);
     const transcriptReadyAt = performance.now();
+    if (this.finished || this.abort.signal.aborted) return;
+    if (this.latestDelegationOffsetMs > event.offset_ms) {
+      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "superseded_delegation", delegationOffsetMs: event.offset_ms }));
+      return;
+    }
+    if (!callerInput) {
+      const assistantOutputOnly = this.turns.some((turn) => turn.role === "receptionist") && this.callerInputs.length === 0;
+      const hasStaleInput = this.callerInputs.some((input) => input.consumed || input.startMs > event.offset_ms || input.endMs > event.offset_ms + DELEGATION_INPUT_SKEW_MS || event.offset_ms - input.endMs > MAX_CALLER_INPUT_AGE_MS);
+      const reasonCode = assistantOutputOnly ? "assistant_output_only" : hasStaleInput ? "stale_caller_input" : this.callerInputs.length ? "caller_transcript_timeout" : "no_matching_caller_transcript";
+      console.info(JSON.stringify({ event: "live.delegation.rejected", sessionId: this.options.sessionId, delegationId, reasonCode, delegationOffsetMs: event.offset_ms, transcriptWaitMs: Math.round(transcriptReadyAt - receivedAt), authorizedByNewCallerTurn: false }));
+      return;
+    }
+    callerInput.consumed = true;
+    callerInput.consumedAtOffsetMs = event.offset_ms;
+    console.info(JSON.stringify({ event: "live.delegation.authorized", sessionId: this.options.sessionId, delegationId, delegationOffsetMs: event.offset_ms, callerTranscriptStartMs: callerInput.startMs, callerTranscriptEndMs: callerInput.endMs, transcriptWaitMs: Math.round(transcriptReadyAt - receivedAt), authorizedByNewCallerTurn: true }));
 
     let answer = FALLBACK_ANSWER;
     let tools: string[] = [];
@@ -429,7 +524,7 @@ export class LiveCallController {
       console.error(JSON.stringify({ event: "live.delegation.failed", operation: "agent_generate", sessionId: this.options.sessionId, delegationId, ...(errorCode ? { errorCode } : {}) }));
     }
     if (this.latestDelegationOffsetMs > event.offset_ms) {
-      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "superseded" }));
+      console.info(JSON.stringify({ event: "live.delegation.ignored", sessionId: this.options.sessionId, delegationId, reasonCode: "superseded_delegation", delegationOffsetMs: event.offset_ms }));
       return;
     }
     const answeredAt = performance.now();
@@ -492,6 +587,7 @@ export class LiveCallController {
   private finish(closeReason?: string, billedSeconds?: number, sessionClosed = false): void {
     if (this.finished) return;
     this.finished = true;
+    this.clearTranscriptWaiters();
     // Without the sideband nobody answers delegations, so end the session
     // rather than leave the caller talking to it while OpenAI keeps billing.
     if (!sessionClosed && !this.hangupRequested) {
