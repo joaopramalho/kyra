@@ -88,4 +88,10 @@ describe("bookForCaller telemetry", () => {
     expect(mocks.bookAppointment).not.toHaveBeenCalled();
     expect(mocks.recordProductEvent).toHaveBeenCalledWith(context, expect.objectContaining({ name: "appointment.booking_failed", properties: expect.objectContaining({ reason: "service_unavailable" }) }));
   });
+
+  it("returns the exact invalid address field without logging customer address text", async () => {
+    mocks.bookAppointment.mockRejectedValue(Object.assign(new Error("invalid_service_address"), { code: "invalid_service_address", missingFields: ["serviceAddress"], validationIssues: [{ field: "country", code: "invalid_country_code" }] }));
+    await expect(bookForCaller(context, input)).resolves.toMatchObject({ ok: false, reasonCode: "invalid_service_address", validationIssues: [{ field: "country", code: "invalid_country_code" }] });
+    expect(mocks.recordProductEvent).not.toHaveBeenCalledWith(context, expect.objectContaining({ name: "appointment.booked" }));
+  });
 });

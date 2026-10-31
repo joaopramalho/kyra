@@ -39,6 +39,21 @@ describe("createReceptionistTools", () => {
     expect(domainMocks.bookForCaller).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contactPhone: "+14165550100", smsConsentGranted: false }));
   });
 
+  it("retains address fields across corrected attempts and suppresses an unchanged failed booking", async () => {
+    domainMocks.bookForCaller.mockResolvedValueOnce({ ok: false, reasonCode: "invalid_service_address", validationIssues: [{ field: "postalCode", code: "invalid_postal_code" }] }).mockResolvedValueOnce({ ok: true, appointmentId: "apt_fixed" });
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", callerPhone: "+14165550100", snapshot: demoSnapshot });
+    await offerSlot(tools);
+    const execute = tools.bookAppointment!.execute! as (input: object, options: object) => Promise<unknown>;
+    const booking = { serviceName: "HVAC maintenance", startsAt: offeredStartsAt, smsConsentGranted: false };
+    const address = { line1: "123 Main Street", city: "Miami", country: "United States", postalCode: "bad" };
+    await expect(execute({ ...booking, serviceLocation: address }, { toolCallId: "first", messages: [] })).resolves.toMatchObject({ ok: false });
+    await execute({ ...booking, serviceLocation: address }, { toolCallId: "retry", messages: [] });
+    expect(domainMocks.bookForCaller).toHaveBeenCalledTimes(1);
+    await expect(execute({ ...booking, serviceLocation: { postalCode: "33101" } }, { toolCallId: "corrected", messages: [] })).resolves.toMatchObject({ ok: true });
+    expect(domainMocks.bookForCaller).toHaveBeenCalledTimes(2);
+    expect(domainMocks.bookForCaller).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ intake: { serviceLocation: { ...address, postalCode: "33101" } } }));
+  });
+
   it("normalizes an explicitly selected alternate phone but rejects the business DID", async () => {
     domainMocks.bookForCaller.mockResolvedValue({ ok: true, appointmentId: "apt_2", serviceName: "HVAC maintenance", startsAt: offeredStartsAt });
     const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", callerPhone: "+14165550100", snapshot: { ...demoSnapshot, contactChannels: { ...demoSnapshot.contactChannels, phoneNumber: "+17542191002" } } });
@@ -60,7 +75,7 @@ describe("createReceptionistTools", () => {
   });
 
   it("does not repeat an unchanged availability lookup within the same call", async () => {
-    domainMocks.findOpenings.mockResolvedValue({ ok: true, openings: [{ startsAt: "2030-01-01T15:00:00.000Z" }] });
+    domainMocks.findOpenings.mockResolvedValue({ ok: true, serviceName: "HVAC maintenance", openings: [{ startsAt: "2030-01-01T15:00:00.000Z" }] });
     const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", snapshot: demoSnapshot });
     const execute = tools.findAvailability!.execute! as (input: object, options: object) => Promise<unknown>;
     const input = { serviceName: "HVAC maintenance", date: "2030-01-01" };
@@ -69,8 +84,18 @@ describe("createReceptionistTools", () => {
     expect(domainMocks.findOpenings).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts the canonical service name returned for an offered service alias", async () => {
+    domainMocks.bookForCaller.mockResolvedValue({ ok: true, appointmentId: "apt_alias" });
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", callerPhone: "+14165550100", snapshot: demoSnapshot });
+    const find = tools.findAvailability!.execute! as (input: object, options: object) => Promise<unknown>;
+    await find({ serviceName: "hvac-maintenance", date: "2030-01-01" }, { toolCallId: "alias", messages: [] });
+    const book = tools.bookAppointment!.execute! as (input: object, options: object) => Promise<unknown>;
+    await expect(book({ serviceName: "HVAC maintenance", startsAt: offeredStartsAt, smsConsentGranted: false }, { toolCallId: "book-alias", messages: [] })).resolves.toMatchObject({ ok: true });
+    expect(domainMocks.bookForCaller).toHaveBeenCalledTimes(1);
+  });
+
   it("checks the revised preferred time instead of reusing a mismatched availability result", async () => {
-    domainMocks.findOpenings.mockResolvedValue({ ok: true, openings: [
+    domainMocks.findOpenings.mockResolvedValue({ ok: true, serviceName: "HVAC maintenance", openings: [
       { startsAt: "2030-01-01T14:00:00.000Z", displayTime: "9 AM" },
       { startsAt: "2030-01-01T17:00:00.000Z", displayTime: "12 PM" },
       { startsAt: "2030-01-01T20:00:00.000Z", displayTime: "3 PM" },
