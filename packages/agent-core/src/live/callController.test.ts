@@ -153,6 +153,35 @@ describe("LiveCallController startup and media", () => {
     expect(generate).toHaveBeenCalledTimes(1);
   });
 
+  it("authorizes a caller barge-in and address correction before the assistant transcript arrives", async () => {
+    const { socket, generate } = await setup();
+    socket.emit("session.input_transcript.delta", { delta: "Please come to 12 Oak Street.", start_ms: 800, end_ms: 1_000 });
+    socket.emit("session.delegation.created", { delegation: { id: "address_first" }, offset_ms: 1_100 });
+    await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "address_first" })));
+
+    // There is deliberately no session.output_transcript.delta between these inputs.
+    socket.emit("session.input_transcript.delta", { delta: "Correction: 21 Oak Street.", start_ms: 1_200, end_ms: 1_500 });
+    socket.emit("session.delegation.created", { delegation: { id: "address_correction" }, offset_ms: 1_600 });
+    await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "address_correction" })));
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate).toHaveBeenNthCalledWith(2, expect.objectContaining({ prompt: expect.stringContaining("12 Oak Street") }));
+    expect(generate).toHaveBeenNthCalledWith(2, expect.objectContaining({ prompt: expect.stringContaining("21 Oak Street") }));
+  });
+
+  it("assembles delayed transcript fragments before generating a backend reply", async () => {
+    const { socket, generate } = await setup();
+    socket.emit("session.input_transcript.delta", { delta: "Can you book an appointment ", start_ms: 800, end_ms: 950 });
+    socket.emit("session.delegation.created", { delegation: { id: "fragmented_1" }, offset_ms: 1_000 });
+    setTimeout(() => socket.emit("session.input_transcript.delta", { delta: "for tomorrow?", start_ms: 950, end_ms: 1_100 }), 40);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(generate).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "fragmented_1" })));
+    expect(generate).toHaveBeenCalledOnce();
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.stringContaining("Can you book an appointment for tomorrow?") }));
+  });
+
   it.each(["Yes.", "No.", "Hello.", "Tomorrow."])('accepts short caller input "%s"', async (text) => {
     const { socket, generate } = await setup();
     socket.emit("session.input_transcript.delta", { delta: text, start_ms: 900, end_ms: 1_000 });
