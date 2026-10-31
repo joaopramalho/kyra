@@ -25,5 +25,8 @@ describe("voice intake instructions", () => {
     expect(live).toContain("Never speak as the customer");
     expect(live).toContain("wait for actual caller input");
     expect(live).toContain("never create fictional dialogue to fill silence");
+    expect(live).toContain("retain and combine every caller fact across turns");
+    expect(live).toContain("Cancel only after verification succeeds and the caller explicitly confirms");
+    expect(live).toContain("After a successful cancellation or saved follow-up");
   });
 });

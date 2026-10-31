@@ -83,6 +83,7 @@ const FINAL_AUDIO_IDLE_MS = 900;
 const FINAL_AUDIO_START_GRACE_MS = 2_000;
 const FINAL_AUDIO_MAX_DRAIN_MS = 4_500;
 const HANGUP_CLOSE_TIMEOUT_MS = 5_000;
+const FINAL_QUESTION_TIMEOUT_MS = 12_000;
 const FALLBACK_ANSWER = "Sorry, I couldn't check that just now. Offer to take a message so the team can follow up.";
 type SidebandAudioEvents = {
   on(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
@@ -138,10 +139,13 @@ export class LiveCallController {
   private finalAudioIdleTimer: ReturnType<typeof setTimeout> | undefined;
   private finalAudioMaxTimer: ReturnType<typeof setTimeout> | undefined;
   private hangupCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  private finalQuestionAudioIdleTimer: ReturnType<typeof setTimeout> | undefined;
+  private finalQuestionTimer: ReturnType<typeof setTimeout> | undefined;
   private callerTurnCount = 0;
   private pendingEndCallerTurnCount = 0;
   private finalAudioStarted = false;
   private hangupRequested = false;
+  private finalQuestionPending = false;
 
   constructor(private readonly options: LiveCallControllerOptions) {}
 
@@ -164,6 +168,7 @@ export class LiveCallController {
     const audioEvents = socket as unknown as SidebandAudioEvents;
     audioEvents.on("session.output_audio.delta", (event) => {
       this.measure(() => this.latency.receptionistAudio(event.start_ms, event.end_ms));
+      if (this.finalQuestionPending) this.scheduleFinalQuestionAudioIdle();
       if (this.pendingEndReason === "caller_finished") {
         this.finalAudioStarted = true;
         this.scheduleFinalAudioIdleHangup();
@@ -329,6 +334,7 @@ export class LiveCallController {
   /** Record an end intent; caller-finished waits until its farewell is appended. */
   requestEndCall(reason: LiveCallEndReason): void {
     if (this.finished || this.hangupRequested || this.pendingEndReason) return;
+    this.clearFinalQuestionTimeout();
     this.pendingEndReason = reason;
     this.pendingEndCallerTurnCount = this.callerTurnCount;
     this.finalAudioStarted = false;
@@ -400,7 +406,15 @@ export class LiveCallController {
       this.turns.push({ role, text: delta, startMs, endMs });
       this.emitFinishedTurns(false);
     }
-    if (role !== "caller") return;
+    if (role !== "caller") {
+      const latestTurn = this.turns.at(-1);
+      if (latestTurn?.role === "receptionist" && /\bwould you like me to have the team follow up with you\??/i.test(latestTurn.text)) {
+        this.finalQuestionPending = true;
+        this.scheduleFinalQuestionAudioIdle();
+      }
+      return;
+    }
+    this.clearFinalQuestionTimeout();
     this.callerTurnCount += 1;
     if (this.pendingEndReason === "caller_finished" && this.callerTurnCount > this.pendingEndCallerTurnCount) {
       this.pendingEndReason = undefined;
@@ -568,6 +582,27 @@ export class LiveCallController {
     }, FINAL_AUDIO_IDLE_MS);
   }
 
+  private scheduleFinalQuestionAudioIdle(): void {
+    clearTimeout(this.finalQuestionAudioIdleTimer);
+    this.finalQuestionAudioIdleTimer = setTimeout(() => {
+      if (!this.finalQuestionPending || this.finished) return;
+      clearTimeout(this.finalQuestionTimer);
+      this.finalQuestionTimer = setTimeout(() => {
+        if (!this.finalQuestionPending || this.finished || this.hangupRequested) return;
+        this.finalQuestionPending = false;
+        this.socket?.send({ type: "session.commentary.append", delegation_id: null, content: "I haven't heard back, so I'll let you go. Goodbye.", event_id: `final_silence_${this.options.sessionId}` });
+        this.requestEndCall("caller_finished");
+        this.beginFinalAudioDrain();
+      }, FINAL_QUESTION_TIMEOUT_MS);
+    }, FINAL_AUDIO_IDLE_MS);
+  }
+
+  private clearFinalQuestionTimeout(): void {
+    this.finalQuestionPending = false;
+    clearTimeout(this.finalQuestionAudioIdleTimer);
+    clearTimeout(this.finalQuestionTimer);
+  }
+
   private async requestProviderHangup(reason: LiveCallEndReason): Promise<void> {
     if (this.hangupRequested || this.finished) return;
     this.hangupRequested = true;
@@ -579,8 +614,10 @@ export class LiveCallController {
         ? Promise.resolve(this.options.onHangup(reason)).then(() => undefined)
         : this.options.client.live.sessions.hangup(this.options.sessionId).then(() => undefined);
       await this.sessionEnded;
-    } catch {
+      console.info(JSON.stringify({ event: "live.hangup_succeeded", sessionId: this.options.sessionId, reason, finalAudioObserved: this.finalAudioStarted }));
+    } catch (error) {
       // The provider may still close by its own timeout; retain bounded local finalization.
+      console.error(JSON.stringify({ event: "live.hangup_failed", sessionId: this.options.sessionId, reason, ...(safeProviderCode(error) ? { errorCode: safeProviderCode(error) } : {}) }));
     }
   }
 
@@ -599,6 +636,7 @@ export class LiveCallController {
     clearTimeout(this.finalAudioIdleTimer);
     clearTimeout(this.finalAudioMaxTimer);
     clearTimeout(this.hangupCloseTimer);
+    this.clearFinalQuestionTimeout();
     this.abort.abort();
     this.socket?.close({ code: 1000, reason: "session finished" });
     this.emitFinishedTurns(true);

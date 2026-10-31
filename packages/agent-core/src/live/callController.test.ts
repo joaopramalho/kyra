@@ -279,6 +279,28 @@ describe("LiveCallController startup and media", () => {
     expect(state.onHangup).not.toHaveBeenCalled();
   });
 
+  it("closes after silence only when a final team follow-up question was asked", async () => {
+    const state = await setup();
+    vi.useFakeTimers();
+    state.socket.emit("session.output_transcript.delta", { delta: "Would you like me to have the team follow up with you?", start_ms: 1_000, end_ms: 1_500 });
+    state.socket.emit("session.output_audio.delta", { delta: "question audio", start_ms: 1_000, end_ms: 1_500 });
+    await vi.advanceTimersByTimeAsync(900 + 12_000);
+    expect(state.socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", event_id: "final_silence_live_1", content: "I haven't heard back, so I'll let you go. Goodbye." }));
+    expect(state.onHangup).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_001);
+    expect(state.onHangup).toHaveBeenCalledWith("caller_finished");
+  });
+
+  it("cancels the final-question timeout when the caller responds", async () => {
+    const state = await setup();
+    vi.useFakeTimers();
+    state.socket.emit("session.output_transcript.delta", { delta: "Would you like me to have the team follow up with you?", start_ms: 1_000, end_ms: 1_500 });
+    state.socket.emit("session.input_transcript.delta", { delta: "Yes, please.", start_ms: 1_600, end_ms: 1_900 });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(state.socket.sent).not.toContainEqual(expect.objectContaining({ event_id: "final_silence_live_1" }));
+    expect(state.onHangup).not.toHaveBeenCalled();
+  });
+
   it("reports finished turns in order and billed seconds on close", async () => {
     const { socket, turns, closed } = await setup();
     socket.emit("session.output_transcript.delta", { delta: "Thanks for calling.", start_ms: 400, end_ms: 500 });
