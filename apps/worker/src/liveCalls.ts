@@ -221,8 +221,18 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
 
     const hangup = async () => {
       // SIP calls hang up at the provider; closing the session ends a browser call.
-      if (phone) await client.live.sessions.hangup(request.sessionId).catch(() => controller?.endSession());
-      else controller?.endSession();
+      if (phone) {
+        try {
+          await client.live.sessions.hangup(request.sessionId);
+          return "provider" as const;
+        } catch (error) {
+          console.error(JSON.stringify({ event: "live.hangup_failed", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, operation: "provider_hangup" }));
+          controller?.endSession();
+          throw error;
+        }
+      }
+      controller?.endSession();
+      return "session" as const;
     };
 
     const callControl: CallControl = {
@@ -294,7 +304,8 @@ export function createLiveCallHandler(input: { domain: DomainContext }) {
       },
       onHangup: async (reason) => {
         console.info(JSON.stringify({ event: "live.provider_hangup.requested", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason }));
-        await hangup();
+        const transport = await hangup();
+        console.info(JSON.stringify({ event: "live.provider_hangup.accepted", businessId: request.businessId, callId: request.callId, sessionId: request.sessionId, reason, transport }));
       },
       onDelegation: (timing) => {
         console.info(JSON.stringify({ event: "live.delegation", sessionId: request.sessionId, agentMs: timing.agentMs, totalMs: timing.totalMs, tools: timing.tools, failed: timing.failed }));
