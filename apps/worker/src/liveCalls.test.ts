@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   loadCaller: vi.fn(),
   createAgent: vi.fn(() => ({})),
   recordProductEvent: vi.fn(async (..._args: unknown[]) => "event_1"),
+  providerHangup: vi.fn(async (..._args: unknown[]) => undefined),
   finishLiveCall: vi.fn(async (..._args: unknown[]) => false),
   controllerStart: vi.fn(async () => undefined),
   controllerCancel: vi.fn(),
@@ -39,9 +40,9 @@ vi.mock("@lobbystack/domain", () => ({
   recordProductEvent: mocks.recordProductEvent,
 }));
 vi.mock("@lobbystack/jobs", () => ({ renewVoicePresenceGateway: vi.fn(async () => undefined), updateVoicePresence: vi.fn(async () => undefined) }));
-vi.mock("openai", () => ({ default: class {} }));
+vi.mock("openai", () => ({ default: class { live = { sessions: { hangup: mocks.providerHangup } }; } }));
 
-import { createLiveCallHandler, parseAttachRequest, providerSeconds } from "./liveCalls";
+import { actualLiveCallEnd, createLiveCallHandler, parseAttachRequest, providerSeconds } from "./liveCalls";
 
 function attachRequest(body: Record<string, unknown>): IncomingMessage {
   return Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), { url: "/internal/live/attach", method: "POST", headers: { "x-internal-service-token": "token" } }) as unknown as IncomingMessage;
@@ -66,12 +67,40 @@ beforeEach(() => {
   mocks.controllerOptions.length = 0;
   mocks.controllerStart.mockReset().mockResolvedValue(undefined);
   mocks.controllerCancel.mockReset();
+  mocks.providerHangup.mockReset().mockResolvedValue(undefined);
   mocks.createAgent.mockClear();
   mocks.loadCaller.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("createLiveCallHandler", () => {
+  it("uses the documented Live SIP hangup endpoint and logs the correlated accepted result", async () => {
+    vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
+    vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    mocks.snapshot.mockResolvedValue({ businessId: "biz_1", greeting: "Hi" });
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const handler = createLiveCallHandler({ domain: { db: {} as never } });
+    await handler.handle(attachRequest({ sessionId: "live_sip_end", businessId: "biz_1", callId: "call_sip_end", channel: "voice" }), response());
+    const options = mocks.controllerOptions.at(-1)!;
+    await options.onHangup!("caller_finished" as never);
+    expect(mocks.providerHangup).toHaveBeenCalledWith("live_sip_end");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"live.provider_hangup.requested"'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"live.provider_hangup.accepted"'));
+    expect(log.mock.calls.map(([value]) => value).join("\n")).toContain('"callId":"call_sip_end"');
+    log.mockRestore();
+  });
+
+  it("does not treat an accepted request or an unconfirmed local close as SIP disconnection", () => {
+    expect(actualLiveCallEnd({ closeReason: "close_requested", providerHangupOutcome: "unconfirmed", sessionConfirmedClosed: false, providerCallDisconnected: false }, "caller_finished", "voice")).toBe("connection_lost");
+    expect(actualLiveCallEnd({ closeReason: "close_requested", providerHangupOutcome: "failed", sessionConfirmedClosed: true, providerCallDisconnected: false }, "caller_finished", "voice")).toBe("connection_lost");
+  });
+
+  it("records SIP disconnection only after a terminal Live close confirms an accepted hangup", () => {
+    expect(actualLiveCallEnd({ closeReason: "close_requested", providerHangupOutcome: "accepted", sessionConfirmedClosed: true, providerCallDisconnected: true }, "caller_finished", "voice")).toBe("caller_finished");
+    expect(actualLiveCallEnd({ closeReason: "remote_hangup", providerHangupOutcome: "not_requested", sessionConfirmedClosed: true, providerCallDisconnected: true }, "caller_finished", "voice")).toBe("caller_hung_up");
+  });
+
   it("recovers trusted Caller ID from the tenant-scoped call record when SIP does not provide a valid number", async () => {
     vi.stubEnv("LIVE_PROTOTYPE_ENABLED", "true");
     vi.stubEnv("INTERNAL_SERVICE_TOKEN", "token");
