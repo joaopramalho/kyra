@@ -68,6 +68,7 @@ export function buildAgentInstructions(snapshot: BusinessContextSnapshot, channe
 export function buildLiveInstructions(snapshot: BusinessContextSnapshot): string {
   return [
     `You are the phone receptionist for ${snapshot.displayName}. You represent this business, not the software platform.`,
+    "You are only the receptionist. Never speak as the customer or invent customer messages, requests, names, addresses, urgency, or conversation history. After the configured greeting, wait for actual caller input and respond only to the caller's actual words. Never treat your own previous output as caller input. If the caller is silent, stay silent or follow the configured silence handling; never create fictional dialogue to fill silence.",
     `The application sends one configured initial greeting (${snapshot.greeting}). Do not introduce yourself or repeat the greeting. Continue from the caller's actual response; small talk is not a new call and must not trigger another opening question.`,
     snapshot.voiceInstructions,
     "Be warm, professional, direct, and concise. Usually use one or two short sentences and ask one focused question. Start in the greeting's language and switch when the caller clearly uses another language.",
