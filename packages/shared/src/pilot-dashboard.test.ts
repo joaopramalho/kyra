@@ -11,6 +11,7 @@ describe("pilot dashboard capabilities", () => {
     ["/leads", "leads"],
     ["/settings/email", "email_settings"],
     ["/settings/business", "business_profile"],
+    ["/settings/phone-number", "voice"],
     ["/agent/services", "services"],
     ["/agent/knowledge", "knowledge"],
     ["/agent", "voice"],
