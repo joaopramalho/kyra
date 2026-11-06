@@ -62,7 +62,6 @@ export async function runTenantIsolationAudit() {
       async (context) => {
         await probePilotMethodGuards(context, routes);
         await probePilotDashboardContext(context);
-        await probePilotIntegrationsContext(context);
         await probePilotVoiceContext(context);
         await probePilotSessionContext(context);
         await probePilotManagedSetupContext(context);
@@ -74,6 +73,9 @@ export async function runTenantIsolationAudit() {
         await probePilotPublicContext(context);
         await probePilotWebhookContext(context);
         await probeEmailMutationContext(context);
+        // The integration probes enqueue calendar reconciliation and disconnect
+        // fixture connections, so run them only after worker-backed email probes.
+        await probePilotIntegrationsContext(context);
         // Password recovery revokes fixture sessions, so it must run last.
         await probePilotAuthContext(context);
       },
