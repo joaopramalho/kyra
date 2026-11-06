@@ -61,10 +61,10 @@ describe("original integration permissions and setup navigation", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "integrations.actions.connect" }).hasAttribute("disabled")).toBe(true);
   });
-  it("hides controls whose routes are not enabled in the pilot", () => {
+  it("hides the webhook controls when the webhook route is not enabled in the pilot", async () => {
     setup("business_admin", {}, false);
     expect(screen.queryByRole("link", { name: "integrations.actions.manage" })).toBeNull();
-    expect(screen.getByRole("button", { name: "integrations.actions.connect" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "integrations.actions.connect" })).toBeTruthy();
   });
   it("opens the calendar dialog and consumes only the setup parameter", async () => {
     route.search = new URLSearchParams("setup=calendar&keep=value");
