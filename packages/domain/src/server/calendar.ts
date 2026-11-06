@@ -268,10 +268,8 @@ export async function refreshCalendar(
 ): Promise<void> {
   await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
     await requireBusinessAdmin(tx, input);
-    const connection = (await tx.select({ id: calendarConnections.id, selectedCalendarId: calendarConnections.selectedCalendarId }).from(calendarConnections).where(and(eq(calendarConnections.id, input.connectionId), eq(calendarConnections.businessId, input.businessId), ne(calendarConnections.status, "disconnected"))).limit(1))[0];
+    const connection = (await tx.select({ id: calendarConnections.id }).from(calendarConnections).where(and(eq(calendarConnections.id, input.connectionId), eq(calendarConnections.businessId, input.businessId), ne(calendarConnections.status, "disconnected"))).limit(1))[0];
     if (!connection) throw new Error("Calendar connection not found.");
-    if (!connection.selectedCalendarId) throw new Error("Select a Google Calendar before synchronizing.");
-    await tx.update(calendarConnections).set({ status: "syncing", updatedAt: new Date() }).where(and(eq(calendarConnections.id, input.connectionId), eq(calendarConnections.businessId, input.businessId)));
     await enqueueOutbox(tx, { topic: "calendar.reconcileBusiness", businessId: input.businessId, aggregateType: "calendar_connection", aggregateId: input.connectionId, dedupeKey: `calendar:${input.connectionId}:refresh:${Date.now()}`, payload: { connectionId: input.connectionId } });
   });
 }

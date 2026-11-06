@@ -496,8 +496,6 @@
       "chooseCalendarFirst": "Choose a Google calendar before saving.",
       "loadingCalendars": "Loading calendars...",
       "refreshCalendars": "Refresh",
-      "syncNow": "Sync now",
-      "syncStarted": "Google Calendar sync started.",
       "saveCalendar": "Save calendar",
       "savingCalendar": "Saving...",
       "calendarSaved": "Saved Google calendar selection.",
