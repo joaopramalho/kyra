@@ -496,6 +496,8 @@
       "chooseCalendarFirst": "Choisissez un calendrier Google avant d'enregistrer.",
       "loadingCalendars": "Chargement des calendriers...",
       "refreshCalendars": "Actualiser",
+      "syncNow": "Synchroniser maintenant",
+      "syncStarted": "La synchronisation Google Calendar a commencé.",
       "saveCalendar": "Enregistrer le calendrier",
       "savingCalendar": "Enregistrement...",
       "calendarSaved": "Le calendrier Google sélectionné a été enregistré.",
