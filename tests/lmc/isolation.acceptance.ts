@@ -11,6 +11,10 @@ describe("LMC exhaustive tenant-isolation acceptance", () => {
     expect(report.routeInventory.length).toBeGreaterThanOrEqual(238);
     expect([...report.probedTables].sort()).toEqual([...report.tableInventory].sort());
     const unprobedRoutes = report.routeInventory.filter((route) => !report.probedRoutes.includes(route));
+    for (const route of unprobedRoutes) {
+      const safeRouteId = route.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "").toUpperCase();
+      expect(false, `PILOT_UNPROBED_${safeRouteId}`).toBe(true);
+    }
     expect([...report.probedRoutes].sort(), `Unprobed pilot API methods: ${unprobedRoutes.join(", ")}`).toEqual([...report.routeInventory].sort());
     expect(report.skipped).toEqual([]);
     expect(report.failures, report.failures.join("\n")).toEqual([]);
