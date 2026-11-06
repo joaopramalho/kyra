@@ -85,14 +85,14 @@ export async function syncAppointmentCalendar(dependencies: Dependencies, input:
 
 export async function reconcileBusinessCalendar(dependencies: Dependencies, businessId: string): Promise<JobResult> {
   if (!dependencies.calendar) return { status: "skipped", entityId: businessId };
-  const connections = await withBusinessTransaction(dependencies.domain.db, { businessId, actorType: "worker" }, async (tx) => tx.select({ id: calendarConnections.id, calendarId: calendarConnections.selectedCalendarId, staffId: calendarConnections.staffId, status: calendarConnections.status }).from(calendarConnections).where(and(eq(calendarConnections.businessId, businessId), ne(calendarConnections.status, "disconnected"))));
+  const connections = await withBusinessTransaction(dependencies.domain.db, { businessId, actorType: "worker" }, async (tx) => tx.select({ id: calendarConnections.id, calendarId: calendarConnections.selectedCalendarId, staffId: calendarConnections.staffId, status: calendarConnections.status, lastSyncError: calendarConnections.lastSyncError }).from(calendarConnections).where(and(eq(calendarConnections.businessId, businessId), ne(calendarConnections.status, "disconnected"))));
   let synced = 0;
   let failures = 0;
   for (const connection of connections) {
     // Connecting OAuth does not authorize writes to the implicit primary calendar.
     if (!connection.calendarId) continue;
     try {
-      const token = await accessToken(dependencies, businessId, connection.id, connection.status === "error");
+      const token = await accessToken(dependencies, businessId, connection.id, connection.status === "error" || Boolean(connection.lastSyncError));
       const startsAt = new Date();
       const endsAt = new Date(startsAt.getTime() + CALENDAR_SYNC_HORIZON_MS);
       const blocks = await dependencies.calendar.getBusyBlocks({ accessToken: token, calendarId: connection.calendarId, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() });

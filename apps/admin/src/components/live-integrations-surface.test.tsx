@@ -25,7 +25,7 @@ function setup(role: string, data: Partial<IntegrationsViewModel> = {}) {
 describe("original integration permissions and setup navigation", () => {
   it("shows errored connections and discovery failures instead of hiding them", async () => {
     setup("business_admin", { calendarConnections: [{ id: "connection", provider: "google", externalAccountId: "account", status: "error", staffId: null, selectedCalendarId: "calendar", lastSyncError: "provider failure" }], discoveryError: "discovery unavailable" });
-    expect((await screen.findByRole("alert")).textContent).toContain("integrations.google.discoveryFailed");
+    expect((await screen.findByRole("alert")).textContent).toContain("provider failure");
     fireEvent.click(screen.getByRole("button", { name: "integrations.google.reconnect" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText("integrations.status.reconnectRequired")).toBeTruthy();
@@ -48,6 +48,13 @@ describe("original integration permissions and setup navigation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "integrations.actions.connected" }));
     fireEvent.click(await screen.findByRole("button", { name: "integrations.google.disconnect" }));
     await waitFor(() => telemetryRef.current!.expectEvent("web.integration.calendar_disconnect_completed", { businessId: "business", provider: "google", scope: "business" }));
+  });
+  it("starts an explicit calendar sync from the connection controls", async () => {
+    const fetchMock = setup("business_admin", { calendarConnections: [{ id: "connection", provider: "google", externalAccountId: "account", status: "connected", staffId: null, selectedCalendarId: "calendar", lastSyncError: null }], calendarOptions: [{ id: "calendar", summary: "Primary", primary: true, accessRole: "owner", selected: true }] });
+    fireEvent.click(await screen.findByRole("button", { name: "integrations.actions.connected" }));
+    fireEvent.click(screen.getByRole("button", { name: "integrations.google.syncNow" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/integrations?businessId=business"), expect.objectContaining({ method: "POST" })));
+    await waitFor(() => expect(notify.success).toHaveBeenCalledWith("integrations.google.syncStarted"));
   });
   it("does not request administrator calendar connections for viewers", () => {
     const fetchMock = setup("viewer");

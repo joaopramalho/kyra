@@ -59,7 +59,7 @@ export function LiveIntegrationsSurface() {
 
   const update = useMutation({
     mutationFn: (input: { method: "PATCH" | "POST" | "DELETE"; calendarId?: string }) => requestJson(`/api/integrations?businessId=${encodeURIComponent(business!.businessId)}${input.method === "DELETE" ? `&connectionId=${encodeURIComponent(google!.id)}` : ""}`, { method: input.method, ...(input.method !== "DELETE" ? { body: JSON.stringify({ connectionId: google!.id, ...(input.calendarId ? { calendarId: input.calendarId } : {}) }) } : {}) }),
-    onSuccess: async (_, input) => { await queryClient.invalidateQueries({ queryKey: ["integrations", business?.businessId] }); if (input.method === "DELETE") { if (business) telemetry.track("web.integration.calendar_disconnect_completed", { businessId: business.businessId, provider: "google", scope: google?.staffId ? "staff" : "business" }); setDialogOpen(false); toast.success(t("integrations.google.disconnectedSuccess")); } else if (input.method === "PATCH") toast.success(t("integrations.google.calendarSaved")); },
+    onSuccess: async (_, input) => { await queryClient.invalidateQueries({ queryKey: ["integrations", business?.businessId] }); if (input.method === "DELETE") { if (business) telemetry.track("web.integration.calendar_disconnect_completed", { businessId: business.businessId, provider: "google", scope: google?.staffId ? "staff" : "business" }); setDialogOpen(false); toast.success(t("integrations.google.disconnectedSuccess")); } else if (input.method === "PATCH") toast.success(t("integrations.google.calendarSaved")); else toast.success(t("integrations.google.syncStarted")); },
     onError: (error) => toast.error(error.message),
   });
 
@@ -68,7 +68,7 @@ export function LiveIntegrationsSurface() {
   return <>
     <div className="flex flex-col gap-6">
       <PageHeader title={t("sections.integrations")} />
-      {discoveryFailed || google?.lastSyncError ? <Alert variant="destructive"><AlertTitle>{t("integrations.google.syncNeedsAttention")}</AlertTitle><AlertDescription>{t("integrations.google.discoveryFailed")}</AlertDescription></Alert> : null}
+      {discoveryFailed || google?.lastSyncError ? <Alert variant="destructive"><AlertTitle>{t("integrations.google.syncNeedsAttention")}</AlertTitle><AlertDescription>{google?.lastSyncError ?? t("integrations.google.discoveryFailed")}</AlertDescription></Alert> : null}
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"><li className={`${surfaceClassName} p-4`}>
         <div className="mb-8 flex items-center justify-between gap-3"><div className="flex size-10 shrink-0 items-center justify-center"><GoogleCalendarLogo /></div><div className="flex items-center gap-2">
           {integrations.isLoading ? <Skeleton className="h-9 w-24 rounded-md" /> : <Button disabled={!canManage} onClick={() => google ? setDialogOpen(true) : void connect()} size="sm" type="button" variant="outline" className={connected ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-300" : undefined}>{connected ? t("integrations.actions.connected") : syncing ? t("integrations.status.syncing") : google ? t("integrations.google.reconnect") : t("integrations.actions.connect")}</Button>}
@@ -98,7 +98,7 @@ export function LiveIntegrationsSurface() {
           </Field></FieldGroup>
           <div className="flex flex-wrap gap-2">
             <Button disabled={!canManage || !selectedCalendarId || update.isPending || discoveryFailed} onClick={() => update.mutate({ method: "PATCH", calendarId: selectedCalendarId })} variant="secondary">{update.isPending ? t("integrations.google.savingCalendar") : t("integrations.google.saveCalendar")}</Button>
-            <Button disabled={!canManage || update.isPending || syncing || !google.selectedCalendarId} onClick={() => update.mutate({ method: "POST" })} variant="ghost"><RefreshCcw data-icon="inline-start" />{t("integrations.google.refreshCalendars")}</Button>
+            <Button disabled={!canManage || update.isPending || syncing || !google.selectedCalendarId} onClick={() => update.mutate({ method: "POST" })} variant="ghost"><RefreshCcw data-icon="inline-start" />{syncing ? t("integrations.status.syncing") : t("integrations.google.syncNow")}</Button>
             <Button disabled={!canManage || update.isPending} onClick={() => update.mutate({ method: "DELETE" })} size="sm" variant="outline"><Trash2 data-icon="inline-start" />{t("integrations.google.disconnect")}</Button>
           </div>
         </section> : null}
