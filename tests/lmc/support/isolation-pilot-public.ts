@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { assertDatabaseRole, createDatabaseClient } from "@lobbystack/db";
+import { eq } from "drizzle-orm";
+import { assertDatabaseRole, businesses, createDatabaseClient, users } from "@lobbystack/db";
 import { issueLmcCalendarAuthorization } from "../../../scripts/lmc/tenant-setup";
 import { getLmcEnvironment } from "@lobbystack/providers";
 import { signActionToken, createReplyToken } from "../../../packages/domain/src/server/lmc/capabilities";
@@ -60,6 +61,13 @@ export async function probePilotPublicContext(context: HttpAuditContext) {
     check(preflight.status === 204 && (await preflight.text()) === "", "PILOT_UNSUBSCRIBE_OPTIONS");
   }
   probed.push("POST /api/lmc/capture/[token]", "OPTIONS /api/lmc/capture/[token]", "GET /api/lmc/unsubscribe/[token]", "POST /api/lmc/unsubscribe/[token]", "OPTIONS /api/lmc/unsubscribe/[token]");
+
+  // The callback now checks the same active, verified pilot workspace as the
+  // integrations page. These HTTP fixtures must model that authenticated state.
+  await db.admin.db.update(users).set({ emailVerified: true, activeBusinessId: a.tenantId }).where(eq(users.id, a.ownerId));
+  await db.admin.db.update(users).set({ emailVerified: true, activeBusinessId: b.tenantId }).where(eq(users.id, b.ownerId));
+  await db.admin.db.update(businesses).set({ status: "active" }).where(eq(businesses.id, a.tenantId));
+  await db.admin.db.update(businesses).set({ status: "active" }).where(eq(businesses.id, b.tenantId));
 
   // Tenant A uses the same issuer as the trusted CLI; B retains the original
   // callback fixture. All identity, method, replay and cross-tenant checks stay.
