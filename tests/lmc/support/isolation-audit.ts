@@ -7,6 +7,7 @@ import { probePilotManagedSetupContext } from "./isolation-pilot-managed-setup";
 import { discoverPilotApiRoutes } from "./isolation-pilot-inventory";
 import { probePilotMethodGuards } from "./isolation-pilot-guards";
 import { probePilotDashboardContext } from "./isolation-pilot-dashboard";
+import { probePilotIntegrationsContext } from "./isolation-pilot-integrations";
 import { probePilotVoiceContext } from "./isolation-pilot-voice";
 import { probePilotWorker } from "./isolation-pilot-worker";
 import { probeAdminHealthContext } from "./isolation-admin-health";
@@ -72,6 +73,9 @@ export async function runTenantIsolationAudit() {
         await probePilotPublicContext(context);
         await probePilotWebhookContext(context);
         await probeEmailMutationContext(context);
+        // The integration probes enqueue calendar reconciliation and disconnect
+        // fixture connections, so run them only after worker-backed email probes.
+        await probePilotIntegrationsContext(context);
         // Password recovery revokes fixture sessions, so it must run last.
         await probePilotAuthContext(context);
       },

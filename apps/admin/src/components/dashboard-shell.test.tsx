@@ -25,7 +25,7 @@ function setup(role = "business_owner", pilotMode = false) {
   client.setQueryData(["billing", "business"], { account: null, permissions: { hasCheckoutAccess: false }, availableCheckoutPlans: [], availableCheckoutIntervals: { starter: [], pro: [] } });
   client.setQueryData(["phone-numbers", "business"], { phoneNumbers: [] });
   client.setQueryData(["setup", "business"], { steps: [] });
-  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} pilotCapabilities={pilotMode ? ["leads", "email_settings", "business_profile", "services", "knowledge", "contacts"] : []} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
+  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} pilotCapabilities={pilotMode ? ["leads", "email_settings", "business_profile", "services", "knowledge", "contacts", "integrations"] : []} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
   const view = render(content());
   return { ...view, client, navigate(pathname: string) { route.pathname = pathname; view.rerender(content()); } };
 }
@@ -39,6 +39,10 @@ describe("original shared navigation", () => {
   });
   it("keeps integrations visible for viewers", () => {
     setup("viewer"); expect(screen.getByRole("link", { name: "settings:sections.integrations" })).toBeTruthy();
+  });
+  it("shows calendar integrations in the pilot navigation only when enabled for the tenant", () => {
+    setup("business_owner", true);
+    expect(screen.getByRole("link", { name: "settings:sections.integrations" }).getAttribute("href")).toBe("/integrations");
   });
   it("resets the content scroll position after navigation", () => {
     const view = setup(); const main = view.container.querySelector('[data-slot="sidebar-inset"]') as HTMLElement;
@@ -62,7 +66,7 @@ describe("original shared navigation", () => {
 describe("pilot navigation boundary",()=>{
   it("renders only capability-approved links and leaves billing queries disabled",()=>{
     const {client}=setup("business_owner",true);
-    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/settings/email"]);
+    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/integrations","/settings/email"]);
     expect(client.getQueryCache().find({queryKey:["billing","business"],exact:true})?.isActive()??false).toBe(false);
   });
   it("does not offer the inherited create-workspace onboarding route",async()=>{

@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       const phones = await tx.select({ count: count() }).from(phoneNumbers).where(and(eq(phoneNumbers.businessId, businessId), eq(phoneNumbers.status, "active")));
       const [business] = await tx.select({ calendarShareServiceAddress: businesses.calendarShareServiceAddress }).from(businesses).where(eq(businesses.id, businessId)).limit(1);
       return { businessId, billing, phones, calendarShareServiceAddress: business?.calendarShareServiceAddress === true };
-    });
+    }, { minimumRole: "business_admin", pilotCapability: "integrations" });
       const [calendar, staffRows] = await Promise.all([
         listCalendarConnections(createDomainContext(), { userId: session.user.id, businessId }),
         listCalendarStaff(createDomainContext(), { userId: session.user.id, businessId }),
@@ -84,12 +84,12 @@ export async function PATCH(request: Request) {
         const pending = await tx.select({ id: appointments.id }).from(appointments).where(and(eq(appointments.businessId, authorizedBusinessId), eq(appointments.status, "confirmed"), gt(appointments.endsAt, new Date()), or(isNotNull(appointments.calendarExternalId), isNotNull(appointments.serviceLocation))));
         const changeId = randomUUID();
         for (const appointment of pending) await enqueueOutbox(tx, { topic: "calendar.syncAppointment", businessId: authorizedBusinessId, aggregateType: "appointment", aggregateId: appointment.id, dedupeKey: `appointment:${appointment.id}:calendar:sharing:${changeId}`, payload: { appointmentId: appointment.id, action: "sharing_changed" } });
-      }, { minimumRole: "business_admin", pilotCapability: "voice" });
+      }, { minimumRole: "business_admin", pilotCapability: "integrations" });
       return NextResponse.json({ ok: true });
     }
     if (!businessId || !body.connectionId || (!body.calendarId && body.staffId === undefined)) return NextResponse.json({ error: "businessId, connectionId, and calendarId or staffId are required." }, { status: 400 });
+    await withOperatorTransaction(request, async () => undefined, { minimumRole: "business_admin", pilotCapability: "integrations" });
     if (body.calendarId) {
-      await withOperatorTransaction(request, async () => undefined, { minimumRole: "business_admin" });
       const options = await calendarDiscovery(session.user.id, businessId, body.connectionId);
       const selected = options.find((option) => option.id === body.calendarId?.trim());
       if (!selected || !["owner", "writer"].includes(selected.accessRole ?? "")) return NextResponse.json({ error: "Select a calendar you can write to." }, { status: 400 });
@@ -106,6 +106,7 @@ export async function POST(request: Request) {
     const businessId = businessIdFromRequest(request);
     const body = await readJson(request) as { connectionId?: string };
     if (!businessId || !body.connectionId) return NextResponse.json({ error: "businessId and connectionId are required." }, { status: 400 });
+    await withOperatorTransaction(request, async () => undefined, { minimumRole: "business_admin", pilotCapability: "integrations" });
     await refreshCalendar(createDomainContext(), { userId: session.user.id, businessId, connectionId: body.connectionId });
     return NextResponse.json({ ok: true });
   } catch (error) { return asApiResponse(error); }
@@ -117,6 +118,7 @@ export async function DELETE(request: Request) {
     const businessId = businessIdFromRequest(request);
     const connectionId = new URL(request.url).searchParams.get("connectionId");
     if (!businessId || !connectionId) return NextResponse.json({ error: "businessId and connectionId are required." }, { status: 400 });
+    await withOperatorTransaction(request, async () => undefined, { minimumRole: "business_admin", pilotCapability: "integrations" });
     await disconnectCalendar(createDomainContext(), { userId: session.user.id, businessId, connectionId });
     return NextResponse.json({ ok: true });
   } catch (error) { return asApiResponse(error); }

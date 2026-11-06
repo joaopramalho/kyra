@@ -19,6 +19,7 @@ export function resolveLmcPilotDashboardCapabilities(input: {
     "business_profile",
     "services",
     "knowledge",
+    "integrations",
   ];
   // Draft workspaces can be configured before activation. Contacts are an
   // operational/PII surface and open only after activation (or while paused

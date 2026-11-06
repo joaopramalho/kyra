@@ -30,7 +30,7 @@ function GoogleCalendarLogo() {
 
 function formatTimestamp(value: string | null | undefined, locale: string): string | null { return value ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : null; }
 
-export function LiveIntegrationsSurface() {
+export function LiveIntegrationsSurface({ showWebhooks = true }: { showWebhooks?: boolean }) {
   const { i18n, t } = useTranslation("settings");
   const telemetry = useTelemetry();
   const searchParams = useSearchParams();
@@ -80,10 +80,10 @@ export function LiveIntegrationsSurface() {
           {integrations.isLoading ? <Skeleton className="h-9 w-24 rounded-md" /> : <Button disabled={!canManage} onClick={() => google ? setDialogOpen(true) : void connect()} size="sm" type="button" variant="outline" className={connected ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-300" : undefined}>{connected ? t("integrations.actions.connected") : syncing ? t("integrations.status.syncing") : google ? t("integrations.google.reconnect") : t("integrations.actions.connect")}</Button>}
         </div></div>
         <div className="flex flex-col gap-1"><h2 className="type-section-title text-lg">{t("integrations.cards.google.title")}</h2><p className="type-body-muted line-clamp-2">{t("integrations.cards.google.description")}</p></div>
-      </li><li className={`${surfaceClassName} p-4`}>
+      </li>{showWebhooks ? <li className={`${surfaceClassName} p-4`}>
         <div className="mb-8 flex items-center justify-between gap-3"><div className="flex size-10 shrink-0 items-center justify-center"><Webhook aria-hidden="true" className="size-7" /></div><Button disabled={!canManage} nativeButton={false} render={<Link href="/integrations/webhooks" />} size="sm" variant="outline">{t("integrations.actions.manage")}</Button></div>
         <div className="flex flex-col gap-1"><h2 className="type-section-title text-lg">{t("integrations.cards.webhooks.title")}</h2><p className="type-body-muted line-clamp-2">{t("integrations.cards.webhooks.description")}</p></div>
-      </li></ul>
+      </li> : null}</ul>
     </div>
     <Dialog onOpenChange={setDialogOpen} open={dialogOpen}><DialogContent className="max-h-[90vh] w-full overflow-hidden p-0 sm:max-w-xl">
       <DialogHeader className="gap-0 border-b p-6 pb-5"><div className="flex items-start gap-4"><div className="flex size-11 shrink-0 items-center justify-center"><GoogleCalendarLogo /></div><div className="flex flex-col gap-1"><DialogTitle>{t("integrations.google.sheetTitle")}</DialogTitle><DialogDescription>{t("integrations.google.sheetDescription")}</DialogDescription></div></div></DialogHeader>
