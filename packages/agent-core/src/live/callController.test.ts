@@ -375,6 +375,29 @@ describe("LiveCallController startup and media", () => {
     expect(state.onHangup).not.toHaveBeenCalled();
   });
 
+  it("rejects caller transcripts that echo the receptionist audio before delegating", async () => {
+    const state = await setup();
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    state.socket.emit("session.output_transcript.delta", { delta: "To cancel this appointment, please confirm the date and your name.", start_ms: 800, end_ms: 1_500 });
+    state.socket.emit("session.input_transcript.delta", { delta: "To cancel this appointment, please confirm the date and your name.", start_ms: 1_600, end_ms: 2_300 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "echoed_cancel" }, offset_ms: 2_400 });
+    await vi.waitFor(() => expect(log).toHaveBeenCalledWith(expect.stringContaining('"reasonCode":"assistant_audio_echo"')));
+    expect(state.generate).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("hangs up with an error reason when the delegated receptionist fails", async () => {
+    const state = createController({ onGenerate: () => { throw Object.assign(new Error("private provider detail"), { code: "agent_unavailable" }); } });
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    await state.start;
+    state.socket.emit("session.input_transcript.delta", { delta: "Can you check my appointment?", start_ms: 800, end_ms: 1_200 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "failed_request" }, offset_ms: 1_300 });
+    await vi.waitFor(() => expect(state.onHangup).toHaveBeenCalledWith("connection_lost"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"live.call.error_termination"'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"source":"error"'));
+    log.mockRestore();
+  });
+
   it("uses session.close only as explicit recovery when the SIP hangup endpoint fails", async () => {
     const state = await setup({ channel: "voice", onHangup: async () => { throw Object.assign(new Error("provider failed"), { code: "hangup_rejected" }); } });
     vi.useFakeTimers();

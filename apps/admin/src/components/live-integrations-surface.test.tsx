@@ -15,11 +15,11 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ i18n: { language: "en
 const clients: QueryClient[] = [];
 beforeEach(() => { route.search = new URLSearchParams(); telemetryRef.current = createRecordedBrowserTelemetry(); });
 afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
-function setup(role: string, data: Partial<IntegrationsViewModel> = {}) {
+function setup(role: string, data: Partial<IntegrationsViewModel> = {}, showWebhooks = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); clients.push(client);
   client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role }] });
   const fetchMock = vi.fn(async () => Response.json({ calendarConnections: [], calendarOptions: [], staff: [], discoveryError: null, ...data })); vi.stubGlobal("fetch", fetchMock);
-  render(<QueryClientProvider client={client}><LiveIntegrationsSurface /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><LiveIntegrationsSurface showWebhooks={showWebhooks} /></QueryClientProvider>);
   return fetchMock;
 }
 describe("original integration permissions and setup navigation", () => {
@@ -60,6 +60,11 @@ describe("original integration permissions and setup navigation", () => {
     const fetchMock = setup("viewer");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "integrations.actions.connect" }).hasAttribute("disabled")).toBe(true);
+  });
+  it("hides controls whose routes are not enabled in the pilot", () => {
+    setup("business_admin", {}, false);
+    expect(screen.queryByRole("link", { name: "integrations.actions.manage" })).toBeNull();
+    expect(screen.getByRole("button", { name: "integrations.actions.connect" })).toBeTruthy();
   });
   it("opens the calendar dialog and consumes only the setup parameter", async () => {
     route.search = new URLSearchParams("setup=calendar&keep=value");

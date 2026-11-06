@@ -162,6 +162,7 @@ function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }:
   ];
   const other: NavigationItem[] = pilotMode ? [
     ...(pilotHas("business_profile") ? [{ label: t("settings:sections.businessProfile"), href: "/settings/business", icon: SettingsIcon }] : []),
+    ...(pilotHas("integrations") ? [{ label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon }] : []),
     ...(pilotHas("email_settings") ? [{ label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon }] : []),
   ] : [
     { label: t("nav:items.analytics"), href: "/analytics", icon: ChartColumnIncreasingIcon },

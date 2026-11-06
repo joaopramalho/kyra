@@ -80,6 +80,7 @@ describe("POST /api/webhooks/openai/live", () => {
 
   it("hangs up, records setup failure, and logs only sanitized attach diagnostics", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const infoLog = vi.spyOn(console, "info").mockImplementation(() => undefined);
     mocks.execute.mockResolvedValue({ rows: [{ business_id: "biz_1" }] });
     mocks.snapshot.mockResolvedValue({ businessId: "biz_1", greeting: "Hi" });
     mocks.startLivePhoneCall.mockResolvedValue({ callId: "call_1", conversationId: "conv_1", duplicate: false, blocked: false, ended: false });
@@ -92,6 +93,10 @@ describe("POST /api/webhooks/openai/live", () => {
     expect(response.status).toBe(200);
     expect(mocks.hangup).toHaveBeenCalledWith("live_1");
     expect(mocks.finishLiveCall).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ callId: "call_1", seconds: 0, end: "setup_failed" }));
+    const info = infoLog.mock.calls.flat().join(" ");
+    expect(info).toContain('"event":"live.provider_hangup.requested"');
+    expect(info).toContain('"event":"live.provider_hangup.accepted"');
+    expect(info).toContain('"reason":"greeting_start_failed"');
     const logged = errorLog.mock.calls.flat().join(" ");
     expect(logged).toContain("greeting_start_failed");
     expect(logged).toContain("req_123");
@@ -113,6 +118,7 @@ describe("POST /api/webhooks/openai/live", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.reject).toHaveBeenCalledWith("live_accept_error", { status_code: 503 });
+    expect(mocks.hangup).toHaveBeenCalledWith("live_accept_error");
     expect(mocks.attach).not.toHaveBeenCalled();
     expect(mocks.finishLiveCall).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ callId: "call_1", seconds: 0, end: "setup_failed" }));
     const logged = errorLog.mock.calls.flat().join(" ");

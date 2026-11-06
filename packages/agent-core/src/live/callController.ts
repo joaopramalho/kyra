@@ -48,7 +48,7 @@ export type LiveCallTurn = { sequence: number; speaker: "caller" | "assistant"; 
 
 export type LiveCallTimeout = "silence_timeout" | "duration_limit";
 export type LiveCallEndReason = "caller_finished" | "spam" | "abuse" | LiveCallTimeout | "caller_hung_up" | "transferred" | "connection_lost";
-export type LiveCallEndSource = "caller_intent" | "model_tool" | "timeout" | "provider";
+export type LiveCallEndSource = "caller_intent" | "model_tool" | "timeout" | "provider" | "error";
 export type LiveCallHangupState = "active" | "closing_requested" | "farewell_in_progress" | "hangup_requested" | "closed" | "hangup_failed";
 
 export type LiveCallControllerOptions = {
@@ -448,10 +448,10 @@ export class LiveCallController {
   }
 
   /** Safety endings such as abuse and duration limits do not wait for speech. */
-  endCallNow(reason: LiveCallEndReason): void {
+  endCallNow(reason: LiveCallEndReason, source: LiveCallEndSource = "timeout"): void {
     if (this.finished || this.hangupState !== "active") return;
     this.pendingEndReason = reason;
-    this.hangupSource = "timeout";
+    this.hangupSource = source;
     this.hangupState = "closing_requested";
     this.logHangup("live.end_intent", { reason, source: this.hangupSource });
     this.options.onEndIntent?.(reason, this.hangupSource);
@@ -570,6 +570,21 @@ export class LiveCallController {
     ).sort((left, right) => right.endMs - left.endMs)[0] ?? null;
   }
 
+  private isReceptionistAudioEcho(text: string, startMs: number): boolean {
+    const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+    const callerText = normalize(text);
+    if (callerText.length < 12) return false;
+    const previousSpeech = [...this.turns].reverse().find((turn) => turn.role === "receptionist" && turn.startMs <= startMs && turn.endMs >= startMs - 1_500);
+    if (!previousSpeech) return false;
+    const assistantText = normalize(previousSpeech.text);
+    if (!assistantText) return false;
+    if (assistantText.includes(callerText) || callerText.includes(assistantText)) return true;
+    const callerTokens = new Set(callerText.split(" "));
+    const assistantTokens = new Set(assistantText.split(" "));
+    const shared = [...callerTokens].filter((token) => assistantTokens.has(token)).length;
+    return shared / Math.max(callerTokens.size, assistantTokens.size) >= 0.85;
+  }
+
   private async waitForCallerTranscript(offsetMs: number): Promise<CallerInput | null> {
     return new Promise<CallerInput | null>((resolve) => {
       const waiter: TranscriptWaiter = {
@@ -599,7 +614,7 @@ export class LiveCallController {
     return [
       `Conversation so far:\n${this.conversationText()}`,
       earlier.length ? `Answers you already gave in this call:\n${earlier.join("\n")}` : "",
-      "The voice model handed you the caller's most recent request. Handle only that request; earlier requests are already answered. Reply with what the receptionist should say next.",
+      "The voice model handed you a request authorized by new caller speech. Treat Receptionist lines as your own previous words, never as caller input. Handle only the new caller request; do not invent a caller, role-play, or restart an earlier request. Reply with what the receptionist should say next.",
     ].filter(Boolean).join("\n\n");
   }
 
@@ -635,6 +650,10 @@ export class LiveCallController {
       console.info(JSON.stringify({ event: "live.delegation.rejected", sessionId: this.options.sessionId, delegationId, reasonCode, delegationOffsetMs: event.offset_ms, transcriptWaitMs: Math.round(transcriptReadyAt - receivedAt), authorizedByNewCallerTurn: false }));
       return;
     }
+    if (this.isReceptionistAudioEcho(callerInput.text, callerInput.startMs)) {
+      console.info(JSON.stringify({ event: "live.delegation.rejected", sessionId: this.options.sessionId, delegationId, reasonCode: "assistant_audio_echo", delegationOffsetMs: event.offset_ms, authorizedByNewCallerTurn: false }));
+      return;
+    }
     callerInput.consumed = true;
     callerInput.consumedAtOffsetMs = event.offset_ms;
     console.info(JSON.stringify({ event: "live.delegation.authorized", sessionId: this.options.sessionId, delegationId, delegationOffsetMs: event.offset_ms, callerTranscriptStartMs: callerInput.startMs, callerTranscriptEndMs: callerInput.endMs, transcriptWaitMs: Math.round(transcriptReadyAt - receivedAt), authorizedByNewCallerTurn: true }));
@@ -653,7 +672,10 @@ export class LiveCallController {
       failed = true;
       if (this.abort.signal.aborted) return;
       const errorCode = safeProviderCode(error);
-      console.error(JSON.stringify({ event: "live.delegation.failed", operation: "agent_generate", sessionId: this.options.sessionId, delegationId, ...(errorCode ? { errorCode } : {}) }));
+      console.error(JSON.stringify({ event: "live.delegation.failed", operation: "agent_generate", sessionId: this.options.sessionId, delegationId, reasonCode: "agent_generation_failed", ...(errorCode ? { errorCode } : {}) }));
+      this.logHangup("live.call.error_termination", { reason: "connection_lost", reasonCode: "agent_generation_failed", delegationId });
+      this.endCallNow("connection_lost", "error");
+      return;
     }
     if (this.hangupState !== "active") {
       if (this.hangupState === "closing_requested" && this.hangupSource === "model_tool" && this.pendingEndReason === "caller_finished") {

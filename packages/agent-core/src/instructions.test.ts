@@ -23,6 +23,7 @@ describe("voice intake instructions", () => {
     expect(live).toContain("last question across delegations");
     expect(live).toContain("A successful booking tool result is the only authority");
     expect(live).toContain("Never speak as the customer");
+    expect(live).toContain("Never role-play a caller, simulate a sample conversation, or continue speaking to yourself");
     expect(live).toContain("wait for actual caller input");
     expect(live).toContain("never create fictional dialogue to fill silence");
     expect(live).toContain("retain and combine every caller fact across turns");

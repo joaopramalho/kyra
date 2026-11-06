@@ -126,6 +126,16 @@ function logSetupFailure(reason: string, input: { sessionId: string; businessId:
   console.error(JSON.stringify({ event: "live.setup.failed", operation, reason, ...input, ...safeProviderError(error) }));
 }
 
+async function hangupAfterSetupFailure(client: LiveClient, input: { sessionId: string; businessId: string }, reason: string): Promise<void> {
+  console.info(JSON.stringify({ event: "live.provider_hangup.requested", ...input, reason, transport: "sip" }));
+  try {
+    await client.live.sessions.hangup(input.sessionId);
+    console.info(JSON.stringify({ event: "live.provider_hangup.accepted", ...input, reason, transport: "sip" }));
+  } catch (error) {
+    logSetupFailure("provider_hangup_failed", input, error, "provider_hangup");
+  }
+}
+
 // Reserves minutes and records the call before accepting it, the same way the
 // Twilio media path does, so billing and limits behave identically.
 async function answerCall(client: LiveClient, input: { sessionId: string; businessId: string; snapshot: BusinessContextSnapshot; from: string | undefined; to: string; greetingOverride?: string }) {
@@ -164,6 +174,7 @@ async function answerCall(client: LiveClient, input: { sessionId: string; busine
       accepted = true;
     } catch (error) {
       logSetupFailure("openai_session_accept_failed", { sessionId: input.sessionId, businessId: input.businessId }, error, "session_accept");
+      await hangupAfterSetupFailure(client, { sessionId: input.sessionId, businessId: input.businessId }, "setup_failed");
       await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" }).catch((finalizeError) => logSetupFailure("setup_failure_finalize_failed", { sessionId: input.sessionId, businessId: input.businessId }, finalizeError, "call_finalize"));
       throw error;
     }
@@ -180,9 +191,9 @@ async function answerCall(client: LiveClient, input: { sessionId: string; busine
     await attachWorkerToLiveSession({ sessionId: input.sessionId, businessId: input.businessId, callId: call.callId, conversationId: call.conversationId, channel: "voice", ...(input.from ? { callerPhone: input.from } : {}), ...(input.greetingOverride ? { greetingOverride: input.greetingOverride } : {}) });
   } catch (error) {
     // Without the worker nobody answers delegations, so end the call cleanly.
-    await client.live.sessions.hangup(input.sessionId).catch(() => undefined);
     const attach = error && typeof error === "object" && "reason" in error && typeof error.reason === "string" ? error.reason : undefined;
     logSetupFailure(attach ?? "worker_attach_failed", { sessionId: input.sessionId, businessId: input.businessId }, error, "worker_attach");
+    await hangupAfterSetupFailure(client, { sessionId: input.sessionId, businessId: input.businessId }, attach ?? "worker_attach_failed");
     await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" }).catch((finalizeError) => logSetupFailure("setup_failure_finalize_failed", { sessionId: input.sessionId, businessId: input.businessId }, finalizeError, "call_finalize"));
     throw error;
   }

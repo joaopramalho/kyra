@@ -30,7 +30,7 @@ beforeEach(() => { vi.clearAllMocks(); mocks.authorized = true; mocks.current = 
 describe("calendar service-address consent", () => {
   it("requires business admin and queues future event resync when enabled", async () => {
     expect((await patch({ shareServiceAddress: true })).status).toBe(200);
-    expect(mocks.options).toHaveBeenCalledWith({ minimumRole: "business_admin", pilotCapability: "voice" });
+    expect(mocks.options).toHaveBeenCalledWith({ minimumRole: "business_admin", pilotCapability: "integrations" });
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ calendarShareServiceAddress: true }));
     expect(mocks.enqueue).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ topic: "calendar.syncAppointment", businessId: "business", aggregateId: "appointment-1" }));
   });
