@@ -318,14 +318,27 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
   const callerPhone = context.callerPhone;
   if (callerPhone && changePolicy.enabled && changePolicy.verificationMode !== "operator_only" && bookingMode !== "off") {
     tools.lookupAppointmentForChange = tool({
-      description: "Check whether this caller's number has upcoming appointments before cancelling or rescheduling. It does not reveal appointment details.",
-      inputSchema: z.object({}),
-      execute: async () => await lookupCallerAppointments(domain, { businessId, callerPhone }),
+      description: "Find this caller's confirmed appointment using their incoming phone number plus any facts they provide. Search by customer name, appointment date/time, service, or appointment ID. It returns an internal appointment ID only for one unique match; ask for another identifying fact if there are multiple matches.",
+      inputSchema: z.object({
+        callerName: z.string().optional(),
+        appointmentStartsAt: z.string().optional().describe("Date or date and time as the caller described it."),
+        serviceName: z.string().optional(),
+        appointmentId: z.string().optional(),
+      }),
+      execute: async (input) => await lookupCallerAppointments(domain, {
+        businessId,
+        callerPhone,
+        ...(input.callerName ? { callerName: input.callerName } : {}),
+        ...(input.appointmentStartsAt ? { appointmentStartsAt: input.appointmentStartsAt } : {}),
+        ...(input.serviceName ? { serviceName: input.serviceName } : {}),
+        ...(input.appointmentId ? { appointmentId: input.appointmentId } : {}),
+      }),
     });
     tools.verifyAppointmentForChange = tool({
       description: "Verify the caller's name and one fact about their appointment (date/time or service) before any change.",
       inputSchema: z.object({
         action: z.enum(["cancel", "reschedule"]),
+        appointmentId: z.string().optional().describe("Internal ID returned by lookupAppointmentForChange for the unique match."),
         callerName: z.string().optional(),
         appointmentStartsAt: z.string().optional().describe("The appointment time as the caller described it."),
         serviceName: z.string().optional(),
@@ -334,6 +347,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         businessId,
         callerPhone,
         action: input.action,
+        ...(input.appointmentId ? { appointmentId: input.appointmentId } : {}),
         ...(input.callerName ? { callerName: input.callerName } : {}),
         ...(input.appointmentStartsAt ? { appointmentStartsAt: input.appointmentStartsAt } : {}),
         ...(input.serviceName ? { serviceName: input.serviceName } : {}),
