@@ -96,11 +96,11 @@ export async function probePilotPublicContext(context: HttpAuditContext) {
     for (const [cookie, expected] of [["", 401], [cookieB, 403]] as const) {
       const response = await callback(states[0]!, cookie);
       await response.arrayBuffer();
-      // OAuth entry intentionally redirects missing sessions to its fixed error
-      // page; no capability may be consumed and no foreign data may be exposed.
+      // OAuth entry returns to the integration settings page on failure; no
+      // capability may be consumed and no foreign data may be exposed.
       const location = response.headers.get("location");
       const rejected = expected === 401
-        ? response.status === 307 && !!location && new URL(location).pathname === "/setup-required" && new URL(location).searchParams.get("status") === "error"
+        ? response.status === 307 && !!location && new URL(location).pathname === "/integrations" && new URL(location).searchParams.get("status") === "error"
         : response.status === expected;
       check(rejected && await remaining(0) === 1 && await remaining(1) === 1, `PILOT_CALENDAR_IDENTITY:${expected}:${response.status}`);
     }
@@ -110,7 +110,7 @@ export async function probePilotPublicContext(context: HttpAuditContext) {
     for (const [index, cookie] of [cookieA, cookieB].entries()) {
       const response = await callback(states[index]!, cookie);
       const location = response.headers.get("location");
-      check(response.status === 307 && !!location && new URL(location).pathname === "/setup-required" && new URL(location).searchParams.get("status") === "error", `PILOT_CALENDAR_AUTHORIZED_CALLBACK:${index}:${response.status}`);
+      check(response.status === 307 && !!location && new URL(location).pathname === "/integrations" && new URL(location).searchParams.get("status") === "error", `PILOT_CALENDAR_AUTHORIZED_CALLBACK:${index}:${response.status}`);
       await response.arrayBuffer();
       check(await remaining(index) === 0, "PILOT_CALENDAR_STATE_NOT_CONSUMED");
       if (index === 0) check(await remaining(1) === 1, "PILOT_CALENDAR_FOREIGN_STATE_CONSUMED");
