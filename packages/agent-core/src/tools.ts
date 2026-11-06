@@ -325,7 +325,14 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
         serviceName: z.string().optional(),
         appointmentId: z.string().optional(),
       }),
-      execute: async (input) => await lookupCallerAppointments(domain, { businessId, callerPhone, ...input }),
+      execute: async (input) => await lookupCallerAppointments(domain, {
+        businessId,
+        callerPhone,
+        ...(input.callerName ? { callerName: input.callerName } : {}),
+        ...(input.appointmentStartsAt ? { appointmentStartsAt: input.appointmentStartsAt } : {}),
+        ...(input.serviceName ? { serviceName: input.serviceName } : {}),
+        ...(input.appointmentId ? { appointmentId: input.appointmentId } : {}),
+      }),
     });
     tools.verifyAppointmentForChange = tool({
       description: "Verify the caller's name and one fact about their appointment (date/time or service) before any change.",
