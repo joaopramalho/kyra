@@ -402,6 +402,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
       description: "Hang up after saying goodbye, when the caller is done, or when the call is spam or abusive.",
       inputSchema: z.object({ reason: z.enum(["caller_finished", "spam", "abuse"]) }),
       execute: async ({ reason }) => {
+        logOperational("live.end_call_tool.invoked", { operation: "end_call", businessId, reason, ...(context.callId ? { callId: context.callId } : {}), ...(context.sessionId ? { sessionId: context.sessionId } : {}) });
         await callControl.hangup(reason);
         return { ok: true };
       },

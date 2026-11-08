@@ -74,6 +74,10 @@ describe("LiveCallController startup and media", () => {
     "Hello, um, I called by mistake. Can you please hang up",
     "Goodbye",
     "That's all",
+    "Okay, goodbye",
+    "That's all I need, thank you",
+    "Have a great day",
+    "We are all set, thanks",
     "Tchau",
     "Até logo",
     "Tá bom, até logo",
@@ -94,6 +98,9 @@ describe("LiveCallController startup and media", () => {
     "Obrigado",
     "Não desligue, ainda preciso de ajuda",
     "No cuelgues, necesito ayuda",
+    "Thank you",
+    "I don't want to say goodbye",
+    "Not ready to hang up",
   ])("does not treat ambiguous or negative wording as a hangup: %s", (text) => {
     expect(detectsExplicitCallerHangup(text)).toBe(false);
   });
