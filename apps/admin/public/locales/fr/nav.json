@@ -2,6 +2,7 @@
   "items": {
     "home": "Accueil",
     "calls": "Appels",
+    "appointments": "Rendez-vous",
     "messages": "Messages",
     "agent": "Agent",
     "contacts": "Contacts",

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { PilotDashboardCapability } from "@lobbystack/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardShell } from "./dashboard-shell";
 import { UpgradePlanDialogProvider } from "./upgrade-plan-dialog-context";
@@ -19,13 +20,13 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", vi.fn(query => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
 afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
-function setup(role = "business_owner", pilotMode = false) {
+function setup(role = "business_owner", pilotMode = false, pilotCapabilities: readonly PilotDashboardCapability[] = ["leads", "email_settings", "business_profile", "services", "knowledge", "contacts", "integrations"]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); clients.push(client);
   client.setQueryData(["businesses"], { businesses: [{ businessId: "business", name: "Tenant name", active: true, role }] });
   client.setQueryData(["billing", "business"], { account: null, permissions: { hasCheckoutAccess: false }, availableCheckoutPlans: [], availableCheckoutIntervals: { starter: [], pro: [] } });
   client.setQueryData(["phone-numbers", "business"], { phoneNumbers: [] });
   client.setQueryData(["setup", "business"], { steps: [] });
-  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} pilotCapabilities={pilotMode ? ["leads", "email_settings", "business_profile", "services", "knowledge", "contacts", "integrations"] : []} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
+  const content = () => <QueryClientProvider client={client}><DashboardShell pilotMode={pilotMode} pilotCapabilities={pilotMode ? pilotCapabilities : []} user={{ email: "operator@example.invalid", name: "Operator" }}><p>Page content</p></DashboardShell></QueryClientProvider>;
   const view = render(content());
   return { ...view, client, navigate(pathname: string) { route.pathname = pathname; view.rerender(content()); } };
 }
@@ -34,7 +35,7 @@ describe("original shared navigation", () => {
     setup();
     // The sidebar header carries the workspace switcher alone; no brand mark.
     expect(screen.queryByRole("img", { name: "Lead My Company" })).toBeNull();
-    expect(screen.getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["#dashboard-main-content", "/", "/leads", "/calls", "/contacts", "/agent", "/agent/knowledge", "/agent/services", "/agent/rules", "/analytics", "/integrations", "/settings/email", "/settings/usage"]);
+    expect(screen.getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["#dashboard-main-content", "/", "/leads", "/calls", "/appointments", "/contacts", "/agent", "/agent/knowledge", "/agent/services", "/agent/rules", "/analytics", "/integrations", "/settings/email", "/settings/usage"]);
     expect(document.getElementById("dashboard-main-content")?.tabIndex).toBe(-1);
   });
   it("keeps integrations visible for viewers", () => {
@@ -43,6 +44,12 @@ describe("original shared navigation", () => {
   it("shows calendar integrations in the pilot navigation only when enabled for the tenant", () => {
     setup("business_owner", true);
     expect(screen.getByRole("link", { name: "settings:sections.integrations" }).getAttribute("href")).toBe("/integrations");
+  });
+  it("shows appointments only when voice is enabled for the pilot tenant", () => {
+    setup("business_owner", true);
+    expect(screen.queryByRole("link", { name: "nav:items.appointments" })).toBeNull();
+    setup("business_owner", true, ["voice"]);
+    expect(screen.getByRole("link", { name: "nav:items.appointments" }).getAttribute("href")).toBe("/appointments");
   });
   it("resets the content scroll position after navigation", () => {
     const view = setup(); const main = view.container.querySelector('[data-slot="sidebar-inset"]') as HTMLElement;

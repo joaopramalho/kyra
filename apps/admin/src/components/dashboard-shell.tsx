@@ -7,14 +7,23 @@ import type { PilotDashboardCapability } from "@lobbystack/shared";
 import { requestJson } from "@/lib/request-json";
 import { selectActiveBusiness } from "@/lib/active-business";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { BookTextIcon } from "@/components/ui/book-text";
 import { BlocksIcon } from "@/components/ui/blocks";
 import { ChartColumnIncreasingIcon } from "@/components/ui/chart-column-increasing";
+import { CalendarDaysIcon } from "lucide-react";
 import { ClipboardCheckIcon } from "@/components/ui/clipboard-check";
-import { HomeIcon } from "@/components/ui/home";
+import { HomeIcon, type HomeIconHandle } from "@/components/ui/home";
 import { MessageSquareMoreIcon } from "@/components/ui/message-square-more";
 import { PhoneAnimatedIcon } from "@/components/ui/phone-animated";
 import { SettingsIcon } from "@/components/ui/settings";
@@ -68,6 +77,23 @@ type NavigationItem = {
   label: string;
   icon: typeof HomeIcon;
 };
+
+const AppointmentsIcon = forwardRef<
+  HomeIconHandle,
+  HTMLAttributes<HTMLDivElement> & { size?: number }
+>(({ className, size = 16, ...props }, ref) => {
+  useImperativeHandle(
+    ref,
+    () => ({ startAnimation: () => undefined, stopAnimation: () => undefined }),
+    [],
+  );
+  return (
+    <div className={className} {...props}>
+      <CalendarDaysIcon size={size} />
+    </div>
+  );
+});
+AppointmentsIcon.displayName = "AppointmentsIcon";
 
 async function getBusinesses(): Promise<{ businesses: Business[] }> {
   const response = await fetch("/api/businesses", { credentials: "include" });
@@ -141,11 +167,13 @@ function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }:
   const general: NavigationItem[] = pilotMode ? [
     ...(pilotHas("leads") ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
     ...(pilotHas("voice") ? [{ label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon }] : []),
+    ...(pilotHas("voice") ? [{ label: t("nav:items.appointments"), href: "/appointments", icon: AppointmentsIcon }] : []),
     ...(pilotHas("contacts") ? [{ label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon }] : []),
   ] : [
     { label: t("nav:items.home"), href: "/", icon: HomeIcon },
     { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
     { label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon },
+    { label: t("nav:items.appointments"), href: "/appointments", icon: AppointmentsIcon },
     ...(["/messages", "/settings/widget"].some(route => pathname === route || pathname.startsWith(`${route}/`)) ? [{ label: t("nav:items.messages"), href: "/messages", icon: MessageSquareMoreIcon }] : []),
     { label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon },
   ];
@@ -213,7 +241,7 @@ function NavigationGroup({ items, pathname, title }: { items: NavigationItem[]; 
             ? pathname === "/"
             : item.href === "/settings/usage"
               ? pathname.startsWith("/settings")
-              : pathname === item.href;
+              : pathname === item.href || (["/calls", "/contacts", "/integrations"].includes(item.href) && pathname.startsWith(`${item.href}/`));
           return (
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
