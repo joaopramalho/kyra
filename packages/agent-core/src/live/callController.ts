@@ -127,16 +127,21 @@ function safeProviderCode(error: unknown): string | undefined {
   return typeof code === "string" && /^[a-z0-9_.-]{1,80}$/i.test(code) ? code : undefined;
 }
 
-const NEGATIVE_HANGUP_INTENT = /\b(?:don t|do not|not ready to|not going to|what happens if|what if|can you hang up on|could you hang up on|would you hang up on)\b/;
+const NEGATIVE_HANGUP_INTENT = /\b(?:don t|do not|not ready to|not going to|what happens if|what if|can you hang up on|could you hang up on|would you hang up on|nao (?:quero|vou|preciso) desligar|nao desligue|nao encerre|nao termine|no quiero colgar|no cuelgues)\b/;
 const DIRECT_HANGUP_INTENT = /^(?:(?:okay|ok|yes|sure)[ ,]+)?(?:(?:i called by mistake|this was a mistake)[ ,]+)?(?:(?:can|could|would) you |you can |i want to )?(?:please )?(?:hang up(?: now)?|disconnect(?: now)?|end (?:this |the )?call(?: now)?)[.! ]*$/;
-const FAREWELL_HANGUP_INTENT = /^(?:goodbye|good bye|bye|that s all|that s it|i m done|i am done|take care)[.! ]*$/;
+const FAREWELL_HANGUP_INTENT = /^(?:(?:okay|ok|all right|thanks|thank you|thank you so much|perfect|great)[ ,]+)*(?:goodbye|good bye|bye|that s all(?: i need)?|that s it|i m done|i am done|i m all set|i am all set|we re all set|we are all set|take care|have a (?:good|great|nice) (?:day|night|one)|see you(?: later)?)(?:[ ,]+(?:thanks|thank you|thank you so much))?[.! ]*$/;
+const DIRECT_HANGUP_INTENT_PT = /^(?:(?:(?:muito )?obrigad[oa]|sim|ok|okay|tudo bem)[ ,]+)?(?:(?:por favor)[ ,]+)?(?:(?:pode|poderia|quero que voce) )?(?:desligar|encerrar|terminar|desconectar)(?: a)?(?: ligacao| chamada)?(?: agora)?[.! ]*$/;
+const FAREWELL_HANGUP_INTENT_PT = /^(?:(?:(?:ta bom|tudo bem|tudo certo|certo|perfeito|valeu|(?:muito )?obrigad[oa])[ ,]+))*(?:tchau|ate logo|ate mais|ate amanha|adeus|era so isso|foi so isso|por hoje e so|nao preciso de mais nada|isso e tudo|e so isso)(?:[ ,]+(?:muito )?obrigad[oa])?[.! ]*$/;
+const FAREWELL_HANGUP_INTENT_ES = /^(?:adios|hasta luego|hasta pronto|eso es todo|no necesito nada mas)[.! ]*$/;
 
 /** This classifier is called only with caller input transcript text, never assistant output. */
 export function detectsExplicitCallerHangup(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/[’']/g, " ").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ")
+  const normalized = text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[’']/g, " ").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ")
     .replace(/^(?:(?:hello|hi|hey|um|uh|well|okay|ok|yes|sure|please)\s+)+/, "");
   if (!normalized || NEGATIVE_HANGUP_INTENT.test(normalized)) return false;
-  return DIRECT_HANGUP_INTENT.test(normalized) || FAREWELL_HANGUP_INTENT.test(normalized);
+  return DIRECT_HANGUP_INTENT.test(normalized) || FAREWELL_HANGUP_INTENT.test(normalized)
+    || DIRECT_HANGUP_INTENT_PT.test(normalized) || FAREWELL_HANGUP_INTENT_PT.test(normalized)
+    || FAREWELL_HANGUP_INTENT_ES.test(normalized);
 }
 
 /**
@@ -391,7 +396,7 @@ export class LiveCallController {
     this.hangupState = "closing_requested";
     this.latestDelegationOffsetMs = Number.POSITIVE_INFINITY;
     this.clearTranscriptWaiters();
-    this.logHangup("live.hangup_intent.detected", { source: this.hangupSource });
+    this.logHangup("live.hangup_intent.detected", { reason: this.pendingEndReason, source: this.hangupSource });
     this.logHangup("live.end_intent", { reason: this.pendingEndReason, source: this.hangupSource });
     this.logHangup("live.hangup_closing.started", { reason: this.pendingEndReason, source: this.hangupSource });
     this.options.onEndIntent?.(this.pendingEndReason, this.hangupSource);

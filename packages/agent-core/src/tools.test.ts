@@ -158,6 +158,20 @@ describe("createReceptionistTools", () => {
     expect(names).not.toContain("transferCall");
   });
 
+  it("logs the reason and identifiers when the agent invokes endCall", async () => {
+    const hangup = vi.fn(async () => undefined);
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const tools = createReceptionistTools({ domain: { db: {} as never }, channel: "voice", callId: "call_1", sessionId: "live_1", callControl: { hangup }, snapshot: demoSnapshot });
+    const execute = tools.endCall!.execute! as (input: object, options: object) => Promise<unknown>;
+
+    await expect(execute({ reason: "caller_finished" }, { toolCallId: "end_1", messages: [] })).resolves.toEqual({ ok: true });
+
+    expect(hangup).toHaveBeenCalledWith("caller_finished");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"live.end_call_tool.invoked","operation":"end_call"'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"reason":"caller_finished","callId":"call_1","sessionId":"live_1"'));
+    log.mockRestore();
+  });
+
   it("refuses a transfer the rules don't allow", async () => {
     const tools = createReceptionistTools({
       domain: { db: {} as never },

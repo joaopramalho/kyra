@@ -74,6 +74,17 @@ describe("LiveCallController startup and media", () => {
     "Hello, um, I called by mistake. Can you please hang up",
     "Goodbye",
     "That's all",
+    "Okay, goodbye",
+    "That's all I need, thank you",
+    "Have a great day",
+    "We are all set, thanks",
+    "Tchau",
+    "Até logo",
+    "Tá bom, até logo",
+    "Tudo certo, era só isso. Muito obrigado",
+    "Era só isso, obrigado",
+    "Muito obrigada, pode desligar a chamada agora",
+    "Adiós",
   ])("detects explicit caller hangup: %s", (text) => {
     expect(detectsExplicitCallerHangup(text)).toBe(true);
   });
@@ -84,8 +95,27 @@ describe("LiveCallController startup and media", () => {
     "What happens if I hang up?",
     "Can you hang up on someone else?",
     "What does hang up mean?",
+    "Obrigado",
+    "Não desligue, ainda preciso de ajuda",
+    "No cuelgues, necesito ayuda",
+    "Thank you",
+    "I don't want to say goodbye",
+    "Not ready to hang up",
   ])("does not treat ambiguous or negative wording as a hangup: %s", (text) => {
     expect(detectsExplicitCallerHangup(text)).toBe(false);
+  });
+
+  it("hangs up a SIP call after a Portuguese caller farewell and logs its reason", async () => {
+    const state = await setup({ channel: "voice" });
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    state.socket.emit("session.input_transcript.delta", { delta: "Até logo, muito obrigado.", start_ms: 800, end_ms: 1_200 });
+
+    await vi.advanceTimersByTimeAsync(4_500);
+
+    expect(state.onHangup).toHaveBeenCalledWith("caller_finished");
+    expect(log.mock.calls.some(([line]) => typeof line === "string" && line.includes('"event":"live.hangup_intent.detected"') && line.includes('"reason":"caller_finished"') && line.includes('"source":"caller_intent"'))).toBe(true);
+    log.mockRestore();
   });
 
   it("sends one speakable greeting and requires its context acknowledgement plus output audio", async () => {
