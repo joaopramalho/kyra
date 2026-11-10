@@ -16,6 +16,7 @@
   },
   "home": {
     "title": "Home",
+    "overviewEyebrow": "Workspace overview",
     "download": "Download",
     "liveCalls": "Live",
     "tabs": {

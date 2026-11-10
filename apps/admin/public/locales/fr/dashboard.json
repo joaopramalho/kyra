@@ -16,6 +16,7 @@
   },
   "home": {
     "title": "Accueil",
+    "overviewEyebrow": "Vue de l’espace",
     "download": "Télécharger",
     "liveCalls": "En direct",
     "tabs": {
