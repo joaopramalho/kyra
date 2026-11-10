@@ -18,6 +18,7 @@ import { AlertCircle, ArrowUpRight, CalendarDays, ChevronRight, Clock3, PhoneCal
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { DashboardActivationCard } from "@/components/dashboard-activation-card";
@@ -69,6 +70,7 @@ export function LiveOverviewSurface() {
   const queryClient = useQueryClient();
   const summary = useQuery({ queryKey: ["dashboard"], queryFn: getSummary });
   const businessId = summary.data?.businessId;
+  const loadFailed = summary.isError && !summary.data;
 
   useEffect(() => {
     if (!businessId) return;
@@ -103,6 +105,19 @@ export function LiveOverviewSurface() {
       />
       <div className="flex flex-col gap-6">
         <DashboardActivationCard businessId={businessId} />
+        {loadFailed ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>{t("home.loadError.title")}</AlertTitle>
+            <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>{t("home.loadError.description")}</span>
+              <Button variant="outline" onClick={() => { void summary.refetch(); }} loading={summary.isFetching} loadingLabel={t("home.loadError.retrying")}>
+                {t("home.loadError.retry")}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {!loadFailed ? <>
         {summary.isLoading ? <MetricCardGridSkeleton count={3} /> : (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             {metrics.map((metric) => (
@@ -235,6 +250,7 @@ export function LiveOverviewSurface() {
           <Card className="col-span-1 lg:col-span-4"><CardHeader><CardTitle>{t("home.chart.title")}</CardTitle></CardHeader><CardContent className="ps-2"><OverviewCallChart data={(summary.data?.monthlyCalls ?? []).map((item) => ({ name: formatDateTime(item.monthStart, i18n.language, { month: "short", timeZone: "UTC" }), total: item.total }))} /></CardContent></Card>
           <Card className="col-span-1 lg:col-span-3"><CardHeader><CardTitle>{t("home.recentCalls.title")}</CardTitle><CardDescription>{t("home.recentCalls.description", { count: summary.data?.recentCalls.length ?? 0 })}</CardDescription></CardHeader><CardContent><div className="flex flex-col">{(summary.data?.recentCalls ?? []).map((call) => <Link className="group flex items-center gap-4 rounded-xl px-2 py-3 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&+a]:border-t [&+a]:border-border/60" href={`/calls/${encodeURIComponent(call.id)}`} key={call.id}><Avatar className="h-10 w-10 border border-border/70 shadow-sm"><AvatarFallback>{initials(call.contactName)}</AvatarFallback></Avatar><div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 flex-col gap-1"><p className="type-item-title truncate leading-none">{call.contactName ?? t("home.recentCalls.unknownCaller")}</p><p className="type-body-muted truncate">{(call.contactPhone ? formatPhoneNumberDisplay(call.contactPhone, i18n.language) : null) ?? formatDateTime(call.startedAt, i18n.language, { dateStyle: "medium", timeStyle: "short" })}</p></div><div className="flex shrink-0 items-center gap-2"><span className="type-item-title">{call.durationSeconds ? t("home.recentCalls.durationValue", { value: call.durationSeconds }) : call.status}</span><ChevronRight aria-hidden="true" className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></div></div></Link>)}</div></CardContent></Card>
         </div>}
+        </> : null}
       </div>
     </div>
   );
