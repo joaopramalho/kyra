@@ -89,13 +89,13 @@ const GREETING_AUDIO_TIMEOUT_MS = 4_000;
 const GREETING_EVENT_ID = "kyra_initial_greeting";
 // GPT-Live exposes ordered audio deltas, not a response-complete event. This
 // bounded drain heuristic is not proof that a human heard every audio sample.
-const FINAL_AUDIO_IDLE_MS = 900;
-const FINAL_AUDIO_START_GRACE_MS = 2_000;
+const FINAL_AUDIO_IDLE_MS = 500;
+const FINAL_AUDIO_START_GRACE_MS = 1_200;
 const FINAL_AUDIO_MAX_DRAIN_MS = 4_500;
 const FINAL_QUESTION_TIMEOUT_MS = 12_000;
-// The SDK has no final input-transcript event. Match the transcript assembler's
-// fragment window so an early delta cannot close a call before later text arrives.
-const CALLER_INTENT_QUIET_MS = CALLER_FRAGMENT_GAP_MS;
+// The SDK has no final input-transcript event. Keep the full fragment window
+// unless transcript punctuation indicates the caller has completed the thought.
+const CALLER_INTENT_TERMINAL_QUIET_MS = 600;
 const HANGUP_CONFIRMATION_TIMEOUT_MS = 5_000;
 const HANGUP_RECOVERY_TIMEOUT_MS = 2_000;
 const FALLBACK_ANSWER = "Sorry, I couldn't check that just now. Offer to take a message so the team can follow up.";
@@ -383,7 +383,7 @@ export class LiveCallController {
         this.beginCallerIntentClosing();
         if (this.callerResponseAudioObserved) this.startFarewellFromModelAudio();
       }
-    }, CALLER_INTENT_QUIET_MS);
+    }, /[.!?][\]"'”’)]*\s*$/.test(input.text) ? CALLER_INTENT_TERMINAL_QUIET_MS : CALLER_FRAGMENT_GAP_MS);
   }
 
   private beginCallerIntentClosing(): void {

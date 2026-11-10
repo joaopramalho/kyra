@@ -1,7 +1,7 @@
 import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { DateTime } from "luxon";
 
-import { appointments, contacts, receptionistProfiles, services, withBusinessTransaction } from "@lobbystack/db";
+import { receptionistProfiles, services, withBusinessTransaction } from "@lobbystack/db";
 import { normalizeAppointmentChangePolicy, type HoursWindow } from "@lobbystack/shared";
 import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
 
@@ -14,7 +14,7 @@ import { queueOperatorAlert } from "./notifications";
 import { recordProductEvent } from "./productEvents";
 import { createVoiceFollowUpTask } from "./voice";
 import type { ServiceIntake } from "./service-intake";
-import { appointmentTimesMatch, serviceNamesMatch, storedContactNameMatchesIfPresent, substantiveServiceNameFactMatches } from "./appointmentFacts";
+import { findAppointmentChangeMatches } from "./appointmentChangeLookup";
 
 // Actions the receptionist agent takes on a business's behalf, whatever the
 // channel. Each one opens its own tenant-scoped transaction.
@@ -167,18 +167,14 @@ export async function bookForCaller(
 
 export async function lookupCallerAppointments(context: DomainContext, input: { businessId: string; callerPhone: string; callerName?: string; appointmentStartsAt?: string; serviceName?: string; appointmentId?: string }) {
   return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
-    const [rows, profile] = await Promise.all([
-      tx.select({ id: appointments.id, startsAt: appointments.startsAt, timezone: appointments.timezone, name: contacts.name, serviceName: services.name, serviceSlug: services.slug, localizedNames: services.localizedNames }).from(appointments).innerJoin(contacts, eq(appointments.contactId, contacts.id)).innerJoin(services, eq(appointments.serviceId, services.id)).where(and(input.appointmentId ? eq(appointments.id, input.appointmentId) : undefined, eq(appointments.businessId, input.businessId), eq(contacts.phone, input.callerPhone), eq(appointments.status, "confirmed"))).orderBy(asc(appointments.startsAt)),
+    const [{ matches, callerPhoneAppointmentCount }, profile] = await Promise.all([
+      findAppointmentChangeMatches(tx, input),
       tx.select({ appointmentChangePolicy: receptionistProfiles.appointmentChangePolicy }).from(receptionistProfiles).where(eq(receptionistProfiles.businessId, input.businessId)).limit(1),
     ]);
-    const hasCriteria = Boolean(input.callerName?.trim() || input.appointmentStartsAt?.trim() || input.serviceName?.trim() || input.appointmentId?.trim());
-    const matches = hasCriteria ? rows.filter((row) => storedContactNameMatchesIfPresent(row.name ?? undefined, input.callerName)
-      && (!input.appointmentStartsAt?.trim() || appointmentTimesMatch({ startsAt: row.startsAt.toISOString(), timezone: row.timezone }, input.appointmentStartsAt))
-      && (!input.serviceName?.trim() || (input.appointmentId ? serviceNamesMatch : substantiveServiceNameFactMatches)({ name: row.serviceName, slug: row.serviceSlug, localizedNames: row.localizedNames }, input.serviceName))) : [];
     const policy = normalizeAppointmentChangePolicy(profile[0]?.appointmentChangePolicy);
-    // Return an internal id only for a unique caller-supplied match. Appointment
-    // details remain private until the separate verification step succeeds.
-    return { ok: true as const, policy: { ...policy, enabled: policy.enabled && rows.length > 0 }, phoneMatched: rows.length > 0, appointmentCount: rows.length, matchingAppointmentCount: matches.length, ...(matches.length === 1 ? { appointmentId: matches[0]!.id } : {}) };
+    // Return only an opaque ID for a unique match. Alternate-number matches
+    // require OTP to the saved contact number before any change or disclosure.
+    return { ok: true as const, policy: { ...policy, enabled: policy.enabled && (callerPhoneAppointmentCount > 0 || matches.length > 0) }, phoneMatched: callerPhoneAppointmentCount > 0, appointmentCount: callerPhoneAppointmentCount, matchingAppointmentCount: matches.length, ...(matches.length === 1 ? { appointmentId: matches[0]!.id } : {}) };
   });
 }
 

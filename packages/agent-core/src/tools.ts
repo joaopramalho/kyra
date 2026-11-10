@@ -318,7 +318,7 @@ export function createReceptionistTools(context: AgentToolContext): ToolSet {
   const callerPhone = context.callerPhone;
   if (callerPhone && changePolicy.enabled && changePolicy.verificationMode !== "operator_only" && bookingMode !== "off") {
     tools.lookupAppointmentForChange = tool({
-      description: "Find this caller's confirmed appointment using their incoming phone number plus any facts they provide. Search by customer name, appointment date/time, service, or appointment ID. It returns an internal appointment ID only for one unique match; ask for another identifying fact if there are multiple matches.",
+      description: "Find a confirmed appointment using the caller's incoming number plus facts, or use the customer's full name with the appointment date/time or service if the booking used another number. It returns an internal ID only for one unique match. An alternate-number match must be verified with the code sent to the phone saved on that booking before discussing details or making changes.",
       inputSchema: z.object({
         callerName: z.string().optional(),
         appointmentStartsAt: z.string().optional().describe("Date or date and time as the caller described it."),
