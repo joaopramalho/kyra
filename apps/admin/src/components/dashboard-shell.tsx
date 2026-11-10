@@ -232,16 +232,20 @@ function NavigationGroup({ items, pathname, title }: { items: NavigationItem[]; 
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const activeHref = items
+    .filter((item) => item.href !== "/" && (
+      pathname === item.href
+      || pathname.startsWith(`${item.href}/`)
+      || (item.href === "/settings/usage" && pathname.startsWith("/settings/"))
+    ))
+    .sort((left, right) => right.href.length - left.href.length)[0]?.href
+    ?? (pathname === "/" && items.some((item) => item.href === "/") ? "/" : null);
   return (
     <SidebarGroup>
       <SidebarGroupLabel>{title}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => {
-          const active = item.href === "/"
-            ? pathname === "/"
-            : item.href === "/settings/usage"
-              ? pathname.startsWith("/settings")
-              : pathname === item.href || (["/calls", "/contacts", "/integrations"].includes(item.href) && pathname.startsWith(`${item.href}/`));
+          const active = activeHref === item.href;
           return (
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
