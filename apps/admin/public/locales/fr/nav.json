@@ -2,6 +2,7 @@
   "items": {
     "home": "Accueil",
     "calls": "Appels",
+    "appointments": "Rendez-vous",
     "messages": "Messages",
     "agent": "Agent",
     "contacts": "Contacts",
@@ -16,9 +17,9 @@
   },
   "sidebar": {
     "businessSlugFallback": "Tableau de bord",
-    "general": "Général",
+    "general": "Activité",
     "agent": "Agent",
-    "other": "Gestion",
+    "other": "Espace",
     "workspace": "Espace",
     "openSettings": "Ouvrir les réglages",
     "signedIn": "Connecté",

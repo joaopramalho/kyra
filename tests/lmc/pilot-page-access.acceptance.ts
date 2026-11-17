@@ -13,7 +13,7 @@ it("requires actual verified identity, active membership, canonical active tenan
     await db.admin.db.update(users).set({activeBusinessId:a.tenantId}).where(eq(users.id,a.ownerId));
     expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toBeNull();
     await db.admin.db.update(users).set({emailVerified:true}).where(eq(users.id,a.ownerId));
-    expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toEqual({tenantId:a.tenantId,capabilities:["leads","email_settings","business_profile","services","knowledge","contacts"]});
+    expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toEqual({tenantId:a.tenantId,capabilities:["leads","email_settings","business_profile","services","knowledge","integrations","contacts"]});
     await db.admin.db.update(users).set({activeBusinessId:b.tenantId}).where(eq(users.id,a.ownerId));
     expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toBeNull();
     await db.admin.db.update(users).set({activeBusinessId:a.tenantId}).where(eq(users.id,a.ownerId));
@@ -21,7 +21,7 @@ it("requires actual verified identity, active membership, canonical active tenan
     await db.admin.pool.query("update lmc_settings set config=$1::jsonb where tenant_id=$2",["{}",a.tenantId]);
     expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toBeNull();
     await db.admin.db.update(lmcSettings).set({config:saved!.config,enabled:false}).where(eq(lmcSettings.tenantId,a.tenantId));
-    expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toEqual({tenantId:a.tenantId,capabilities:["leads","email_settings","business_profile","services","knowledge","contacts"]});
+    expect(await resolveLmcPilotPageAccess(context,a.ownerId)).toEqual({tenantId:a.tenantId,capabilities:["leads","email_settings","business_profile","services","knowledge","integrations","contacts"]});
     await db.admin.db.update(businesses).set({status:"draft"}).where(eq(businesses.id,a.tenantId));
     expect((await resolveLmcPilotPageAccess(context,a.ownerId))?.capabilities).not.toContain("contacts");
     await db.admin.db.update(businesses).set({status:"active"}).where(eq(businesses.id,a.tenantId));

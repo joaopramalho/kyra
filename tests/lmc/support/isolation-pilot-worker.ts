@@ -10,7 +10,18 @@ export async function probePilotWorker(routes: AuditRoute[]) {
   const failures: string[] = [], probed: string[] = [];
   const state: WorkerHealthState = { ready: true, redis: true, database: true, storage: true, activeJobs: 3 };
   let privateControllerCalls = 0;
-  const server = startHealthServer(0, state, async (_request, response) => {
+  const server = startHealthServer(0, state, async (request, response) => {
+    if (
+      new URL(request.url ?? "/", "http://localhost").pathname ===
+        "/internal/live/attach" &&
+      request.method === "POST" &&
+      request.headers["x-internal-service-token"] !==
+        process.env.INTERNAL_SERVICE_TOKEN
+    ) {
+      response.writeHead(401);
+      response.end();
+      return true;
+    }
     privateControllerCalls++;
     response.writeHead(202);
     response.end("private controller");
@@ -55,8 +66,11 @@ export async function probePilotWorker(routes: AuditRoute[]) {
     }
     for (const path of ["/internal/live/attach", "/__lmc_unknown", "/healthz/extra"]) {
       for (const method of PILOT_AUDIT_METHODS) {
+        // This is the sole supported pilot exception, but missing the dedicated
+        // internal token must stop before its private controller is reached.
         const response = await fetch(base + path, { method, signal: AbortSignal.timeout(5000), headers: { authorization: `Bearer ${process.env.INTERNAL_SERVICE_TOKEN ?? "synthetic-test-service-key"}`, "x-business-id": identities[1]! } });
-        if (response.status !== 404 || (await response.text()) !== "") failures.push(`PILOT_WORKER_DENIED:${method}:${path}`);
+        const expected = path === "/internal/live/attach" && method === "POST" ? 401 : 404;
+        if (response.status !== expected || (await response.text()) !== "") failures.push(`PILOT_WORKER_DENIED:${method}:${path}`);
       }
     }
     if (privateControllerCalls !== 0) failures.push("PILOT_PRIVATE_CONTROLLER_INVOKED");

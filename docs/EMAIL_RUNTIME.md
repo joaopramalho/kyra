@@ -21,6 +21,28 @@ The consumer serializes drain iterations and waits 500 ms between them. A task i
 
 Maintenance startup returns before consumer/provider initialization. Shutdown aborts future claims, lets the current task finish and waits for the email loop before closing database pools. Model requests are bounded to 20 seconds with no SDK retries; email transport requests retain their 10-second bound and durable retry policy. HTTPS remains the default domain-worker requirement; its runtime explicitly permits HTTP only for loopback fake-mode development.
 
+## Delivery diagnostics
+
+An inbound webhook `200` acknowledges provider receipt/deduplication; it does not mean that the model ran or that a reply was sent. For a tenant-scoped incident, inspect `lmc_events` (`email_received`, `email_processing_skipped`, `email_processed`, and `email_job_failed`), then `lmc_jobs` and `lmc_messages` to distinguish acceptance, an intentional pause/suppression, processing retries, and delivery status. Failure events contain only job kind, sanitized failure code/category, attempt number and terminal status—never message text, addresses or credentials. A send job can still be pending after an `email_processed` event.
+
+```sql
+SELECT type, metadata, created_at
+FROM lmc_events
+WHERE tenant_id = $1 AND lead_id = $2
+  AND type IN ('email_received', 'email_processing_skipped', 'email_processed', 'email_job_failed')
+ORDER BY created_at;
+
+SELECT kind, status, attempts, last_error, available_at
+FROM lmc_jobs
+WHERE tenant_id = $1 AND lead_id = $2
+ORDER BY created_at;
+
+SELECT direction, kind, status, sent_at, created_at
+FROM lmc_messages
+WHERE tenant_id = $1 AND lead_id = $2
+ORDER BY created_at;
+```
+
 ## Model boundary
 
 The real adapter reuses `createAgentModel`, including the configured provider/model and existing OpenAI `store: false` setting. It passes trusted instructions separately from a JSON user payload containing only the selected business service names/aliases, tone and untrusted conversation data. It does not forward the tenant metadata field or expose tools. Output is capped at 2,048 tokens.

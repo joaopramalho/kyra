@@ -2,6 +2,7 @@
   "items": {
     "home": "Home",
     "calls": "Calls",
+    "appointments": "Appointments",
     "messages": "Messages",
     "agent": "Agent",
     "contacts": "Contacts",
@@ -16,9 +17,9 @@
   },
   "sidebar": {
     "businessSlugFallback": "Workspace console",
-    "general": "General",
+    "general": "Daily work",
     "agent": "Agent",
-    "other": "Manage",
+    "other": "Workspace",
     "workspace": "Workspace",
     "openSettings": "Open settings",
     "signedIn": "Signed in",

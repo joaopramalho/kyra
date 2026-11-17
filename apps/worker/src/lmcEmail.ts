@@ -8,6 +8,7 @@ import {
   getLmcEnvironment,
 } from "@lobbystack/providers";
 import type { Database } from "@lobbystack/db";
+import { classifyLmcJobFailure } from "@lobbystack/domain";
 
 export function emailWorkerEnabled(
   env: Record<string, string | undefined> = process.env,
@@ -61,6 +62,7 @@ export function createLmcEmailRuntime(input: {
     mail,
     ...config,
     allowLocalHttp: config.mode === "fake",
+    onJobFailure: (diagnostic) => console.error(JSON.stringify({ event: "lmc_email_job_failed", ...diagnostic })),
   });
   return {
     mode: config.mode,
@@ -72,7 +74,8 @@ export function createLmcEmailRuntime(input: {
         try {
           await worker.drain(1, signal);
           if (!signal.aborted) status(true);
-        } catch {
+        } catch (error) {
+          console.error(JSON.stringify({ event: "lmc_email_worker_cycle_failed", code: classifyLmcJobFailure(error).code }));
           if (!signal.aborted) status(false);
         }
         if (!signal.aborted) await wait(signal);

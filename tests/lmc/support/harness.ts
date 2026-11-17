@@ -18,7 +18,7 @@ import { syncAppointmentCalendar } from "../../../apps/worker/src/calendarJobs";
 import { openLmcTestDatabase } from "./database";
 
 /** Production HTTP boundaries + application worker + PostgreSQL; only external providers and clock are fake. */
-export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInboundProvider}){
+export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInboundProvider;serviceName?:string;timezone?:string}){
   const db=openLmcTestDatabase(),tenantId=randomUUID(),ownerId=randomUUID(),staffId=randomUUID(),serviceId=randomUUID(),connectionId=randomUUID();
   const providers=createFakeLmcProviders(),ownerEmail="owner@example.invalid",captureToken=createReplyToken(tenantId),calendarId=`calendar-${tenantId}`;
   const emergencyText="Please stay clear of damaged areas. Our team will contact you urgently about the emergency.";
@@ -31,14 +31,15 @@ export async function createLmcHarness(input:{now:string;inboundProvider?:LmcInb
   const inbound=new FakeLmcInboundProvider({env:{NODE_ENV:"test"},now:()=>clock});
   providers.calendar.authorizeCalendar(calendarId);
   const hours=Array.from({length:7},(_,dayOfWeek)=>({dayOfWeek,openMinutes:9*60,closeMinutes:17*60}));
-  await db.admin.db.insert(businesses).values({id:tenantId,slug:`lmc-e2e-${tenantId}`,name:"Florida Roofing",timezone:"America/New_York",businessType:"service_company"});
+  const timezone=input.timezone??"America/New_York",serviceName=input.serviceName??"roof repair";
+  await db.admin.db.insert(businesses).values({id:tenantId,slug:`lmc-e2e-${tenantId}`,name:"Florida Roofing",timezone,businessType:"service_company"});
   await db.admin.db.insert(users).values({id:ownerId,email:`${ownerId}@example.invalid`,normalizedEmail:`${ownerId}@example.invalid`});
   await db.admin.db.insert(businessMemberships).values({businessId:tenantId,userId:ownerId,role:"business_owner"});
-  await db.admin.db.insert(staff).values({id:staffId,businessId:tenantId,name:"Roof Inspector",timezone:"America/New_York"});
-  await db.admin.db.insert(services).values({id:serviceId,businessId:tenantId,name:"roof repair",slug:"roof-repair",durationMinutes:60});
+  await db.admin.db.insert(staff).values({id:staffId,businessId:tenantId,name:"Roof Inspector",timezone});
+  await db.admin.db.insert(services).values({id:serviceId,businessId:tenantId,name:serviceName,slug:serviceName.toLowerCase().replace(/[^a-z0-9]+/g,"-"),durationMinutes:60});
   await db.admin.db.insert(businessHours).values(hours.map(hour=>({...hour,businessId:tenantId})));
   await db.admin.db.insert(calendarConnections).values({id:connectionId,businessId:tenantId,ownerUserId:ownerId,staffId,provider:"google",externalAccountId:`fake-${tenantId}`,selectedCalendarId:calendarId,encryptedAccessToken:box.encrypt("fake-calendar-token"),tokenExpiresAt:new Date("2040-01-01"),lastSyncedAt:now()});
-  await db.admin.db.insert(lmcSettings).values({tenantId,captureTokenHash:captureToken.hash,config:{ownerEmail,fromEmail:"team@example.invalid",physicalAddress:"100 Main Street, Miami FL 33101",serviceAreaZips:["33101","33102"],serviceAreaCities:["Miami"],services:[{id:serviceId,name:"roof repair",aliases:["roof replacement"]}],emergencyKeywords:["active leak","storm damage"],emergencyText,priceInformation:"",tone:"professional",confidenceThreshold:0.8,tools:["availability","book","reschedule","cancel","handoff"],followups:{enabled:true,maxTouches:3,delaysHours:[24,48,72],dailyCap:100}}});
+  await db.admin.db.insert(lmcSettings).values({tenantId,captureTokenHash:captureToken.hash,config:{ownerEmail,fromEmail:"team@example.invalid",physicalAddress:"100 Main Street, Miami FL 33101",serviceAreaZips:["33101","33102"],serviceAreaCities:["Miami"],services:[{id:serviceId,name:serviceName,aliases:serviceName==="roof repair"?["roof replacement"]:[]}],emergencyKeywords:["active leak","storm damage"],emergencyText,priceInformation:"",tone:"professional",confidenceThreshold:0.8,tools:["availability","book","reschedule","cancel","handoff"],followups:{enabled:true,maxTouches:3,delaysHours:[24,48,72],dailyCap:100}}});
   const jobFailures:LmcJobFailureDiagnostic[]=[];
   const captureService=new LmcLeadCapture({database:db.worker.db,now});
   const reception=new LmcEmailReception({database:db.worker.db,now,receivingDomain:"inbound.example.invalid",signingSecret});

@@ -303,6 +303,8 @@ function appointmentClockTimeMatches(
   local: Pick<LocalAppointmentDateTime, "hour" | "minute">,
   clockTime: { hour: number; minute: number; hasMeridiem: boolean },
 ): boolean {
+  // Caller supplied times are approximate; keep the matching window explicit
+  // and consistent for both absolute and spoken local-time facts.
   const localMinutes = local.hour * 60 + local.minute;
   const candidateHours = clockTime.hasMeridiem
     ? [clockTime.hour]
@@ -345,12 +347,26 @@ function appointmentLocalTimeFactMatches(
   const dayMonthMatch = normalized.match(
     /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/,
   );
-  if (monthDayMatch || dayMonthMatch) {
+  const numericDateMatch = raw.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-]((?:19|20)\d{2}))?\b/);
+  if (monthDayMatch || dayMonthMatch || numericDateMatch) {
     hasDateSignal = true;
-    const month = monthDayMatch
-      ? MONTHS_BY_NAME.get(monthDayMatch[1] ?? "")
-      : MONTHS_BY_NAME.get(dayMonthMatch?.[2] ?? "");
-    const day = Number(monthDayMatch?.[2] ?? dayMonthMatch?.[1]);
+    let month: number | undefined;
+    let day: number;
+    if (numericDateMatch) {
+      const first = Number(numericDateMatch[1]);
+      const second = Number(numericDateMatch[2]);
+      // Prefer the common North American month/day order; accept day/month
+      // when the first number cannot be a month.
+      month = first > 12 ? second : first;
+      day = first > 12 ? first : second;
+      const numericYear = numericDateMatch[3];
+      if (numericYear && Number(numericYear) !== local.year) return false;
+    } else {
+      month = monthDayMatch
+        ? MONTHS_BY_NAME.get(monthDayMatch[1] ?? "")
+        : MONTHS_BY_NAME.get(dayMonthMatch?.[2] ?? "");
+      day = Number(monthDayMatch?.[2] ?? dayMonthMatch?.[1]);
+    }
     if (month !== local.month || day !== local.day) {
       return false;
     }
@@ -392,6 +408,10 @@ function appointmentLocalTimeFactMatches(
     return dayPartMatches && hasDateSignal;
   }
 
-  return false;
+  // A calendar date is a useful partial fact on its own. The verification
+  // query still requires exactly one matching appointment, so a yearless
+  // month/day that matches multiple appointments remains ambiguous and fails
+  // closed in createAppointmentChangeVerification.
+  return hasDateSignal;
 }
 

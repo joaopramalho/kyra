@@ -13,7 +13,7 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
     }
     const methods=["GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS"];
     const identities=[{label:"anonymous",cookie:"",own:null},{label:"a",cookie:cookieA,own:a},{label:"b",cookie:cookieB,own:b},{label:"forged",cookie:"",own:null}];
-    const pages=["/","/leads","/contacts",`/contacts/${a.tenantId}`,"/agent/knowledge","/agent/services","/settings/business","/settings/email"];
+    const pages=["/","/leads","/contacts",`/contacts/${a.tenantId}`,"/agent/knowledge","/agent/services","/settings/business","/settings/email","/integrations"];
     expectedPageProbes=pages.flatMap(path=>methods.map(method=>`${method} ${path}`));
     for(const path of pages)for(const method of methods){
       for(const identity of identities){
@@ -29,8 +29,8 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
           check(response.status===200&&!location,`PILOT_PAGE_CONFIGURED_ACCESS:${path}:${identity.label}:${method}:${response.status}`);
           if(method==="GET"&&response.status===200){
             const links=[...body.matchAll(/<a\b[^>]*\bhref="([^"]+)"/g)].map(match=>match[1]!);
-            const allowedLinks=["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/settings/email"];
-            check(links.includes("/leads")&&links.includes("/settings/email")&&links.includes("/agent/knowledge")&&links.every(link=>allowedLinks.includes(link)),`PILOT_PAGE_CLOSED_LINK:${path}:${identity.label}`);
+            const allowedLinks=["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/settings/email","/integrations"];
+            check(links.includes("/leads")&&links.includes("/settings/email")&&links.includes("/agent/knowledge")&&links.includes("/integrations")&&links.every(link=>allowedLinks.includes(link)),`PILOT_PAGE_CLOSED_LINK:${path}:${identity.label}`);
             const foreign=identity.own===a?b:a;
             check(body.includes(`${identity.own.ownerId}@example.invalid`)&&!body.includes(`${foreign.ownerId}@example.invalid`),`PILOT_PAGE_CANONICAL_IDENTITY:${path}:${identity.label}`);
           }

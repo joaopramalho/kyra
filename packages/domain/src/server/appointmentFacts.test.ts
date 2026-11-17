@@ -22,4 +22,23 @@ describe("appointment fact verification", () => {
     expect(appointmentTimesMatch(appointment, "Thursday at 10:30 am")).toBe(false);
     expect(appointmentTimesMatch(appointment, "morning")).toBe(false);
   });
+
+  it("accepts a date as a partial fact and validates a supplied local date and time", () => {
+    const appointment = { startsAt: "2026-11-30T20:30:00Z", timezone: "America/Toronto" };
+    expect(appointmentTimesMatch(appointment, "November 30th")).toBe(true);
+    expect(appointmentTimesMatch(appointment, "November 30")).toBe(true);
+    expect(appointmentTimesMatch(appointment, "11/30")).toBe(true);
+    expect(appointmentTimesMatch(appointment, "November 30th at 3:30 PM")).toBe(true);
+    expect(appointmentTimesMatch(appointment, "November 30 at 3:30 pm")).toBe(true);
+    expect(appointmentTimesMatch(appointment, "November 30th at 3:30 AM")).toBe(false);
+    expect(appointmentTimesMatch(appointment, "October 30th at 3:30 PM")).toBe(false);
+  });
+
+  it("interprets spoken date/time facts in the appointment timezone", () => {
+    const toronto = { startsAt: "2026-11-30T20:30:00Z", timezone: "America/Toronto" };
+    const losAngeles = { startsAt: "2026-11-30T23:30:00Z", timezone: "America/Los_Angeles" };
+    expect(appointmentTimesMatch(toronto, "November 30th at 3:30 PM")).toBe(true);
+    expect(appointmentTimesMatch(losAngeles, "November 30th at 3:30 PM")).toBe(true);
+    expect(appointmentTimesMatch(losAngeles, "November 30th at 12:30 PM")).toBe(false);
+  });
 });

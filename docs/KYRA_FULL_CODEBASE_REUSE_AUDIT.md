@@ -137,7 +137,7 @@ Supported extraction code covers PDF, DOCX and text-compatible formats; route/UI
 
 ## Dashboard route status
 
-The inherited dashboard includes Overview, Agent settings, Knowledge, Services, Rules, Calls, Messages, Contacts, Appointments, Analytics, Integrations/Webhooks, Teams, connected apps, notifications, API keys, widget, phone, plan, usage, appearance and account settings. Their pages and APIs still exist; pilot mode intentionally hides most navigation and `apps/admin/proxy.ts` denies routes not listed in `PILOT_ADMIN_ROUTES`.
+The inherited dashboard includes Overview, Agent settings, Knowledge, Services, Rules, Calls, Messages, Contacts, Appointments, Analytics, Integrations/Webhooks, Teams, connected apps, notifications, API keys, widget, phone, plan, usage, appearance and account settings. Their pages and APIs still exist; pilot mode intentionally hides most navigation and `apps/admin/proxy.ts` denies routes not listed in `PILOT_ADMIN_ROUTES`. Google Calendar settings are now a reviewed pilot capability; webhooks and unrelated inherited integration controls remain closed.
 
 Therefore these features are not “removed.” They are **existing but hidden/disabled for the production pilot**. Restoration must proceed by capability slice:
 

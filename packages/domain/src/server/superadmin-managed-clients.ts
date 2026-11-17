@@ -112,6 +112,7 @@ export async function inviteManagedLmcOwner(context: Context, input: { actorUser
 
 export type ManagedClientReadiness = {
   tenantId: string;
+  voiceEnabled: boolean;
   status: string;
   onboardingStage: string;
   checks: {
@@ -132,7 +133,7 @@ async function readinessInTransaction(
   tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
   input: { tenantId: string; environment: ActivationEnvironment; lock?: boolean },
 ): Promise<ManagedClientReadiness & { draft: SuperAdminClientDraft | null; ownerUserId: string | null; connectionId: string | null }> {
-  const businessQuery = tx.select({ status: businesses.status, onboardingStage: businesses.onboardingStage }).from(businesses).where(eq(businesses.id, input.tenantId)).limit(1);
+  const businessQuery = tx.select({ status: businesses.status, onboardingStage: businesses.onboardingStage, voiceEnabled: businesses.lmcVoiceEnabled }).from(businesses).where(eq(businesses.id, input.tenantId)).limit(1);
   const draftQuery = tx.select({ draft: lmcTenantDrafts.draft, ownerEmail: lmcTenantDrafts.ownerEmail }).from(lmcTenantDrafts).where(eq(lmcTenantDrafts.tenantId, input.tenantId)).limit(1);
   const [business] = input.lock ? await businessQuery.for("update") : await businessQuery;
   const [storedDraft] = input.lock ? await draftQuery.for("update") : await draftQuery;
@@ -155,6 +156,7 @@ async function readinessInTransaction(
   };
   return {
     tenantId: input.tenantId,
+    voiceEnabled: business.voiceEnabled,
     status: business.status,
     onboardingStage: business.onboardingStage,
     checks,
@@ -164,6 +166,19 @@ async function readinessInTransaction(
     ownerUserId: owner?.userId ?? null,
     connectionId: calendar?.id ?? null,
   };
+}
+
+export async function setManagedLmcVoiceEnabled(context: Context, input: { actorUserId: string; tenantId: string; enabled: boolean; requestId: string }) {
+  return await withBusinessTransaction(context.db, { actorType: "system", userId: input.actorUserId, businessId: input.tenantId }, async (tx) => {
+    await requirePlatformAdmin(tx, input.actorUserId);
+    const [setting] = await tx.select({ voiceEnabled: businesses.lmcVoiceEnabled }).from(businesses).where(eq(businesses.id, input.tenantId)).limit(1).for("update");
+    if (!setting) throw Object.assign(new Error("CLIENT_SETTINGS_NOT_FOUND"), { status: 404, code: "not_found" });
+    if (setting.voiceEnabled !== input.enabled) {
+      await tx.update(businesses).set({ lmcVoiceEnabled: input.enabled, updatedAt: context.now?.() ?? new Date() }).where(eq(businesses.id, input.tenantId));
+      await audit(tx, { actorUserId: input.actorUserId, action: "client.voice_enabled", tenantId: input.tenantId, changes: { enabled: input.enabled }, requestId: input.requestId });
+    }
+    return { tenantId: input.tenantId, voiceEnabled: input.enabled };
+  });
 }
 
 export async function readManagedClientReadiness(context: Context, input: { actorUserId: string; tenantId: string; environment: ActivationEnvironment }): Promise<ManagedClientReadiness> {

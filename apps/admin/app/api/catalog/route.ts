@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { createService, listCatalog } from "@lobbystack/domain";
+import { createService, listCatalog, updateBusinessIntakePolicy } from "@lobbystack/domain";
+import { serviceIntakePolicySchema, type ServiceIntakePolicy } from "@lobbystack/shared";
 import { asApiResponse, readJson, requireOperatorBusiness } from "@/lib/api-helpers";
 import { createDomainContext } from "@/lib/domain-context";
 
@@ -36,9 +37,23 @@ export async function POST(request: Request) {
     const name = requiredString(input.name, "name", 160);
     const slug = requiredString(input.slug ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), "slug", 160);
     const description = input.description === undefined || input.description === null ? undefined : requiredString(input.description, "description", 2_000);
-    const serviceId = await createService(createDomainContext(), { userId: session.user.id, businessId, name, slug, durationMinutes, ...(typeof input.active === "boolean" ? { active: input.active } : {}), ...(description ? { description } : {}) });
+    const intakePolicy = input.intakePolicy === undefined ? undefined : serviceIntakePolicySchema.parse(input.intakePolicy) as unknown as ServiceIntakePolicy;
+    const serviceId = await createService(createDomainContext(), { userId: session.user.id, businessId, name, slug, durationMinutes, ...(typeof input.active === "boolean" ? { active: input.active } : {}), ...(description ? { description } : {}), ...(intakePolicy ? { intakePolicy } : {}) });
     return NextResponse.json({ serviceId }, { status: 201 });
   } catch (error) {
     return asApiResponse(error);
   }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const { session, businessId } = await requireOperatorBusiness(request, { pilotCapability: "services" });
+    const body = await readJson(request);
+    if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error("A business intake policy is required.");
+    const input = body as Record<string, unknown>;
+    if (input.businessId !== undefined && input.businessId !== businessId) throw new Error("businessId does not match the active workspace.");
+    const intakePolicy = serviceIntakePolicySchema.parse(input.intakePolicy) as unknown as ServiceIntakePolicy;
+    await updateBusinessIntakePolicy(createDomainContext(), { userId: session.user.id, businessId, intakePolicy });
+    return NextResponse.json({ ok: true });
+  } catch (error) { return asApiResponse(error); }
 }

@@ -20,6 +20,7 @@
     "./replacement-calendar-check.ts",
     "./replacement-dashboard-aggregates-check.ts",
     "./voice-knowledge-retrieval-check.ts",
+    "./voice-v2-evaluation*.ts",
     "./replacement-appointment-audit-check.ts",
     "./replacement-billing-check.ts",
     "./replacement-feedback-check.ts",

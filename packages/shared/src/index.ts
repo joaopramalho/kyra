@@ -60,12 +60,50 @@ export type ClosureWindow = {
   reason: string;
 };
 
+export const intakeRequirementValues = ["required", "optional", "disabled"] as const;
+export type IntakeRequirement = (typeof intakeRequirementValues)[number];
+export const intakeFieldNames = ["customerName", "callbackPhone", "serviceAddress", "postalCode", "issueDescription", "urgency", "equipmentDetails", "propertyType", "workScope"] as const;
+export type IntakeField = (typeof intakeFieldNames)[number];
+export type ServiceType = "onsite" | "remote" | "in_office" | "unspecified";
+export type ServiceIntakePolicy = {
+  serviceType: ServiceType;
+  fields: Partial<Record<IntakeField, IntakeRequirement>>;
+  serviceArea?: { allowedCities?: string[]; allowedPostalCodes?: string[] };
+};
+export type ServiceAddress = {
+  line1: string;
+  unit?: string;
+  city: string;
+  region?: string;
+  postalCode?: string;
+  country: string;
+  instructions?: string;
+};
+
+export const serviceIntakePolicySchema = z.object({
+  serviceType: z.enum(["onsite", "remote", "in_office", "unspecified"]),
+  fields: z.object({
+    customerName: z.enum(intakeRequirementValues).optional(), callbackPhone: z.enum(intakeRequirementValues).optional(),
+    serviceAddress: z.enum(intakeRequirementValues).optional(), postalCode: z.enum(intakeRequirementValues).optional(), issueDescription: z.enum(intakeRequirementValues).optional(),
+    urgency: z.enum(intakeRequirementValues).optional(), equipmentDetails: z.enum(intakeRequirementValues).optional(),
+    propertyType: z.enum(intakeRequirementValues).optional(), workScope: z.enum(intakeRequirementValues).optional(),
+  }).strict(),
+  serviceArea: z.object({ allowedCities: z.array(z.string().trim().min(1).max(120)).max(100).optional(), allowedPostalCodes: z.array(z.string().trim().min(1).max(24)).max(500).optional() }).strict().optional(),
+}).strict();
+
+export const serviceAddressSchema = z.object({
+  line1: z.string().trim().min(2).max(200), unit: z.string().trim().max(80).optional(), city: z.string().trim().min(1).max(120),
+  region: z.string().trim().max(120).optional(), postalCode: z.string().trim().max(24).optional(), country: z.string().trim().regex(/^[A-Za-z]{2}$/),
+  instructions: z.string().trim().max(500).optional(),
+}).strict();
+
 export type ServiceSummary = {
   id: string;
   name: string;
   localizedNames?: Partial<Record<RuntimeLocale, string>>;
   durationMinutes: number;
   description?: string;
+  intakePolicy?: ServiceIntakePolicy;
 };
 
 export type TransferPolicy = {

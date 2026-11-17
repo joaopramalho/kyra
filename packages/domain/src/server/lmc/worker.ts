@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { lmcBusinessSettingsSchema, lmcFollowupJobSchema, lmcProcessJobSchema, lmcQualificationSchema, lmcSendJobSchema, type LmcBusinessSettings, type LmcChannel, type LmcEmailDecision, type LmcEmailTransport, type LmcOutboundEmail, type LmcStructuredAction } from "@lobbystack/contracts";
-import { appointments, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
+import { appointments, businesses, contacts, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcRateWindows, lmcSettings, lmcSuppressions, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
 import { signActionToken, verifyReplyToken } from "./capabilities";
 import { bookEmailAppointmentInTransaction, cancelAppointmentInTransaction, rescheduleEmailAppointmentInTransaction } from "../booking";
 import { redactLmcCapabilities } from "./redaction";
-import { listEmailVisitSlots } from "./scheduling";
+import { formatEmailVisitDate, formatEmailVisitTime, listEmailVisitSlots } from "./scheduling";
+import { isAlternativeAvailabilityRequest, requestedLocalDate } from "./availability-request";
 import { classifyLmcJobFailure, enqueueLmcJob, LMC_JOB_LEASE_MS, LmcJobQueue, type LmcJob, type LmcJobFailureDiagnostic } from "./queue";
 import { buildEmailQualificationPrompt } from "./conversation";
 import { classifyLmcProcessingError } from "./failure";
@@ -115,14 +116,16 @@ export class LmcEmailWorker {
       if (processed) return null;
       const [lead] = await tx.select().from(lmcLeads).where(and(eq(lmcLeads.tenantId,job.tenantId),eq(lmcLeads.id,job.leadId))).limit(1);
       const [settings] = await tx.select().from(lmcSettings).where(eq(lmcSettings.tenantId,job.tenantId)).limit(1);
+      const [business] = await tx.select({timezone:businesses.timezone}).from(businesses).where(eq(businesses.id,job.tenantId)).limit(1);
       const [message] = await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,job.leadId),eq(lmcMessages.id,payload.messageId),eq(lmcMessages.direction,"lead"))).limit(1);
       if (!lead || !message || !settings?.enabled || !verifyReplyToken(payload.replyToken,job.tenantId,lead.replyTokenHash)) throw new Error("INVALID_JOB_PAYLOAD");
       if (lead.aiPaused || processingTerminal.has(lead.status) || lead.followupGeneration!==payload.generation || await this.suppressed(tx,lead)) return null;
       const history = await tx.select().from(lmcMessages).where(and(eq(lmcMessages.tenantId,job.tenantId),eq(lmcMessages.leadId,lead.id))).orderBy(asc(lmcMessages.createdAt),asc(lmcMessages.id));
-      return {lead,message,history,settings:lmcBusinessSettingsSchema.parse(settings.config)};
+      return {lead,message,history,settings:lmcBusinessSettingsSchema.parse(settings.config),timezone:business?.timezone};
     });
     if (!snapshot) return;
-    const {lead,message,settings,history} = snapshot;
+    const {lead,message,settings,history,timezone} = snapshot;
+    if(!timezone)throw new Error("INVALID_JOB_PAYLOAD");
     const isEmergency = settings.emergencyKeywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase()));
     const isInjection = message.headers["X-LMC-Injection-Detected"]==="true" || injection(`${lead.name ?? ""}\n${message.subject}\n${message.body}`);
     const isConfiguredEscalation = settings.escalation?.keywords.some(word=>message.body.toLowerCase().includes(word.toLowerCase())) ?? false;
@@ -158,13 +161,29 @@ export class LmcEmailWorker {
         actions=[{type:"handoff",reason:"model_unavailable"}];
       }
     }
+    const alternativeAvailability=!isEmergency&&!isInjection&&isAlternativeAvailabilityRequest(message.body);
+    const requestedDate=alternativeAvailability?requestedLocalDate(message.body,this.input.now(),timezone):undefined;
+    if(alternativeAvailability){
+      // A declined offer plus a requested day is a read-only availability query,
+      // not a reschedule/complaint. Existing qualification is merged below.
+      actions=[...actions.filter(action=>action.type==="qualify"),{type:"intent",intent:"availability"}];
+      decision={intent:"availability",confidence:decision?.confidence??1};
+      suggestedReply=undefined;
+    }
     const proposed={...lead.qualification};
     for(const action of actions)if(action.type==="qualify"&&action.confidence>=settings.confidenceThreshold){const fields=lmcQualificationSchema.safeParse(action.fields);if(fields.success)Object.assign(proposed,fields.data);}
     const intentAction=actions.find(action=>action.type==="intent");
     const proposedService=settings.services.find(item=>[item.name,...item.aliases].some(name=>name.toLowerCase()===proposed.serviceType?.toLowerCase()));
     let availableSlots:Lead["offeredSlots"]=[];
+    let requestedDateUnavailable=false;
     if(!isEmergency&&!isInjection&&!actions.some(action=>action.type==="handoff"||action.type==="clarify")&&proposedService&&proposed.zip&&settings.serviceAreaZips.includes(proposed.zip)&&proposed.propertyType&&settings.tools.includes("availability")&&(!intentAction||intentAction.type!=="intent"||["qualification","availability","price"].includes(intentAction.intent))){
-      try{availableSlots=await this.withLeaseHeartbeat(job,() => listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now()}));}
+      try{
+        availableSlots=await this.withLeaseHeartbeat(job,() => listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now(),...(requestedDate?{requestedDate}:{}),...(alternativeAvailability&&!requestedDate?{excludeStartsAt:lead.offeredSlots.map(slot=>slot.startsAt)}:{})}));
+        if(!availableSlots.length&&requestedDate){
+          requestedDateUnavailable=true;
+          availableSlots=await this.withLeaseHeartbeat(job,() => listEmailVisitSlots(this.input.database,{tenantId:job.tenantId,serviceId:proposedService.id,now:this.input.now(),excludeStartsAt:lead.offeredSlots.map(slot=>slot.startsAt)}));
+        }
+      }
       catch(error){if(this.leaseFailure(error))throw error;actions=[{type:"handoff",reason:"calendar_unavailable"}];}
     }
     await this.scoped(job.tenantId,async tx => {
@@ -211,7 +230,7 @@ export class LmcEmailWorker {
             if(result!=="missing"){status="qualified";reason="appointment_cancelled";appointmentId=null;offeredSlots=[];alert=true;text="Your appointment has been cancelled. Reply if you would like to arrange another visit.";}
           }else if(chosen){
             const changed=await rescheduleEmailAppointmentInTransaction(tx,{businessId:job.tenantId,appointmentId:existing.id,contactId:current.contactId,contactEmail:current.email,staffId:chosen.staffId,startsAt:chosen.startsAt,now:this.input.now()});
-            if(changed){status="booked";reason="appointment_rescheduled";alert=true;text=`Your visit has been rescheduled to ${changed.startsAt}.`;}
+            if(changed){status="booked";reason="appointment_rescheduled";alert=true;text=`Your visit has been rescheduled to ${formatEmailVisitTime(changed.startsAt,timezone)}.`;}
             else{status="human_handoff";reason="slot_no_longer_available";paused=true;alert=true;text="That time is no longer available. A team member will help arrange the change.";}
           }else{status="human_handoff";reason="reschedule_time_not_offered";paused=true;alert=true;text="A team member will help you choose and verify another available visit time.";}
         } else if(current.appointmentId){text="Your visit is already booked. Reply if you need to reschedule or cancel.";}
@@ -221,13 +240,19 @@ export class LmcEmailWorker {
             status="human_handoff";reason="booking_not_verified";paused=true;alert=true;text="A team member will help verify your request and arrange your visit.";
           }else{
             const booked=await bookEmailAppointmentInTransaction(tx,{businessId:job.tenantId,contactId:current.contactId,contactEmail:current.email,serviceId:chosen.serviceId,staffId:chosen.staffId,startsAt:chosen.startsAt,now:this.input.now()});
-            if(booked){appointmentId=booked.appointmentId;status="booked";reason="booked";alert=true;text=`Your visit is booked for ${booked.startsAt}. A team member will confirm any further details.`;}
+            if(booked){appointmentId=booked.appointmentId;status="booked";reason="booked";alert=true;text=`Your visit is booked for ${formatEmailVisitTime(booked.startsAt,timezone)}. A team member will confirm any further details.`;}
             else{status="human_handoff";reason="slot_no_longer_available";paused=true;alert=true;text="That time is no longer available. A team member will help arrange another visit.";}
           }
         } else if(service&&qualification.zip&&qualification.propertyType&&availableSlots.length){
           qualification.serviceType=service.name;offeredSlots=availableSlots;status="qualified";
-          text=`Available visit times: ${availableSlots.map(slot=>slot.startsAt).join(", ")}. Reply with the time you would like us to book.`;
+          const times=availableSlots.map(slot=>formatEmailVisitTime(slot.startsAt,timezone));
+          text=requestedDateUnavailable&&requestedDate
+            ? `We don't have verified availability on ${formatEmailVisitDate(requestedDate,timezone)}, but these are our next available times: ${times.join(", ")}. Would one of these work?`
+            : `Available visit times: ${times.join(", ")}. Reply with the time you would like us to book.`;
           if(intent?.type==="intent"&&intent.intent==="price")text=`${settings.priceInformation || "We need an inspection to provide an estimate; we cannot quote a price by email."} ${text}`;
+        } else if(alternativeAvailability&&service&&qualification.zip&&qualification.propertyType){
+          status="qualified";reason="requested_date_unavailable";paused=false;
+          text=requestedDate?`I can't verify an opening on ${formatEmailVisitDate(requestedDate,timezone)} or find another confirmed time right now. Is there another date that could work?`:`I couldn't find another confirmed time yet. Is there a date that works better for you?`;
         } else if(service&&qualification.zip&&qualification.propertyType&&(!intent||intent.type!=="intent"||intent.intent!=="wait")){
           status="human_handoff";reason="no_verified_calendar_slots";paused=true;alert=true;text="A team member will help arrange an inspection once calendar availability is verified.";
         } else if (intent?.type==="intent" && intent.intent==="wait") {text="Thank you. We will wait for you to contact our office.";}
