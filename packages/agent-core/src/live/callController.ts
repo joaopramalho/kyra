@@ -99,6 +99,24 @@ const CALLER_INTENT_TERMINAL_QUIET_MS = 600;
 const HANGUP_CONFIRMATION_TIMEOUT_MS = 5_000;
 const HANGUP_RECOVERY_TIMEOUT_MS = 2_000;
 const FALLBACK_ANSWER = "Sorry, I couldn't check that just now. Offer to take a message so the team can follow up.";
+
+// A successful tool result is the authority for a committed appointment change,
+// not the text model's interpretation of that result. Keep this guard at the
+// final voice boundary so even an incorrect model reply cannot tell the caller
+// that a committed change failed.
+function committedAppointmentChange(steps: readonly { toolResults?: readonly { toolName: string; output: unknown }[] }[]) {
+  const completed = steps.flatMap((step) => step.toolResults ?? []).filter((result) => (
+    (result.toolName === "rescheduleAppointment" || result.toolName === "cancelAppointment")
+    && typeof result.output === "object"
+    && result.output !== null
+    && "ok" in result.output
+    && result.output.ok === true
+  )).at(-1);
+  if (!completed) return undefined;
+  return completed.toolName === "rescheduleAppointment"
+    ? { operation: "reschedule_appointment", confirmation: "Your appointment has been successfully rescheduled. Is there anything else I can help you with?" }
+    : { operation: "cancel_appointment", confirmation: "Your appointment has been successfully canceled. Is there anything else I can help you with?" };
+}
 type SidebandAudioEvents = {
   on(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
   off(type: string, listener: (event: { start_ms?: number; end_ms?: number }) => void): unknown;
@@ -673,6 +691,19 @@ export class LiveCallController {
       });
       tools = result.steps.flatMap((step) => step.toolCalls.map((call) => call.toolName));
       if (result.text.trim()) answer = result.text.trim().slice(0, MAX_ANSWER_CHARS);
+      const committedChange = committedAppointmentChange(result.steps);
+      if (committedChange) {
+        // Never send a false failure to GPT-Live after a successful DB commit.
+        // This is deliberately deterministic rather than a second LLM judgment.
+        answer = committedChange.confirmation;
+        console.info(JSON.stringify({
+          event: "live.delegation.change_confirmation_enforced",
+          sessionId: this.options.sessionId,
+          delegationId,
+          operation: committedChange.operation,
+          reasonCode: "committed_tool_result",
+        }));
+      }
     } catch (error) {
       failed = true;
       if (this.abort.signal.aborted) return;
