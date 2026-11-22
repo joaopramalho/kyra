@@ -14,6 +14,8 @@ describe("voice intake instructions", () => {
     expect(agent).toContain("never infer it from Caller ID");
     expect(agent).toContain("Never claim confirmed until the booking tool succeeds");
     expect(agent).toContain("pending follow-up, never a confirmed appointment");
+    expect(agent).toContain("If rescheduleAppointment returns ok: true");
+    expect(agent).toContain("If either tool returns ok: false");
   });
 
   it("uses one configured opening and maintains intent across small talk", () => {
@@ -29,6 +31,7 @@ describe("voice intake instructions", () => {
     expect(live).toContain("retain and combine every caller fact across turns");
     expect(live).toContain("Cancel only after verification succeeds and the caller explicitly confirms");
     expect(live).toContain("After a successful cancellation or saved follow-up");
+    expect(live).toContain("do not turn a successful reschedule into an error");
     expect(live).toContain("the application independently detects that request");
   });
 });
