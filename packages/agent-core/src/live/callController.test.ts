@@ -30,8 +30,21 @@ vi.mock("openai/resources/live/sideband/ws", () => ({
 
 import { detectsExplicitCallerHangup, LiveCallController, LiveCallStartupError, type LiveCallSummary, type LiveCallTurn } from "./callController";
 
-function createController(options: { silenceTimeoutMs?: number; onGenerate?: () => void; onHangup?: (reason: string) => void | Promise<void>; toolNames?: string[]; channel?: "voice" | "web_voice" } = {}) {
-  const generate = vi.fn(async () => { options.onGenerate?.(); return { text: "We're open until 5.", steps: [{ toolCalls: (options.toolNames ?? ["getBusinessHours"]).map((toolName) => ({ toolName })) }] }; });
+function createController(options: {
+  silenceTimeoutMs?: number;
+  onGenerate?: () => void;
+  onHangup?: (reason: string) => void | Promise<void>;
+  toolNames?: string[];
+  channel?: "voice" | "web_voice";
+  generateResult?: {
+    text: string;
+    steps: Array<{ toolCalls: Array<{ toolName: string }>; toolResults?: Array<{ toolName: string; output: unknown }> }>;
+  };
+} = {}) {
+  const generate = vi.fn(async () => {
+    options.onGenerate?.();
+    return options.generateResult ?? { text: "We're open until 5.", steps: [{ toolCalls: (options.toolNames ?? ["getBusinessHours"]).map((toolName) => ({ toolName })) }] };
+  });
   const turns: LiveCallTurn[] = [];
   const closed: LiveCallSummary[] = [];
   const onTimeout = vi.fn();
@@ -164,6 +177,69 @@ describe("LiveCallController startup and media", () => {
     socket.emit("session.delegation.created", { delegation: { id: "item_1" }, offset_ms: 900 });
     await vi.waitFor(() => expect(socket.sent).toContainEqual(expect.objectContaining({ type: "session.commentary.append", delegation_id: "item_1", content: "We're open until 5." })));
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.stringContaining("Caller: Are you open today?") }));
+  });
+
+  it("confirms a committed reschedule even when the agent incorrectly claims an error", async () => {
+    const state = await setup({
+      generateResult: {
+        text: "Sorry, the rescheduling failed. Please call back.",
+        steps: [
+          { toolCalls: [{ toolName: "rescheduleAppointment" }], toolResults: [{ toolName: "rescheduleAppointment", output: { ok: true, appointmentId: "apt_1", status: "confirmed", startsAt: "2026-11-23T15:00:00.000Z" } }] },
+          { toolCalls: [], toolResults: [] },
+        ],
+      },
+    });
+    const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    state.socket.emit("session.input_transcript.delta", { delta: "Please move my appointment to Monday.", start_ms: 800, end_ms: 1_000 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "reschedule_success" }, offset_ms: 1_100 });
+    await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({
+      type: "session.commentary.append",
+      delegation_id: "reschedule_success",
+      content: "Your appointment has been successfully rescheduled. Is there anything else I can help you with?",
+    })));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"event":"live.delegation.change_confirmation_enforced"'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"reasonCode":"committed_tool_result"'));
+    state.socket.emit("session.closed", { reason: "remote_hangup" });
+    expect(state.closed[0]?.delegations.at(-1)?.answer).toContain("successfully rescheduled");
+    log.mockRestore();
+  });
+
+  it("does not claim success if rescheduleAppointment returned a failure", async () => {
+    const state = await setup({
+      generateResult: {
+        text: "I couldn't change that appointment. Would you like the team to follow up?",
+        steps: [{
+          toolCalls: [{ toolName: "rescheduleAppointment" }],
+          toolResults: [{ toolName: "rescheduleAppointment", output: { ok: false, reason: "Final confirmation is required." } }],
+        }],
+      },
+    });
+    state.socket.emit("session.input_transcript.delta", { delta: "Move my appointment.", start_ms: 800, end_ms: 1_000 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "reschedule_failed" }, offset_ms: 1_100 });
+    await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({
+      type: "session.commentary.append",
+      delegation_id: "reschedule_failed",
+      content: "I couldn't change that appointment. Would you like the team to follow up?",
+    })));
+  });
+
+  it("confirms a committed cancellation from the tool result as well", async () => {
+    const state = await setup({
+      generateResult: {
+        text: "I'm sorry, the cancellation did not go through.",
+        steps: [{
+          toolCalls: [{ toolName: "cancelAppointment" }],
+          toolResults: [{ toolName: "cancelAppointment", output: { ok: true, appointmentId: "apt_1", status: "canceled" } }],
+        }],
+      },
+    });
+    state.socket.emit("session.input_transcript.delta", { delta: "Cancel my appointment.", start_ms: 800, end_ms: 1_000 });
+    state.socket.emit("session.delegation.created", { delegation: { id: "cancel_success" }, offset_ms: 1_100 });
+    await vi.waitFor(() => expect(state.socket.sent).toContainEqual(expect.objectContaining({
+      type: "session.commentary.append",
+      delegation_id: "cancel_success",
+      content: "Your appointment has been successfully canceled. Is there anything else I can help you with?",
+    })));
   });
 
   it("ignores duplicate delegation events rather than repeating backend work", async () => {
