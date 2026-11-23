@@ -14,7 +14,7 @@ afterEach(() => {
   clients.length = 0;
   vi.unstubAllGlobals();
 });
-function setup(role = "business_owner") {
+function setup(role = "business_owner", options: { appointment?: unknown; events?: unknown[] } = {}) {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Infinity },
@@ -36,10 +36,13 @@ function setup(role = "business_owner") {
     aiPaused: false,
     consentFollowups: true,
     followupCount: 0,
+    appointmentId: options.appointment ? "appointment-1" : null,
+    createdAt: "2030-01-09T03:40:00Z",
     updatedAt: "2030-01-09T03:40:00Z",
   };
   let attempts = 0;
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.startsWith("/api/lmc/settings")) return Response.json({ enabled: true, providerMode: "live" });
     if (init?.method === "POST") {
       attempts++;
       return Response.json(
@@ -51,16 +54,18 @@ function setup(role = "business_owner") {
     if (url.includes("/api/leads/lead-1"))
       return Response.json({
         lead,
+        appointment: options.appointment ?? null,
         messages: [
           {
             id: "message-1",
             direction: "lead",
+            kind: "reply",
             body: "<img src=x onerror=alert(1)>",
             status: "received",
             createdAt: "2030-01-09T03:40:00Z",
           },
         ],
-        events: [],
+        events: options.events ?? [],
         nextBefore: null,
         role,
       });
@@ -80,6 +85,35 @@ function setup(role = "business_owner") {
   return { client, fetchMock };
 }
 describe("email lead workspace", () => {
+  it("shows persisted appointment state separately from calendar sync and renders lead activity", async () => {
+    setup("business_owner", {
+      appointment: {
+        id: "appointment-1",
+        startsAt: "2030-01-12T15:00:00Z",
+        endsAt: "2030-01-12T15:30:00Z",
+        timezone: "UTC",
+        status: "confirmed",
+        calendarSyncState: "pending",
+        serviceName: "Roof inspection",
+        staffName: "Morgan",
+      },
+      events: [{ id: "event-1", type: "email_processed", metadata: { status: "qualified" }, createdAt: "2030-01-09T03:41:00Z" }],
+    });
+    await userEvent.click(await screen.findByRole("button", { name: "Ana" }));
+    expect(await screen.findByText("agentActive")).toBeTruthy();
+    expect(await screen.findByText("appointmentStatus.confirmed")).toBeTruthy();
+    expect(screen.getByText("calendarSync.pending")).toBeTruthy();
+    expect(screen.getByText("events.email_processed")).toBeTruthy();
+    expect(screen.queryByText("calendarSync.synced")).toBeNull();
+  });
+
+  it("filters the inbox through the existing lead status API", async () => {
+    const { fetchMock } = setup();
+    await userEvent.click(screen.getByRole("combobox", { name: "filterStatus" }));
+    await userEvent.click(await screen.findByRole("option", { name: "statuses.human_handoff" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("status=human_handoff"))).toBe(true));
+  });
+
   it("renders inbound text safely and keeps the same idempotency key when retrying a human reply", async () => {
     const { fetchMock } = setup();
     await userEvent.click(await screen.findByRole("button", { name: "Ana" }));
