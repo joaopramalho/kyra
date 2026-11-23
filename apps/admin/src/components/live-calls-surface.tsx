@@ -129,7 +129,7 @@ export function LiveCallsSurface() {
       id: "caller",
       accessorFn: (call) => call.contactName ?? t("table.unknownCaller"),
       header: () => t("table.caller"),
-      cell: ({ row }) => <span className="ph-mask font-medium">{row.original.contactName ?? t("table.unknownCaller")}</span>,
+      cell: ({ row }) => <span className="ph-mask line-clamp-2 max-w-56 break-all font-medium" title={row.original.contactName ?? t("table.unknownCaller")}>{row.original.contactName ?? t("table.unknownCaller")}</span>,
     },
     {
       id: "number",
@@ -141,7 +141,7 @@ export function LiveCallsSurface() {
       id: "purpose",
       accessorFn: (call) => call.reason ?? t("outcome.none"),
       header: () => t("table.purpose"),
-      cell: ({ row }) => <span className="type-body-muted">{row.original.outcome?.kind !== "none" ? formatCallOutcomeSummary(row.original.outcome, i18n.language, t) : row.original.transcriptPreview?.trim() || t("outcome.none")}</span>,
+      cell: ({ row }) => <span className="type-body-muted line-clamp-2 break-all">{row.original.outcome?.kind !== "none" ? formatCallOutcomeSummary(row.original.outcome, i18n.language, t) : row.original.transcriptPreview?.trim() || t("outcome.none")}</span>,
     },
     {
       id: "time",
@@ -226,8 +226,11 @@ export function LiveCallsSurface() {
       />
       {businesses.isLoading || calls.isLoading ? <TableCardSkeleton columns={5} /> : (
         <>
+          <p className="text-xs text-muted-foreground md:hidden">{t("table.scrollHint")}</p>
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Keyboard focus is required to scroll this labeled table region. */}
+          <div aria-label={t("table.accessibleLabel")} className="overflow-x-auto rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" role="region" tabIndex={0}>
           <TableCard>
-            <Table className="min-w-[56rem]">
+            <Table className="min-w-[56rem] table-fixed" containerClassName="overflow-visible">
               <TableHeader>
                 {table.getHeaderGroups().map((group) => (
                   <TableRow key={group.id}>
@@ -248,7 +251,7 @@ export function LiveCallsSurface() {
                     onClick={() => router.push(`/calls/${row.original.id}`)}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell className={cell.column.id === "purpose" ? "max-w-0 whitespace-normal" : cell.column.id === "play" ? "w-12 text-right" : undefined} key={cell.id}>
+                      <TableCell className={cell.column.id === "purpose" ? "max-w-0 whitespace-normal" : cell.column.id === "caller" ? "max-w-56 whitespace-normal" : cell.column.id === "play" ? "w-12 text-right" : undefined} key={cell.id}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
@@ -258,6 +261,7 @@ export function LiveCallsSurface() {
               </TableBody>
             </Table>
           </TableCard>
+          </div>
           <DataTablePagination
             labels={{
               rowsPerPage: t("pagination.rowsPerPage"),

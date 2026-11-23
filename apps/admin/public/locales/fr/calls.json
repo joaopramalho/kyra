@@ -27,6 +27,8 @@
     "unknownCaller": "Appelant inconnu",
     "noNumber": "Aucun numéro",
     "noDisposition": "Non défini",
+    "accessibleLabel": "Tableau des appels récents",
+    "scrollHint": "Faites défiler horizontalement pour voir tous les détails des appels.",
     "empty": "Aucun appel ne correspond aux filtres."
   },
   "actions": {
