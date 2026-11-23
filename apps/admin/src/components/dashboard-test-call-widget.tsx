@@ -78,8 +78,8 @@ export function DashboardTestCallWidget({
         type="button"
         variant="outline"
       >
-        <Phone className="text-sidebar-foreground" />
-        <span className="text-sidebar-foreground">{t("testCall.trigger")}</span>
+        <Phone />
+        <span>{t("testCall.trigger")}</span>
       </Button>
 
       <Dialog onOpenChange={handleOpenChange} open={open}>

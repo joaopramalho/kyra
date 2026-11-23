@@ -111,6 +111,8 @@
     "staff": "Personnel",
     "status": "Statut",
     "calendar": "Calendrier",
+    "tableLabel": "Tableau détaillé des rendez-vous",
+    "scrollForDetails": "Faites défiler horizontalement pour voir tous les détails.",
     "loading": "Chargement des rendez-vous…",
     "unavailable": "Les rendez-vous sont indisponibles.",
     "empty": "Aucun rendez-vous à venir.",

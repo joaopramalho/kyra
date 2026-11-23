@@ -9,6 +9,7 @@
     "attachmentPreviewPhoto": "Pièce jointe : photo",
     "attachmentPreviewDocument": "Pièce jointe : document",
     "selectConversation": "Sélectionnez une conversation pour afficher le fil.",
+    "backToConversations": "Retour aux conversations",
     "noChannel": "Aucun canal de contact enregistré.",
     "blockedBadge": "Bloqué",
     "blockedDescription": "Ce contact est bloqué. Les nouvelles réponses SMS sont désactivées et les appels entrants raccrocheront immédiatement.",

@@ -33,7 +33,7 @@ export function DashboardUtilityBar() {
               <Button
                 aria-label={t("items.affiliate")}
                 role="link"
-                className="pointer-events-auto text-sidebar-foreground hover:bg-transparent hover:text-sidebar-accent-foreground"
+                className="pointer-events-auto text-muted-foreground hover:bg-transparent hover:text-foreground"
                 nativeButton={false}
                 render={<Link href="/affiliate" />}
                 size="icon-xs"

@@ -117,9 +117,9 @@ function LeadWorkspace({ business }: { business: Business }) {
           <Button className="rounded-xl" nativeButton={false} render={<Link href="/settings/email" />} variant="outline">{t("manageEmail")}<ArrowUpRight data-icon="inline-end" /></Button>
         </div>
       </header>
-      <section aria-label={t("overviewTitle")} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {metrics.map(([label, count, Icon]) => (
-          <Card className="rounded-2xl border-border/70 py-0 shadow-sm" key={label}>
+      <section aria-label={t("overviewTitle")} className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        {metrics.map(([label, count, Icon], index) => (
+          <Card className={`rounded-2xl border-border/70 py-0 shadow-sm ${index === 4 ? "col-span-2 xl:col-span-1" : ""}`} key={label}>
             <CardContent className="flex items-start justify-between gap-3 px-4 py-4 sm:px-5">
               <div><p className="text-sm text-muted-foreground">{t(`metrics.${label}`)}</p>{list.isPending ? <Skeleton className="mt-3 h-8 w-20" /> : list.isError ? <p className="mt-2 text-sm text-muted-foreground">{t("unavailable")}</p> : <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{count.toLocaleString(i18n.language)}</p>}</div>
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground"><Icon aria-hidden="true" className="size-[17px]" /></span>
@@ -351,7 +351,7 @@ function LeadConversation({
           </span>
           <div className="min-w-0 flex-1">
             <CardTitle className="truncate text-sm">{lead.name || lead.email}</CardTitle>
-            <CardDescription className="mt-0.5 truncate">{lead.subject || t("noSubject")}</CardDescription>
+            <CardDescription className="mt-0.5 line-clamp-2 break-words">{lead.subject || t("noSubject")}</CardDescription>
           </div>
           <LeadStatusBadge status={lead.status} />
         </CardHeader>

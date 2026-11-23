@@ -119,7 +119,7 @@ export function LiveOverviewSurface() {
         ) : null}
         {!loadFailed ? <>
         {summary.isLoading ? <MetricCardGridSkeleton count={3} /> : (
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {metrics.map((metric) => (
               <Card className="group relative gap-5 overflow-hidden rounded-2xl border-border/70 py-0 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-lg hover:shadow-foreground/[0.04]" key={metric.key}>
                 <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-12 size-36 rounded-full bg-primary/[0.035] blur-2xl transition-colors group-hover:bg-primary/[0.07]" />

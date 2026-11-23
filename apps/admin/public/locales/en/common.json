@@ -111,6 +111,8 @@
     "staff": "Staff",
     "status": "Status",
     "calendar": "Calendar",
+    "tableLabel": "Appointment details table",
+    "scrollForDetails": "Scroll horizontally to view all appointment details.",
     "loading": "Loading appointments…",
     "unavailable": "Appointments are unavailable.",
     "empty": "No upcoming appointments.",

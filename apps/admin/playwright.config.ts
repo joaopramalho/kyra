@@ -28,6 +28,7 @@ process.env.REPLACEMENT_E2E_DATABASE_URL = baseDatabaseUrl.toString();
 
 export default defineConfig({
   testDir: "./e2e",
+  outputDir: "test-results/playwright",
   testMatch: "**/*.e2e.ts",
   testIgnore: ["**/visual-parity.e2e.ts", "**/new-operator-visual.e2e.ts", "**/loading-parity.e2e.ts", "**/invitation-parity.e2e.ts"],
   fullyParallel: false,
