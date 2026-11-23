@@ -19,7 +19,7 @@ export function AnalyticsOverviewChart({ data }: { data: AnalyticsChartPoint[] }
         </defs>
         <CartesianGrid vertical={false} />
         <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
-        <XAxis axisLine={false} dataKey="label" fontSize={12} interval={0} stroke="#888888" tick={renderXAxisTick} tickLine={false} />
+        <XAxis axisLine={false} dataKey="label" fontSize={12} interval="preserveStartEnd" minTickGap={32} stroke="#888888" tick={renderXAxisTick} tickLine={false} />
         <YAxis axisLine={false} fontSize={12} stroke="#888888" tick={{ dx: 32 }} tickLine={false} width={0} />
         <Area activeDot={{ r: 6, stroke: "var(--background)", strokeWidth: 4, fill: "var(--color-calls)" }} dataKey="calls" dot={false} fill="url(#fillCalls)" stroke="var(--color-calls)" type="monotone" />
         <Area activeDot={{ r: 6, stroke: "var(--background)", strokeWidth: 4, fill: "var(--color-messages)" }} dataKey="messages" dot={false} fill="url(#fillMessages)" stroke="var(--color-messages)" type="monotone" />

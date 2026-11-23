@@ -27,6 +27,8 @@
     "unknownCaller": "Unknown caller",
     "noNumber": "No number",
     "noDisposition": "Not set",
+    "accessibleLabel": "Recent calls table",
+    "scrollHint": "Scroll horizontally to view all call details.",
     "empty": "No calls match the current filters."
   },
   "actions": {
