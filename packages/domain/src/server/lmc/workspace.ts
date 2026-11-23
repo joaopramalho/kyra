@@ -11,7 +11,9 @@ import {
   lmcLeads,
   lmcMessages,
   lmcSettings,
+  appointments,
   services,
+  staff,
   withBusinessTransaction,
   type Database,
   type DatabaseTransaction,
@@ -171,6 +173,41 @@ export class LmcWorkspace {
         .where(and(eq(lmcLeads.tenantId, actor.tenantId), eq(lmcLeads.id, id)))
         .limit(1);
       if (!lead) throw new LmcWorkspaceError(404, "LEAD_NOT_FOUND");
+      const [appointment] = lead.appointmentId
+        ? await tx
+            .select({
+              id: appointments.id,
+              startsAt: appointments.startsAt,
+              endsAt: appointments.endsAt,
+              timezone: appointments.timezone,
+              status: appointments.status,
+              calendarSyncState: appointments.calendarSyncState,
+              serviceName: services.name,
+              staffName: staff.name,
+            })
+            .from(appointments)
+            .innerJoin(
+              services,
+              and(
+                eq(services.id, appointments.serviceId),
+                eq(services.businessId, actor.tenantId),
+              ),
+            )
+            .innerJoin(
+              staff,
+              and(
+                eq(staff.id, appointments.staffId),
+                eq(staff.businessId, actor.tenantId),
+              ),
+            )
+            .where(
+              and(
+                eq(appointments.businessId, actor.tenantId),
+                eq(appointments.id, lead.appointmentId),
+              ),
+            )
+            .limit(1)
+        : [];
       const [cursor] = input.before
         ? await tx
             .select({ createdAt: lmcMessages.createdAt, id: lmcMessages.id })
@@ -243,6 +280,7 @@ export class LmcWorkspace {
         .limit(100);
       return {
         lead: redactLmcReadValue(lead),
+        appointment: appointment ?? null,
         messages,
         events: redactLmcReadValue(events),
         nextBefore: rows.length > limit ? (messages[0]?.id ?? null) : null,
