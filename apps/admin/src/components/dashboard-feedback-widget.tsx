@@ -84,7 +84,7 @@ export function DashboardFeedbackWidget({ businessId, className }: FeedbackWidge
               render={
                 <Button
                   aria-label={t("feedback.trigger")}
-                  className="text-sidebar-foreground hover:bg-transparent hover:text-sidebar-accent-foreground aria-expanded:bg-transparent"
+                  className="text-muted-foreground hover:bg-transparent hover:text-foreground aria-expanded:bg-transparent"
                   size="icon-xs"
                   type="button"
                   variant="ghost"
@@ -153,7 +153,7 @@ export function DashboardFeedbackWidget({ businessId, className }: FeedbackWidge
             <Button
               aria-label={t("feedback.helpCenter")}
               role="link"
-              className="text-sidebar-foreground hover:bg-transparent hover:text-sidebar-accent-foreground"
+              className="text-muted-foreground hover:bg-transparent hover:text-foreground"
               nativeButton={false}
               render={
                 <a

@@ -9,6 +9,7 @@
     "attachmentPreviewPhoto": "Attachment: Photo",
     "attachmentPreviewDocument": "Attachment: Document",
     "selectConversation": "Select a conversation to review the thread.",
+    "backToConversations": "Back to conversations",
     "noChannel": "No contact channel saved.",
     "blockedBadge": "Blocked",
     "blockedDescription": "This contact is blocked. New SMS replies are disabled and inbound calls will hang up immediately.",
