@@ -42,7 +42,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       notFound();
     }
     const requiredCapability = pilotDashboardCapabilityForPath(pathname);
-    if (!requiredCapability || !hasPilotDashboardCapability(access.capabilities, requiredCapability)) notFound();
+    if (pathname !== "/" && (!requiredCapability || !hasPilotDashboardCapability(access.capabilities, requiredCapability))) notFound();
     pilotCapabilities = access.capabilities;
   } else {
     const onboarding = await getActiveOnboardingState(getAppDatabase().db, session.user.id);

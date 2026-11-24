@@ -119,7 +119,6 @@ export function proxy(request: NextRequest) {
     if (!route.methods.includes(request.method)) {
       return new NextResponse(null, { status: 405, headers: { ...headers, "Allow": route.methods.join(", "), "Cache-Control": "no-store" } });
     }
-    if (pathname === "/") return NextResponse.redirect(new URL("/leads", request.url), 307);
     if (pathname === "/favicon.ico") return NextResponse.rewrite(new URL("/brand/lmc-logo.svg", request.url), { headers });
   }
 
