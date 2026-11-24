@@ -157,12 +157,15 @@ test("the affiliate program works from referral link to payout", async ({ browse
 
     await page.goto("/affiliate?lng=en");
     const referralLink = await page.locator("input[readonly]").inputValue();
-    expect(referralLink).toMatch(/\/signup\?via=[a-z0-9-]+$/);
-    const referralCode = new URL(referralLink).searchParams.get("via")!;
+    const commercialReferral = new URL(referralLink);
+    expect(commercialReferral.pathname).toMatch(/^\/checkout\/affiliate\/[a-z0-9-]+$/);
+    const referralCode = commercialReferral.pathname.split("/").at(-1)!;
     expect(await affiliateStats(page)).toMatchObject({ clickCount: 0, referralCount: 0 });
 
-    // A new visitor follows the link in a separate session and signs up.
-    const referred = await referredSignup(browser, referralLink, testInfo);
+    // This legacy attribution/payout scenario uses the same code on the signup
+    // route; the dashboard link itself now points to the commercial checkout.
+    const legacySignupLink = `${brand.url}/signup?via=${encodeURIComponent(referralCode)}`;
+    const referred = await referredSignup(browser, legacySignupLink, testInfo);
     expect(await affiliateStats(page)).toMatchObject({ clickCount: 1, referralCount: 1 });
     const attribution = (await migrator.db.select().from(affiliateAttributions).where(eq(affiliateAttributions.businessId, referred.businessId)))[0];
     expect(attribution).toMatchObject({ referralCode, source: "referral_link" });
