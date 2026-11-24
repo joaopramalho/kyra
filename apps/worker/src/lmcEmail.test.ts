@@ -109,9 +109,9 @@ it("does not consume when already aborted and preserves opt-out of email startup
   abort.abort();
   await runtime.run(abort.signal);
   expect(mocks.drain).not.toHaveBeenCalled();
-  expect(emailWorkerEnabled({ NODE_ENV: "development" })).toBe(true);
+  expect(emailWorkerEnabled({ NODE_ENV: "development" })).toBe(false);
   expect(emailWorkerEnabled({ NODE_ENV: "production" })).toBe(false);
-  expect(emailWorkerEnabled({ LMC_EMAIL_WORKER_ENABLED: "true" })).toBe(true);
+  expect(emailWorkerEnabled({ LMC_EMAIL_WORKER_ENABLED: "true" })).toBe(false);
   expect(emailWorkerEnabled({ LMC_EMAIL_WORKER_ENABLED: "false" })).toBe(false);
   expect(() =>
     emailWorkerEnabled({ LMC_EMAIL_WORKER_ENABLED: "invalid" }),

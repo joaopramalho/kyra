@@ -20,6 +20,7 @@ import { POST } from "../../app/api/leads/[leadId]/reply/route";
 describe("LMC operator HTTP boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED", "true");
     mocks.auth.mockResolvedValue({
       session: { user: { id: "authenticated-user" } },
       businessId: "selected-business",

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import posthog from "posthog-js";
 import { createBrowserTelemetry } from "@lobbystack/telemetry/browser";
-import type { PilotDashboardCapability } from "@lobbystack/shared";
+import { isLmcEmailLeadsEnabled, type PilotDashboardCapability } from "@lobbystack/shared";
 import { requestJson } from "@/lib/request-json";
 import { selectActiveBusiness } from "@/lib/active-business";
 import { usePathname, useRouter } from "next/navigation";
@@ -165,13 +165,13 @@ function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }:
   const { t } = useTranslation(["nav", "settings", "agent", "common"]);
   const pilotHas = (capability: PilotDashboardCapability) => pilotCapabilities.includes(capability);
   const general: NavigationItem[] = pilotMode ? [
-    ...(pilotHas("leads") ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
+    ...(isLmcEmailLeadsEnabled() && pilotHas("leads") ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
     ...(pilotHas("voice") ? [{ label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon }] : []),
     ...(pilotHas("voice") ? [{ label: t("nav:items.appointments"), href: "/appointments", icon: AppointmentsIcon }] : []),
     ...(pilotHas("contacts") ? [{ label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon }] : []),
   ] : [
     { label: t("nav:items.home"), href: "/", icon: HomeIcon },
-    { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
+    ...(isLmcEmailLeadsEnabled() ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
     { label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon },
     { label: t("nav:items.appointments"), href: "/appointments", icon: AppointmentsIcon },
     { label: t("nav:items.messages"), href: "/messages", icon: MessageSquareMoreIcon },
@@ -191,7 +191,7 @@ function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }:
   const other: NavigationItem[] = pilotMode ? [
     ...(pilotHas("business_profile") ? [{ label: t("settings:sections.businessProfile"), href: "/settings/business", icon: SettingsIcon }] : []),
     ...(pilotHas("integrations") ? [{ label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon }] : []),
-    ...(pilotHas("email_settings") ? [{ label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon }] : []),
+    ...(isLmcEmailLeadsEnabled() && pilotHas("email_settings") ? [{ label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon }] : []),
   ] : [
     { label: t("nav:items.analytics"), href: "/analytics", icon: ChartColumnIncreasingIcon },
     { label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon },
