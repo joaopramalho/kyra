@@ -17,6 +17,7 @@ vi.mock("./nav-user", () => ({ NavUser: () => null }));
 const clients: QueryClient[] = [];
 beforeEach(() => {
   route.pathname = "/"; window.innerWidth = 1440;
+  vi.stubEnv("NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED", "false");
   vi.stubGlobal("matchMedia", vi.fn(query => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
 afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
