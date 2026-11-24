@@ -164,7 +164,7 @@ function LeadWorkspace({ business }: { business: Business }) {
           </Card>
         )}
       </div>
-      {list.data ? <details className="rounded-xl border bg-card px-4 py-3"><summary className="cursor-pointer text-sm font-medium">{t("statusMixTitle")}</summary><div className="pt-3"><StatusDistribution counts={list.data.summary} locale={i18n.language} /></div></details> : null}
+      {list.data ? <details className="rounded-xl bg-muted/20 px-4 py-3"><summary className="cursor-pointer text-sm font-medium">{t("statusMixTitle")}</summary><div className="pt-3"><StatusDistribution counts={list.data.summary} locale={i18n.language} /></div></details> : null}
     </div>
   );
 }
@@ -395,7 +395,7 @@ function LeadConversation({
         </div>
       </Card>
 
-      <details className="lg:col-start-2 rounded-xl border bg-card px-4 py-3">
+      <details className="lg:col-start-2 rounded-xl bg-muted/20 px-4 py-3">
         <summary className="cursor-pointer text-sm font-medium">{t("leadProfile")}</summary>
         <aside className="mt-3 flex flex-col gap-3" aria-label={t("leadProfile")}>
         <Card className="rounded-2xl border-border/70 py-0 shadow-sm">
