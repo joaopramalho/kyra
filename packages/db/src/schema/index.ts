@@ -1057,6 +1057,7 @@ export const affiliateProfiles = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 64 }).notNull(),
     status: varchar("status", { length: 32 }).default("active").notNull(),
+    commissionRateBps: integer("commission_rate_bps").default(2500).notNull(),
     payoutEmail: text("payout_email"),
     ...timestamps,
   },
@@ -1180,6 +1181,154 @@ export const affiliateCommissions = pgTable(
     ...timestamps,
   },
   (table) => [uniqueIndex("affiliate_commissions_source_unique").on(table.sourceKey), index("affiliate_commissions_profile_status_idx").on(table.affiliateProfileId, table.status), index("affiliate_commissions_status_clears_idx").on(table.status, table.payoutState, table.clearsAt), index("affiliate_commissions_business_idx").on(table.referredBusinessId)],
+);
+
+// Platform-level sales data is deliberately separate from tenant billing
+// accounts: prospects can pay before an LMC business exists.
+export const commercialCustomers = pgTable(
+  "commercial_customers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    email: text("email"),
+    tenantId: uuid("tenant_id").references(() => businesses.id, { onDelete: "set null" }),
+    stripeCustomerId: text("stripe_customer_id"),
+    affiliateProfileId: uuid("affiliate_profile_id").references(() => affiliateProfiles.id, { onDelete: "set null" }),
+    commissionRateBps: integer("commission_rate_bps"),
+    onboardingStatus: varchar("onboarding_status", { length: 32 }).default("awaiting_payment").notNull(),
+    internalNotes: text("internal_notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("commercial_customers_stripe_customer_unique").on(table.stripeCustomerId), uniqueIndex("commercial_customers_tenant_unique").on(table.tenantId), index("commercial_customers_email_idx").on(table.email), index("commercial_customers_onboarding_idx").on(table.onboardingStatus)],
+);
+
+export const commercialPlans = pgTable(
+  "commercial_plans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    slug: varchar("slug", { length: 64 }).notNull(),
+    name: text("name").notNull(),
+    description: text("description").default("").notNull(),
+    monthlyAmountCents: integer("monthly_amount_cents").notNull(),
+    setupAmountCents: integer("setup_amount_cents").default(0).notNull(),
+    leadAllowance: integer("lead_allowance"),
+    currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    stripeProductId: text("stripe_product_id"),
+    stripePriceId: text("stripe_price_id"),
+    visible: boolean("visible").default(true).notNull(),
+    publiclyAvailable: boolean("publicly_available").default(false).notNull(),
+    acceptsAffiliate: boolean("accepts_affiliate").default(false).notNull(),
+    allowPromotionCodes: boolean("allow_promotion_codes").default(true).notNull(),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("commercial_plans_slug_unique").on(table.slug), index("commercial_plans_public_idx").on(table.publiclyAvailable, table.visible)],
+);
+
+export const commercialOffers = pgTable(
+  "commercial_offers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerId: uuid("customer_id").notNull().references(() => commercialCustomers.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    planName: text("plan_name").notNull(),
+    monthlyAmountCents: integer("monthly_amount_cents").notNull(),
+    setupAmountCents: integer("setup_amount_cents").default(0).notNull(),
+    discountAmountCents: integer("discount_amount_cents").default(0).notNull(),
+    allowPromotionCodes: boolean("allow_promotion_codes").default(true).notNull(),
+    currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    leadAllowance: integer("lead_allowance"),
+    stripeProductId: text("stripe_product_id"),
+    stripePriceId: text("stripe_price_id"),
+    status: varchar("status", { length: 24 }).default("open").notNull(),
+    submissionKey: text("submission_key"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    checkoutSessionId: text("checkout_session_id"),
+    checkoutUrl: text("checkout_url"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("commercial_offers_token_hash_unique").on(table.tokenHash), uniqueIndex("commercial_offers_submission_key_unique").on(table.submissionKey), uniqueIndex("commercial_offers_checkout_session_unique").on(table.checkoutSessionId), index("commercial_offers_status_created_idx").on(table.status, table.createdAt)],
+);
+
+export const commercialPayments = pgTable(
+  "commercial_payments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerId: uuid("customer_id").notNull().references(() => commercialCustomers.id, { onDelete: "cascade" }),
+    offerId: uuid("offer_id").references(() => commercialOffers.id, { onDelete: "set null" }),
+    stripeObjectId: text("stripe_object_id").notNull(),
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
+    lastStripeEventCreated: integer("last_stripe_event_created"),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    description: text("description"),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("commercial_payments_stripe_object_unique").on(table.stripeObjectId), uniqueIndex("commercial_payments_payment_intent_unique").on(table.stripePaymentIntentId), index("commercial_payments_customer_time_idx").on(table.customerId, table.occurredAt)],
+);
+
+export const commercialSubscriptions = pgTable(
+  "commercial_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerId: uuid("customer_id").notNull().references(() => commercialCustomers.id, { onDelete: "cascade" }),
+    offerId: uuid("offer_id").references(() => commercialOffers.id, { onDelete: "set null" }),
+    stripeSubscriptionId: text("stripe_subscription_id").notNull(),
+    planName: text("plan_name").notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    monthlyAmountCents: integer("monthly_amount_cents").notNull(),
+    currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    lastStripeEventCreated: integer("last_stripe_event_created"),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("commercial_subscriptions_stripe_unique").on(table.stripeSubscriptionId), index("commercial_subscriptions_customer_status_idx").on(table.customerId, table.status)],
+);
+
+export const commercialCommissions = pgTable(
+  "commercial_commissions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    affiliateProfileId: uuid("affiliate_profile_id").notNull().references(() => affiliateProfiles.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull().references(() => commercialCustomers.id, { onDelete: "cascade" }),
+    paymentId: uuid("payment_id").notNull().references(() => commercialPayments.id, { onDelete: "cascade" }),
+    sourceKey: text("source_key").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    originalAmountCents: integer("original_amount_cents").default(0).notNull(),
+    commissionRateBps: integer("commission_rate_bps").notNull(),
+    commissionCents: integer("commission_cents").notNull(),
+    originalCommissionCents: integer("original_commission_cents").default(0).notNull(),
+    recoveredCents: integer("recovered_cents").default(0).notNull(),
+    currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    status: varchar("status", { length: 24 }).default("pending").notNull(),
+    clearsAt: timestamp("clears_at", { withTimezone: true }).notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    payoutReference: text("payout_reference"),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("commercial_commissions_source_unique").on(table.sourceKey), index("commercial_commissions_affiliate_status_idx").on(table.affiliateProfileId, table.status), index("commercial_commissions_clears_idx").on(table.status, table.clearsAt)],
+);
+
+export const stripeWebhookEvents = pgTable(
+  "stripe_webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stripeEventId: text("stripe_event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    status: varchar("status", { length: 24 }).default("received").notNull(),
+    payload: jsonb("payload").notNull(),
+    lastError: text("last_error"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("stripe_webhook_events_event_unique").on(table.stripeEventId), index("stripe_webhook_events_status_idx").on(table.status, table.createdAt)],
 );
 
 export const auditLogs = pgTable(
@@ -1951,6 +2100,13 @@ export const schema = {
   affiliatePayoutRuns,
   affiliatePayoutItems,
   affiliateCommissions,
+  commercialCustomers,
+  commercialPlans,
+  commercialOffers,
+  commercialPayments,
+  commercialSubscriptions,
+  commercialCommissions,
+  stripeWebhookEvents,
   auditLogs,
   idempotencyKeys,
   providerEvents,

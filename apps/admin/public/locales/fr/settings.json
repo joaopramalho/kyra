@@ -177,6 +177,17 @@
       "includedOutboundCustom": "Allocation de transferts personnalisée",
       "includedStorage": "{{amount}} {{unit}} stockage"
     },
+    "commercial": {
+      "title": "Abonnement Stripe",
+      "description": "Détails de l'abonnement et des factures de cet espace.",
+      "noSubscription": "Aucun détail d'abonnement actif n'est encore disponible.",
+      "priceShownBelow": "Prix du contrat commercial affiché ci-dessous",
+      "providerUnresolved": "Vérification du fournisseur de facturation",
+      "perMonth": " / mois",
+      "renewsAt": "Renouvellement le {{date}}",
+      "cancelsAt": "Fin le {{date}}",
+      "manageOnStripe": "Gérer l'abonnement"
+    },
     "upgradeDialog": {
       "title": "Changer de forfait",
       "description": "Choisissez le forfait qui convient le mieux à votre équipe.",

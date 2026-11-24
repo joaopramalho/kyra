@@ -16,6 +16,7 @@ import { useOpenUpgradePlanDialog } from "./upgrade-plan-dialog-context";
 import { SpendingCapSection } from "./billing-spending-cap";
 import { Skeleton } from "./ui/skeleton";
 import { Surface } from "./ui/surface";
+import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCard, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
 type Business = { businessId: string; name: string; slug: string; role: string; active: boolean };
@@ -28,6 +29,7 @@ type Billing = {
   transactions: Array<{ kind: string; sourceId: string; status: string; amountCents: number; currency: string; description: string | null; invoiceUrl: string | null; occurredAt: string }>;
   usageStatus: { usageComplete: boolean; voiceBlocked: boolean; alertSmsBlocked: boolean; outboundCallAttemptsBlocked: boolean; overageSpendingCapReached: boolean; overageSpendCents: number; overageSpendingCapCents: number | null } | null;
 };
+type CommercialBilling = { customer: { name: string; email: string | null; onboardingStatus: string } | null; portalAvailable: boolean; subscriptions: Array<{ planName: string; status: string; monthlyAmountCents: number; currency: string; currentPeriodStart: string | null; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean }>; invoices: Array<{ kind: string; status: string; amountCents: number; currency: string; description: string | null; hostedInvoiceUrl: string | null; occurredAt: string }> };
 
 async function getJson<T>(url: string): Promise<T> { const response = await fetch(url, { credentials: "include" }); if (!response.ok) throw new Error("Unable to load billing data."); return await response.json() as T; }
 async function postJson<T>(url: string, body: Record<string, unknown>): Promise<T> { const response = await fetch(url, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error((await response.json().catch(() => null) as { error?: string } | null)?.error ?? "Unable to update billing."); return await response.json() as T; }
@@ -44,9 +46,11 @@ export function LivePlanSurface() {
   const queryClient = useQueryClient();
   const openUpgradePlanDialog = useOpenUpgradePlanDialog();
   const [portalPending, setPortalPending] = useState(false);
+  const [stripePortalPending, setStripePortalPending] = useState(false);
   const businesses = useQuery({ queryKey: ["businesses"], queryFn: () => getJson<{ businesses: Business[] }>("/api/businesses") });
   const business = businesses.data?.businesses.find((item) => item.active) ?? businesses.data?.businesses[0];
   const billing = useQuery({ queryKey: ["billing", business?.businessId], queryFn: () => getJson<Billing>(`/api/billing?businessId=${encodeURIComponent(business!.businessId)}`), enabled: Boolean(business?.businessId) });
+  const commercial = useQuery({ queryKey: ["commercial-billing", business?.businessId], queryFn: () => getJson<CommercialBilling>(`/api/billing/commercial?businessId=${encodeURIComponent(business!.businessId)}`), enabled: Boolean(business?.businessId && ["business_owner", "business_admin"].includes(business.role)) });
 
 
   const returnRequestId = searchParams.get("checkout") === "success" ? searchParams.get("requestId") : null;
@@ -65,6 +69,7 @@ export function LivePlanSurface() {
   useEffect(() => { if (searchParams.get("checkout") && business?.businessId) void queryClient.invalidateQueries({ queryKey: ["billing", business.businessId] }); }, [business?.businessId, queryClient, searchParams]);
 
   async function openPortal() { if (!business) return; setPortalPending(true); try { const result = await postJson<{ url: string }>(`/api/billing/portal?businessId=${encodeURIComponent(business.businessId)}`, {}); window.location.assign(result.url); } catch { toast.error(t("billing.toast.portalFailed")); } finally { setPortalPending(false); } }
+  async function openStripePortal() { if (!business) return; setStripePortalPending(true); try { const result = await postJson<{ url: string }>(`/api/billing/commercial/portal?businessId=${encodeURIComponent(business.businessId)}`, {}); window.location.assign(result.url); } catch { toast.error(t("billing.toast.portalFailed")); } finally { setStripePortalPending(false); } }
 
   if (businesses.isLoading || billing.isLoading) return <PageSurface description="" title={t("sections.billing")}><BillingSkeleton t={t} /></PageSurface>;
   if (businesses.isError || billing.isError || !business || !billing.data) return <PageSurface description="" title={t("sections.billing")}><Surface className="flex flex-col items-start gap-4 p-6"><p role="alert">{t("billing.usage.unavailable")}</p><Button variant="outline" onClick={() => { if (businesses.isError || !business) void businesses.refetch(); else void billing.refetch(); }}>{t("billing.actions.retry")}</Button></Surface></PageSurface>;
@@ -73,11 +78,14 @@ export function LivePlanSurface() {
   const plan = planSlug(account?.plan);
   const catalog = billingPlanCatalog[plan];
   const monthlyPrice = account?.billingInterval === "annual" ? catalog.annualEffectiveMonthlyChargeCents : catalog.monthlyChargeCents;
+  const hasStripeCommercialCustomer = Boolean(commercial.data?.customer);
+  const commercialProviderResolved = commercial.isSuccess;
+  const displayedLegacyPrice = commercialProviderResolved && !hasStripeCommercialCustomer ? monthlyPrice : null;
   const included = [catalog.voiceSecondsIncluded === null ? t("billing.currentPlan.includedVoiceCustom") : `${Math.round(catalog.voiceSecondsIncluded / 60)} ${t("billing.currentPlan.includedVoiceLabel")}`, catalog.outboundCallAttemptsIncluded === null ? t("billing.currentPlan.includedOutboundCustom") : `${catalog.outboundCallAttemptsIncluded} ${t("billing.currentPlan.includedOutboundLabel")}`, catalog.alertSmsSegmentsIncluded === null ? t("billing.currentPlan.includedSmsCustom") : `${catalog.alertSmsSegmentsIncluded} ${t("billing.currentPlan.includedSmsLabel")}`, catalog.knowledgeStorageBytes === null ? t("billing.currentPlan.includedStorageCustom") : t("billing.currentPlan.includedStorage", { amount: (catalog.knowledgeStorageBytes / (catalog.knowledgeStorageBytes >= 1024 ** 3 ? 1024 ** 3 : 1024 ** 2)).toLocaleString(i18n.language), unit: catalog.knowledgeStorageBytes >= 1024 ** 3 ? "GB" : "MB" })];
   const permissions = billing.data?.permissions;
-  const canUpgrade = permissions?.hasCheckoutAccess && billing.data?.availableCheckoutPlans.some(target =>
+  const canUpgrade = commercialProviderResolved && !hasStripeCommercialCustomer && permissions?.hasCheckoutAccess && billing.data?.availableCheckoutPlans.some(target =>
     (plan === "free_cloud" || (plan === "starter" && target === "pro")) && billing.data.availableCheckoutIntervals[target].length > 0);
-  const canManage = permissions?.hasCustomerPortalAccess === true;
+  const canManage = commercialProviderResolved && !hasStripeCommercialCustomer && permissions?.hasCustomerPortalAccess === true;
 
   return <PageSurface description="" title={t("sections.billing")}>
     <div className="flex w-full flex-col gap-10">
@@ -91,16 +99,16 @@ export function LivePlanSurface() {
               </span>
               <div className="flex flex-col items-start gap-0.5">
                 <div className="flex flex-wrap items-end gap-2">
-                  {monthlyPrice !== null ? (
+                  {displayedLegacyPrice !== null ? (
                     <span className="text-4xl font-semibold tracking-tight text-foreground">
-                      {money(monthlyPrice!)}
+                      {money(displayedLegacyPrice)}
                     </span>
                   ) : (
                     <span className="text-base text-muted-foreground">
-                      {t("billing.currentPlan.customPricing")}
+                      {hasStripeCommercialCustomer ? t("billing.commercial.priceShownBelow") : commercialProviderResolved ? t("billing.currentPlan.customPricing") : t("billing.commercial.providerUnresolved")}
                     </span>
                   )}
-                  {monthlyPrice !== null ? (
+                  {displayedLegacyPrice !== null ? (
                     <span className="pb-1 text-base text-muted-foreground">
                       {account?.billingInterval === "annual"
                         ? t("billing.currentPlan.annualEffectiveSuffix")
@@ -108,7 +116,7 @@ export function LivePlanSurface() {
                     </span>
                   ) : null}
                 </div>
-                {(plan === "starter" || plan === "pro") && (
+                {!hasStripeCommercialCustomer && (plan === "starter" || plan === "pro") && (
                   <span className="text-base text-muted-foreground">
                     {t("billing.currentPlan.paygMonthlySuffix")}
                   </span>
@@ -161,7 +169,13 @@ export function LivePlanSurface() {
         </div>
       </Surface>
     </SectionBlock>
-    {plan !== "self_host" ? <><SpendingCapSection key={business.businessId} businessId={business.businessId} locale={i18n.language} t={(key, options) => t(key, options ?? {})} status={{ plan, overageSpendingCapCents: account?.overageSpendingCapCents ?? null, overageSpendCents: billing.data?.usageStatus?.overageSpendCents ?? 0, overageSpendCentsComplete: billing.data?.usageStatus?.usageComplete ?? true, overageSpendingCapReached: billing.data?.usageStatus?.overageSpendingCapReached ?? false, hasBillingManagementAccess: permissions?.hasBillingManagementAccess === true }} /><Transactions locale={i18n.language} transactions={billing.data?.transactions ?? []} t={t} /></> : null}
+    {commercial.data?.customer && <SectionBlock title={t("billing.commercial.title")} description={t("billing.commercial.description")}>
+      <Surface className="space-y-5 p-6">
+        {commercial.data.subscriptions.length === 0 ? <p className="text-sm text-muted-foreground">{t("billing.commercial.noSubscription")}</p> : commercial.data.subscriptions.map((subscription, index) => <div className="flex flex-col gap-4 border-b border-border pb-5 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between" key={`${subscription.planName}-${index}`}><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-medium">{subscription.planName}</h3><Badge variant="outline">{subscription.status}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{money(subscription.monthlyAmountCents, subscription.currency)}{t("billing.commercial.perMonth")} · {subscription.cancelAtPeriodEnd ? t("billing.commercial.cancelsAt", { date: formatBillingDate(subscription.currentPeriodEnd, i18n.language) }) : t("billing.commercial.renewsAt", { date: formatBillingDate(subscription.currentPeriodEnd, i18n.language) })}</p></div>{commercial.data.portalAvailable && <Button size="sm" variant="outline" disabled={stripePortalPending} onClick={() => void openStripePortal()}>{stripePortalPending ? t("billing.actions.openingPortal") : t("billing.commercial.manageOnStripe")}<ArrowUpRight className="size-3.5" /></Button>}</div>)}
+        {commercial.data.invoices.length > 0 && <div className="overflow-x-auto"><Table className="min-w-[36rem]"><TableHeader><TableRow><TableHead>{t("billing.transactions.columns.date")}</TableHead><TableHead>{t("billing.transactions.columns.description")}</TableHead><TableHead>{t("billing.transactions.columns.status")}</TableHead><TableHead className="text-right">{t("billing.transactions.columns.amount")}</TableHead><TableHead className="text-right">{t("billing.transactions.columns.invoice")}</TableHead></TableRow></TableHeader><TableBody>{commercial.data.invoices.map((invoice) => <TableRow key={`${invoice.kind}-${invoice.occurredAt}-${invoice.description}`}><TableCell>{formatBillingDate(invoice.occurredAt, i18n.language)}</TableCell><TableCell>{invoice.description ?? invoice.kind}</TableCell><TableCell className="capitalize">{invoice.status.replaceAll("_", " ")}</TableCell><TableCell className="text-right tabular-nums">{money(invoice.amountCents, invoice.currency)}</TableCell><TableCell className="text-right">{invoice.hostedInvoiceUrl ? <a className="text-primary underline-offset-4 hover:underline" href={invoice.hostedInvoiceUrl} rel="noreferrer" target="_blank">{t("billing.actions.viewInvoice")}</a> : "—"}</TableCell></TableRow>)}</TableBody></Table></div>}
+      </Surface>
+    </SectionBlock>}
+    {plan !== "self_host" ? <><SpendingCapSection key={business.businessId} businessId={business.businessId} locale={i18n.language} t={(key, options) => t(key, options ?? {})} status={{ plan, overageSpendingCapCents: account?.overageSpendingCapCents ?? null, overageSpendCents: billing.data?.usageStatus?.overageSpendCents ?? 0, overageSpendCentsComplete: billing.data?.usageStatus?.usageComplete ?? true, overageSpendingCapReached: billing.data?.usageStatus?.overageSpendingCapReached ?? false, hasBillingManagementAccess: permissions?.hasBillingManagementAccess === true }} />{!hasStripeCommercialCustomer && <Transactions locale={i18n.language} transactions={billing.data?.transactions ?? []} t={t} />}</> : null}
     </div>
   </PageSurface>;
 }
