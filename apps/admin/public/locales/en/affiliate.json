@@ -19,6 +19,7 @@
     "link": "View Terms of Service",
     "reward": "Earn {{rate}} per sale for {{duration}}",
     "oneYear": "1 year",
+    "subscriptionLife": "as long as the subscription is active",
     "months": "{{count}} months"
   },
   "stats": {
@@ -26,6 +27,10 @@
     "clicksDescription": "Tracked referral visits.",
     "referrals": "Referrals",
     "referralsDescription": "Businesses attributed to your link.",
+    "activeSubscriptions": "Active subscriptions",
+    "activeSubscriptionsDescription": "Referred subscriptions currently active.",
+    "reversalDebt": "Refund or dispute adjustment",
+    "reversalDebtDescription": "Amount offset against future manual payouts.",
     "conversions": "Conversions",
     "conversionsDescription": "Paid transactions with commission.",
     "pending": "Pending",
@@ -90,6 +95,8 @@
     "pending": "Pending",
     "paid": "Paid",
     "voided": "Voided",
+    "reversed": "Reversed after refund or dispute",
+    "recovered": "Offset against a later payout",
     "draft": "Draft",
     "ready": "Ready",
     "skipped": "Skipped"
