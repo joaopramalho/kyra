@@ -9,6 +9,7 @@ import {
 } from "@lobbystack/providers";
 import type { Database } from "@lobbystack/db";
 import { classifyLmcJobFailure } from "@lobbystack/domain";
+import { isLmcEmailLeadsEnabled } from "@lobbystack/shared";
 
 export function emailWorkerEnabled(
   env: Record<string, string | undefined> = process.env,
@@ -17,7 +18,7 @@ export function emailWorkerEnabled(
   if (flag !== undefined && flag !== "true" && flag !== "false")
     throw new Error("INVALID_LMC_EMAIL_WORKER_ENABLED");
   return (
-    flag === "true" || (flag === undefined && env.NODE_ENV !== "production")
+    isLmcEmailLeadsEnabled(env) && (flag === "true" || (flag === undefined && env.NODE_ENV !== "production"))
   );
 }
 

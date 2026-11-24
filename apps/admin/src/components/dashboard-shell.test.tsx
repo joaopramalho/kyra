@@ -35,7 +35,7 @@ describe("original shared navigation", () => {
     setup();
     // The branded workspace header remains text-first and does not use an image logo.
     expect(screen.queryByRole("img", { name: "Lead My Company" })).toBeNull();
-    expect(screen.getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["#dashboard-main-content", "/", "/leads", "/calls", "/appointments", "/messages", "/contacts", "/agent", "/agent/knowledge", "/agent/services", "/agent/rules", "/analytics", "/integrations", "/settings/usage"]);
+    expect(screen.getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["#dashboard-main-content", "/", "/calls", "/appointments", "/messages", "/contacts", "/agent", "/agent/knowledge", "/agent/services", "/agent/rules", "/analytics", "/integrations", "/settings/usage"]);
     expect(document.getElementById("dashboard-main-content")?.tabIndex).toBe(-1);
   });
   it("keeps integrations visible for viewers", () => {
@@ -73,7 +73,7 @@ describe("original shared navigation", () => {
 describe("pilot navigation boundary",()=>{
   it("renders only capability-approved links and leaves billing queries disabled",()=>{
     const {client}=setup("business_owner",true);
-    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/leads","/contacts","/agent/knowledge","/agent/services","/settings/business","/integrations","/settings/email"]);
+    expect(screen.getAllByRole("link").map(link=>link.getAttribute("href"))).toEqual(["#dashboard-main-content","/contacts","/agent/knowledge","/agent/services","/settings/business","/integrations"]);
     expect(client.getQueryCache().find({queryKey:["billing","business"],exact:true})?.isActive()??false).toBe(false);
   });
   it("does not offer the inherited create-workspace onboarding route",async()=>{

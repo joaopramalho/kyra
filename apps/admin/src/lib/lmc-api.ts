@@ -1,3 +1,4 @@
+import { isLmcEmailLeadsEnabled } from "@lobbystack/shared";
 import { asApiResponse, requireOperatorBusiness } from "./api-helpers";
 import { getLmcServices } from "./lmc-runtime";
 
@@ -43,6 +44,9 @@ export async function withLmcApi(
     context: Services & { actor: { tenantId: string; userId: string } },
   ) => Promise<unknown>,
 ): Promise<Response> {
+  if (!isLmcEmailLeadsEnabled()) {
+    return Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
   try {
     const { session, businessId } = await requireOperatorBusiness(request);
     const result = await operation({

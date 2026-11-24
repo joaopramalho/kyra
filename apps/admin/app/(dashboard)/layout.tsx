@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import {
   hasPilotDashboardCapability,
   isPilotMode,
+  isLmcEmailLeadsEnabled,
   pilotDashboardCapabilityForPath,
   type PilotDashboardCapability,
 } from "@lobbystack/shared";
@@ -27,6 +28,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await getSession(new Headers(requestHeaders));
   if (!session) redirect(localizePublicPath("/login", locale));
   const pilotMode = isPilotMode(process.env);
+  const pathname = requestHeaders.get(PATHNAME_HEADER) ?? "/";
+  if (!isLmcEmailLeadsEnabled() && (pathname === "/leads" || pathname === "/settings/email")) notFound();
   let pilotCapabilities: PilotDashboardCapability[] = [];
   if (pilotMode) {
     const access = await resolveLmcPilotPageAccess({database:getAppDatabase().db,authDatabase:getAuthDatabase().db},session.user.id);
@@ -38,7 +41,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       // misconfigured workspaces.
       notFound();
     }
-    const pathname = requestHeaders.get(PATHNAME_HEADER) ?? "/";
     const requiredCapability = pilotDashboardCapabilityForPath(pathname);
     if (!requiredCapability || !hasPilotDashboardCapability(access.capabilities, requiredCapability)) notFound();
     pilotCapabilities = access.capabilities;

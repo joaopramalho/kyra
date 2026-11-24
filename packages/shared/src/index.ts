@@ -3,6 +3,13 @@ import { z } from "zod";
 export { resolveOpenAiPricing } from "./aiPricing";
 export type { AiPricingRatesUsdPerMillionTokens, VersionedAiPricing } from "./aiPricing";
 export { isMaintenanceMode } from "./maintenance";
+// Email Leads stays unavailable unless its public build flag is explicitly on.
+// Keeping the check here prevents UI, API, capture and worker drift.
+export function isLmcEmailLeadsEnabled(environment?: Record<string, string | undefined>): boolean {
+  return environment
+    ? environment.NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED === "true"
+    : process.env.NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED === "true";
+}
 export { isPilotMode, PILOT_WORKER_HEALTH_PATHS, PILOT_ADMIN_ROUTES, pilotAdminRoute } from "./pilot";
 export {
   hasPilotDashboardCapability,
