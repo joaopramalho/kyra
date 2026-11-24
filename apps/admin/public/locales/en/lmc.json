@@ -19,6 +19,12 @@
     "attention": "Needs attention"
   },
   "inboxTitle": "Lead inbox",
+  "quickViews": "Lead inbox views",
+  "views": { "all": "All", "needs_attention": "Needs attention", "ai_active": "AI active", "booked": "Booked" },
+  "aiActiveShort": "AI on",
+  "handoffNotice": "Team review needed.",
+  "handoffReasonUnknown": "Review reason unavailable.",
+  "handoffReasons": { "emergency": "Emergency request", "prompt_injection_detected": "Safety review", "configured_escalation": "Escalated by your rules", "human_review_required": "Needs a team member", "model_unavailable": "AI service unavailable", "calendar_unavailable": "Calendar unavailable", "appointment_change_not_verified": "Appointment change needs verification", "slot_no_longer_available": "Requested time unavailable", "reschedule_time_not_offered": "Requested time needs review", "booking_not_verified": "Booking needs verification", "no_verified_calendar_slots": "No verified times available", "delivery_reconciliation_required": "Email delivery needs review", "manual_pause": "Paused by a team member" },
   "leadCount": "{{count}} on this page",
   "refreshing": "Updating leads",
   "filterStatus": "Filter by lead status",

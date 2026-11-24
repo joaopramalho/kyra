@@ -19,6 +19,12 @@
     "attention": "À traiter"
   },
   "inboxTitle": "Boîte des prospects",
+  "quickViews": "Vues de la boîte des prospects",
+  "views": { "all": "Tous", "needs_attention": "À traiter", "ai_active": "IA active", "booked": "Rendez-vous" },
+  "aiActiveShort": "IA active",
+  "handoffNotice": "Intervention de l’équipe requise.",
+  "handoffReasonUnknown": "Motif indisponible.",
+  "handoffReasons": { "emergency": "Demande urgente", "prompt_injection_detected": "Vérification de sécurité", "configured_escalation": "Selon vos règles", "human_review_required": "Intervention requise", "model_unavailable": "Service IA indisponible", "calendar_unavailable": "Calendrier indisponible", "appointment_change_not_verified": "Modification à vérifier", "slot_no_longer_available": "Créneau indisponible", "reschedule_time_not_offered": "Horaire à vérifier", "booking_not_verified": "Réservation à vérifier", "no_verified_calendar_slots": "Aucun créneau vérifié", "delivery_reconciliation_required": "Livraison à vérifier", "manual_pause": "Suspendu par l’équipe" },
   "leadCount": "{{count}} sur cette page",
   "refreshing": "Mise à jour des prospects",
   "filterStatus": "Filtrer par statut du prospect",
