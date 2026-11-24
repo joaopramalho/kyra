@@ -27,6 +27,7 @@ type Lead = {
   email: string;
   subject: string;
   status: string;
+  reason?: string | null;
   aiPaused: boolean;
   consentFollowups: boolean;
   followupCount: number;
@@ -80,6 +81,7 @@ function LeadWorkspace({ business }: { business: Business }) {
   const { t, i18n } = useTranslation("lmc");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [view, setView] = useState("all");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const agent = useQuery({
@@ -88,11 +90,12 @@ function LeadWorkspace({ business }: { business: Business }) {
     refetchInterval: 30_000,
   });
   const list = useQuery({
-    queryKey: ["lmc-leads", business.businessId, search, status, page],
+    queryKey: ["lmc-leads", business.businessId, search, status, view, page],
     queryFn: ({ signal }) => {
       const params = new URLSearchParams({ businessId: business.businessId, limit: "25", offset: String(page * 25), search });
       if (status !== "all") params.set("status", status);
-      return requestJson<{ items: Lead[]; summary: Record<string, number>; hasNext: boolean; role: string }>(`/api/leads?${params}`, { signal });
+      if (view !== "all") params.set("view", view);
+      return requestJson<{ items: Lead[]; summary: Record<string, number>; aiActiveCount: number; hasNext: boolean; role: string }>(`/api/leads?${params}`, { signal });
     },
     refetchInterval: 10_000,
   });
@@ -100,39 +103,41 @@ function LeadWorkspace({ business }: { business: Business }) {
   const metrics = [
     ["total", Object.values(summary).reduce((a, b) => a + b, 0), Mail],
     ["new", summary.new ?? 0, MessageSquareText],
-    ["active", (summary.new ?? 0) + (summary.qualifying ?? 0) + (summary.qualified ?? 0), Bot],
+    ["active", (summary.qualifying ?? 0) + (summary.qualified ?? 0), Bot],
     ["booked", summary.booked ?? 0, CalendarClock],
     ["attention", summary.human_handoff ?? 0, ShieldAlert],
   ] as const;
   return (
-    <div className="ph-no-capture flex flex-col gap-6">
-      <header className="flex flex-col gap-4 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+    <div className="ph-no-capture flex flex-col gap-4">
+      <header className="flex flex-col gap-3 py-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("eyebrow")}</p>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("eyebrow")}</p>
           <h1 className="type-page-title">{t("title")}</h1>
-          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{t("description")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AgentStatus data={agent.data} error={agent.isError} t={t} />
           <Button className="rounded-xl" nativeButton={false} render={<Link href="/settings/email" />} variant="outline">{t("manageEmail")}<ArrowUpRight data-icon="inline-end" /></Button>
         </div>
       </header>
-      <section aria-label={t("overviewTitle")} className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <section aria-label={t("overviewTitle")} className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5">
         {metrics.map(([label, count, Icon], index) => (
-          <Card className={`rounded-2xl border-border/70 py-0 shadow-sm ${index === 4 ? "col-span-2 xl:col-span-1" : ""}`} key={label}>
-            <CardContent className="flex items-start justify-between gap-3 px-4 py-4 sm:px-5">
-              <div><p className="text-sm text-muted-foreground">{t(`metrics.${label}`)}</p>{list.isPending ? <Skeleton className="mt-3 h-8 w-20" /> : list.isError ? <p className="mt-2 text-sm text-muted-foreground">{t("unavailable")}</p> : <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{count.toLocaleString(i18n.language)}</p>}</div>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground"><Icon aria-hidden="true" className="size-[17px]" /></span>
+          <Card className={`rounded-none border-0 bg-card py-0 shadow-none ${index === 4 ? "col-span-2 sm:col-span-1" : ""}`} key={label}>
+            <CardContent className="flex items-center gap-3 px-3 py-3 sm:px-4">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"><Icon aria-hidden="true" className="size-4" /></span>
+              <div className="min-w-0"><p className="truncate text-xs text-muted-foreground">{t(`metrics.${label}`)}</p>{list.isPending ? <Skeleton className="mt-1 h-6 w-12" /> : list.isError ? <p className="mt-1 text-xs text-muted-foreground">{t("unavailable")}</p> : <p className="mt-0.5 text-xl font-semibold tracking-tight tabular-nums">{count.toLocaleString(i18n.language)}</p>}</div>
             </CardContent>
           </Card>
         ))}
       </section>
-      <div className="grid min-h-[min(68vh,760px)] items-start gap-4 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.6fr)] 2xl:grid-cols-[minmax(17rem,0.8fr)_minmax(0,1.55fr)_minmax(16rem,0.8fr)]">
+      <div className="grid min-h-[min(68vh,760px)] items-start gap-3 lg:grid-cols-[minmax(18rem,0.78fr)_minmax(0,1.7fr)]">
         <Card className={`min-h-[30rem] overflow-hidden rounded-2xl border-border/70 py-0 shadow-sm ${selected ? "hidden lg:flex lg:flex-col" : "flex flex-col"}`}>
           <div className="flex flex-col gap-3 border-b p-4">
             <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">{t("inboxTitle")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("leadCount", { count: list.data?.items.length ?? 0 })}</p></div>{list.isFetching ? <RefreshCw aria-label={t("refreshing")} className="size-4 animate-spin text-muted-foreground" /> : null}</div>
-            <label className="relative block" htmlFor="lmc-lead-search"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input id="lmc-lead-search" aria-label={t("search")} className="h-10 rounded-xl ps-9" placeholder={t("search")} maxLength={200} value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); setSelected(null); }} /></label>
-            <Select value={status} onValueChange={(value) => { setStatus(String(value ?? "all")); setPage(0); setSelected(null); }}>
+            <label className="relative block" htmlFor="lmc-lead-search"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input id="lmc-lead-search" aria-label={t("search")} className="h-10 rounded-xl ps-9" placeholder={t("search")} maxLength={200} value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} /></label>
+            <div role="group" aria-label={t("quickViews")} className="grid grid-cols-2 gap-1 rounded-xl bg-muted/50 p-1">
+              {(["all", "needs_attention", "ai_active", "booked"] as const).map((item) => <button key={item} type="button" aria-pressed={view === item} className={`min-h-9 rounded-lg px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${view === item ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`} onClick={() => { setView(item); setStatus("all"); setPage(0); }}>{t(`views.${item}`)} <span className="ms-1 tabular-nums">{item === "all" ? Object.values(summary).reduce((a, b) => a + b, 0) : item === "needs_attention" ? summary.human_handoff ?? 0 : item === "booked" ? summary.booked ?? 0 : list.data?.aiActiveCount ?? 0}</span></button>)}
+            </div>
+            <Select value={status} onValueChange={(value) => { setStatus(String(value ?? "all")); setView("all"); setPage(0); }}>
               <SelectTrigger aria-label={t("filterStatus")} className="h-10 w-full rounded-xl"><SelectValue>{t(status === "all" ? "allStatuses" : `statuses.${status}`)}</SelectValue></SelectTrigger>
               <SelectContent><SelectItem value="all">{t("allStatuses")}</SelectItem>{["new", "qualifying", "qualified", "human_handoff", "booked", "declined", "opted_out", "suppressed"].map((value) => <SelectItem key={value} value={value}>{t(`statuses.${value}`)}</SelectItem>)}</SelectContent>
             </Select>
@@ -141,7 +146,7 @@ function LeadWorkspace({ business }: { business: Business }) {
             <div className="min-h-0 flex-1 overflow-y-auto">
               {list.isError ? <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4" role="alert"><p className="text-sm text-destructive">{t("loadFailed")}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void list.refetch()}><RefreshCw data-icon="inline-start" />{t("retry")}</Button></div>
                 : list.isPending ? <div className="flex flex-col gap-2" role="status">{Array.from({ length: 6 }, (_, index) => <LeadRowSkeleton key={index} />)}</div>
-                : list.data.items.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center p-5 text-center"><Search className="size-5 text-muted-foreground" /><p className="mt-3 font-medium">{t(search || status !== "all" ? "noMatchesTitle" : "emptyTitle")}</p><p className="mt-1 text-sm text-muted-foreground">{t(search || status !== "all" ? "noMatches" : "empty")}</p></div>
+                : list.data.items.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center p-5 text-center"><Search className="size-5 text-muted-foreground" /><p className="mt-3 font-medium">{t(search || status !== "all" || view !== "all" ? "noMatchesTitle" : "emptyTitle")}</p><p className="mt-1 text-sm text-muted-foreground">{t(search || status !== "all" || view !== "all" ? "noMatches" : "empty")}</p></div>
                 : <ul className="flex flex-col gap-1">{list.data.items.map((lead) => <li key={lead.id}><LeadListRow lead={lead} locale={i18n.language} selected={selected === lead.id} onClick={() => setSelected(lead.id)} /></li>)}</ul>}
             </div>
             {list.data?.items.length ? <div className="flex items-center justify-between gap-2 border-t pt-3"><span className="text-xs tabular-nums text-muted-foreground">{t("pageCount", { from: page * 25 + 1, to: page * 25 + list.data.items.length })}</span><div className="flex gap-1"><Button aria-label={t("previous")} size="icon-sm" variant="outline" disabled={page === 0 || list.isFetching} onClick={() => setPage((value) => Math.max(0, value - 1))}><ChevronLeft className="rtl:rotate-180" /></Button><Button aria-label={t("next")} size="icon-sm" variant="outline" disabled={!list.data.hasNext || list.isFetching} onClick={() => setPage((value) => value + 1)}><ChevronLeft className="rotate-180 rtl:rotate-0" /></Button></div></div> : null}
@@ -159,7 +164,7 @@ function LeadWorkspace({ business }: { business: Business }) {
           </Card>
         )}
       </div>
-      {list.data ? <StatusDistribution counts={list.data.summary} locale={i18n.language} /> : null}
+      {list.data ? <details className="rounded-xl bg-muted/20 px-4 py-3"><summary className="cursor-pointer text-sm font-medium">{t("statusMixTitle")}</summary><div className="pt-3"><StatusDistribution counts={list.data.summary} locale={i18n.language} /></div></details> : null}
     </div>
   );
 }
@@ -227,7 +232,7 @@ function LeadListRow({
             <time className="shrink-0 pt-0.5 text-[11px] text-muted-foreground" dateTime={lead.updatedAt}>{date}</time>
           </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">{lead.email}</span>
-          <span className="mt-1 block truncate text-xs text-foreground/80">{lead.subject || t("noSubject")}</span>
+          <span className="mt-1 line-clamp-2 break-words text-xs leading-5 text-foreground/80">{lead.subject || t("noSubject")}</span>
           <span className="mt-2 flex items-center gap-2">
             <Badge className="max-w-full truncate rounded-full" variant={lead.status === "human_handoff" ? "destructive" : lead.status === "booked" ? "secondary" : "outline"}>{t(`statuses.${lead.status}`, { defaultValue: lead.status })}</Badge>
             {lead.aiPaused ? <Badge className="rounded-full px-2 py-0 text-[10px]" variant="outline">{t("pausedShort")}</Badge> : null}
@@ -342,19 +347,24 @@ function LeadConversation({
   return (
     <>
       <Card className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-2xl border-border/70 py-0 shadow-sm lg:col-start-2 2xl:col-start-2">
-        <CardHeader className="flex flex-row items-center gap-3 border-b px-4 py-3 sm:px-5">
+        <CardHeader className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-3 border-b px-4 py-3 sm:flex sm:flex-row sm:px-5">
           <Button className="shrink-0 lg:hidden" aria-label={t("backToLeads")} onClick={onBack} size="icon-sm" variant="ghost">
             <ChevronLeft className="rtl:rotate-180" />
           </Button>
           <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-muted/50 text-xs font-medium">
             {lead.name?.slice(0, 1).toUpperCase() || lead.email.slice(0, 1).toUpperCase()}
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <CardTitle className="truncate text-sm">{lead.name || lead.email}</CardTitle>
-            <CardDescription className="mt-0.5 line-clamp-2 break-words">{lead.subject || t("noSubject")}</CardDescription>
+            <CardDescription className="mt-0.5 line-clamp-1 break-words">{lead.subject || t("noSubject")}</CardDescription>
           </div>
-          <LeadStatusBadge status={lead.status} />
+          <div className="col-span-full flex w-full shrink-0 flex-wrap items-center justify-end gap-1.5 sm:col-span-auto sm:ms-auto sm:w-auto">
+            <LeadStatusBadge status={lead.status} />
+            <Badge variant="outline" className="rounded-full"><Bot className="me-1 size-3" />{t(lead.aiPaused ? "pausedShort" : "aiActiveShort")}</Badge>
+            {allowed ? <Button size="sm" variant="outline" disabled={pause.isPending} onClick={() => pause.mutate(!lead.aiPaused)}>{lead.aiPaused ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}{t(lead.aiPaused ? "resume" : "pause")}</Button> : null}
+          </div>
         </CardHeader>
+        {lead.status === "human_handoff" ? <div className="border-b border-amber-500/20 bg-amber-500/[0.06] px-4 py-2 text-xs leading-5 text-amber-900 dark:text-amber-100"><span className="font-semibold">{t("handoffNotice")}</span>{lead.reason ? <span className="ms-1">{t(`handoffReasons.${lead.reason}`, { defaultValue: t("handoffReasonUnknown") })}</span> : null}</div> : null}
         <div className="flex min-h-0 flex-1 flex-col">
           {detail.hasNextPage ? (
             <div className="border-b px-4 py-1 text-center">
@@ -385,7 +395,9 @@ function LeadConversation({
         </div>
       </Card>
 
-      <aside className="flex flex-col gap-4 lg:col-span-2 lg:col-start-1 lg:row-start-2 2xl:col-span-1 2xl:col-start-3 2xl:row-start-1" aria-label={t("leadProfile")}>
+      <details className="lg:col-start-2 rounded-xl bg-muted/20 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium">{t("leadProfile")}</summary>
+        <aside className="mt-3 flex flex-col gap-3" aria-label={t("leadProfile")}>
         <Card className="rounded-2xl border-border/70 py-0 shadow-sm">
           <CardHeader className="border-b px-4 py-4"><CardTitle className="text-sm">{t("leadProfile")}</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-4 px-4 py-4">
@@ -401,11 +413,6 @@ function LeadConversation({
                   <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{t(lead.aiPaused ? "resumeHelp" : "activeHelp")}</p>
                 </div>
               </div>
-              {allowed ? (
-                <Button className="mt-3 w-full rounded-xl" disabled={pause.isPending} loading={pause.isPending} loadingLabel={t("saving")} onClick={() => pause.mutate(!lead.aiPaused)} size="sm" variant="outline">
-                  {lead.aiPaused ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}{t(lead.aiPaused ? "resume" : "pause")}
-                </Button>
-              ) : null}
               {pause.isError ? <p className="mt-2 text-xs text-destructive" role="alert">{t("pauseFailed")}</p> : null}
               {pause.isSuccess ? <p className="mt-2 text-xs text-muted-foreground" role="status">{t("automationUpdated")}</p> : null}
             </div>
@@ -452,7 +459,8 @@ function LeadConversation({
             <CardContent className="flex gap-2.5 px-4 py-4 text-sm text-amber-800 dark:text-amber-200"><AlertCircle className="mt-0.5 size-4 shrink-0" /><p>{t("bookingRecordMissing")}</p></CardContent>
           </Card>
         ) : null}
-      </aside>
+        </aside>
+      </details>
     </>
   );
 }

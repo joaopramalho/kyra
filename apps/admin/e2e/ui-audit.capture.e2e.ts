@@ -13,6 +13,7 @@ const viewports = [
   { name: "tablet-768x1024", width: 768, height: 1024 },
   { name: "mobile-390x844", width: 390, height: 844 },
 ];
+const emailLeadsOnly = process.env.UI_AUDIT_EMAIL_LEADS_ONLY === "1";
 const routes = [
   ["dashboard", "/"],
   ["agent-settings", "/agent"],
@@ -76,13 +77,30 @@ const detail = {
     { id: "ui-audit-message-1", direction: "lead", kind: "email", body: `${denseText}\n\n${veryLongToken}`, status: "received", createdAt: "2026-11-22T14:00:00.000Z" },
     { id: "ui-audit-message-2", direction: "assistant", kind: "email", body: `Thanks for reaching out, Morgan. ${denseText}`, status: "sent", createdAt: "2026-11-22T14:01:00.000Z" },
     { id: "ui-audit-message-3", direction: "lead", kind: "email", body: `A visit next week would work well. ${denseText}`, status: "received", createdAt: "2026-11-23T14:30:00.000Z" },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      id: `ui-audit-message-${index + 4}`,
+      direction: index % 2 === 0 ? "assistant" : "lead",
+      kind: "email",
+      body: index % 2 === 0
+        ? `Thanks for sharing those details. I have noted the project scope, preferred timing, access requirements, and the follow-up questions for our team. ${"We will make sure the consultation covers each item you mentioned. ".repeat(3)}`
+        : `One more detail about the project: ${"the existing cabinets and flooring will need careful coordination with the installation schedule. ".repeat(3)}`,
+      status: index % 4 === 0 ? "queued" : index % 4 === 1 ? "received" : "sent",
+      createdAt: new Date(Date.parse("2026-11-23T14:31:00.000Z") + index * 60_000).toISOString(),
+    })),
   ],
   events: [],
   role: "business_owner",
   nextBefore: null,
 };
 const stamp = "2026-11-23T14:30:00.000Z";
-const leads = Array.from({ length: 25 }, (_, index) => ({ ...lead, id: index === 0 ? leadId : `ui-audit-lead-${String(index + 1).padStart(3, "0")}`, name: index === 0 ? lead.name : `Customer ${String(index + 1).padStart(2, "0")} ${veryLongToken}`, email: `${"inquiry-".repeat(8)}${index + 1}@example.invalid`, subject: `Project request ${index + 1}: ${denseText}`, status: index % 5 === 0 ? "human_handoff" : "new", updatedAt: new Date(Date.parse(stamp) - index * 60_000).toISOString() }));
+const statusDistribution = [
+  ...Array.from({ length: 13 }, () => "new"),
+  ...Array.from({ length: 7 }, () => "qualifying"),
+  ...Array.from({ length: 11 }, () => "qualified"),
+  ...Array.from({ length: 5 }, () => "human_handoff"),
+  ...Array.from({ length: 9 }, () => "booked"),
+];
+const leads = statusDistribution.map((status, index) => ({ ...lead, id: index === 0 ? leadId : `ui-audit-lead-${String(index + 1).padStart(3, "0")}`, name: index === 0 ? lead.name : `Customer ${String(index + 1).padStart(2, "0")} ${veryLongToken}`, email: `${"inquiry-".repeat(8)}${index + 1}@example.invalid`, subject: `Project request ${index + 1}: ${denseText}`, status, aiPaused: status === "human_handoff", updatedAt: new Date(Date.parse(stamp) - index * 60_000).toISOString() }));
 const calls = Array.from({ length: 15 }, (_, index) => ({
   id: `ui-audit-call-${String(index + 1).padStart(3, "0")}`,
   providerCallId: `${"provider-call-ref-".repeat(7)}${index + 1}`,
@@ -184,12 +202,21 @@ test("capture dense authenticated UI audit with isolated synthetic fixtures", as
   await page.route("**/api/knowledge/snippets?*", route => route.fulfill({ json: { snippets: Array.from({ length: 12 }, (_, index) => ({ id: `ui-audit-snippet-${index}`, title: `Important answer ${index + 1} ${veryLongToken}`, content: denseText, active: true, priority: index, tags: ["renovation", "consultation", "service-area"], createdAt: stamp })) } }));
   await page.route("**/api/catalog?*", route => route.fulfill({ json: { services: Array.from({ length: 15 }, (_, index) => ({ id: `ui-audit-service-${index}`, name: `Residential consultation ${index + 1} ${veryLongToken}`, slug: `consultation-${index}`, durationMinutes: 45 + index * 5, description: denseText, active: true, createdAt: stamp, intakePolicy: { serviceType: "onsite", fields: { customerName: "required", serviceAddress: "required", postalCode: "optional", issueDescription: "required", equipmentDetails: "optional" }, serviceArea: { allowedCities: ["Washington", "Arlington", "Bethesda"], allowedPostalCodes: ["20001", "22201", "20814"] } } })), receptionistProfile: { intakePolicy: { serviceType: "onsite", fields: { serviceAddress: "required", postalCode: "optional", issueDescription: "required", equipmentDetails: "optional" } } } } }));
   await page.route("**/api/integrations?*", route => route.fulfill({ json: { calendarConnections: [{ id: "ui-audit-google", provider: "google", externalAccountId: "studio@example.invalid", status: "connected", staffId: null, selectedCalendarId: "primary", selectedCalendarSummary: "Northstar consultation calendar — Washington DC studio", lastSyncedAt: stamp, lastSyncError: null }], calendarOptions: Array.from({ length: 12 }, (_, index) => ({ id: `ui-audit-calendar-${index}`, summary: `Northstar location ${index + 1} — ${veryLongToken}`, primary: index === 0, selected: index === 0 })), calendarShareServiceAddress: true, staff: Array.from({ length: 15 }, (_, index) => ({ id: `ui-audit-staff-${index}`, name: `Jamie Rivers ${index + 1} ${veryLongToken}` })) } }));
-  await page.route("**/api/leads?*", route => route.fulfill({ json: { items: leads, summary: { new: 13, qualifying: 7, qualified: 11, human_handoff: 5, booked: 9 }, hasNext: true, role: "business_owner" } }));
+  await page.route("**/api/leads?*", route => {
+    const url = new URL(route.request().url());
+    const view = url.searchParams.get("view");
+    const status = url.searchParams.get("status");
+    const search = url.searchParams.get("search")?.trim().toLowerCase();
+    const filtered = leads.filter(item => (!status || item.status === status) && (view !== "needs_attention" || item.status === "human_handoff") && (view !== "booked" || item.status === "booked") && (view !== "ai_active" || (!item.aiPaused && ["new", "qualifying", "qualified"].includes(item.status))) && (!search || `${item.name} ${item.email} ${item.subject}`.toLowerCase().includes(search)));
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const summary = { new: 13, qualifying: 7, qualified: 11, human_handoff: 5, booked: 9 };
+    return route.fulfill({ json: { items: filtered.slice(offset, offset + 25), summary, aiActiveCount: 31, hasNext: offset + 25 < filtered.length, role: "business_owner" } });
+  });
   await page.route(`**/api/leads/${leadId}?*`, route => route.fulfill({ json: detail }));
 
-  for (const viewport of viewports) {
+  for (const viewport of (emailLeadsOnly ? [viewports[0]!, viewports[3]!] : viewports)) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    for (const [name, path] of routes) {
+    for (const [name, path] of (emailLeadsOnly ? routes.filter(([name]) => name === "leads") : routes)) {
       await page.goto(path, { waitUntil: "domcontentloaded" });
       await expect(page.locator("body")).not.toContainText("Internal Server Error");
       await expect(page.locator("main h1").first()).toBeVisible({ timeout: 15_000 });
@@ -202,12 +229,30 @@ test("capture dense authenticated UI audit with isolated synthetic fixtures", as
       await page.screenshot({ path: resolve(root, `${name}-${viewport.name}.png`), fullPage: true, animations: "disabled", caret: "hide" });
     }
   }
+  if (emailLeadsOnly) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/leads");
+    await page.getByRole("button", { name: /Morgan Chen/ }).click();
+    await expect(page.getByRole("button", { name: "Pause AI" })).toBeVisible();
+    await page.screenshot({ path: resolve(root, "interaction-email-lead-selected-mobile.png"), fullPage: true, animations: "disabled", caret: "hide" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.screenshot({ path: resolve(root, "interaction-email-lead-selected-desktop.png"), fullPage: true, animations: "disabled", caret: "hide" });
+    return;
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "Toggle sidebar" }).click();
   await expect(page.getByRole("button", { name: /Email leads/ })).toBeVisible();
   await page.screenshot({ path: resolve(root, "interaction-mobile-navigation-open.png"), fullPage: true, animations: "disabled", caret: "hide" });
 
+  await page.goto("/leads");
+  await page.getByRole("button", { name: /Morgan Chen/ }).click();
+  await expect(page.getByRole("button", { name: "Pause AI" })).toBeVisible();
+  await page.screenshot({ path: resolve(root, "interaction-email-lead-selected-mobile.png"), fullPage: true, animations: "disabled", caret: "hide" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: resolve(root, "interaction-email-lead-selected-desktop.png"), fullPage: true, animations: "disabled", caret: "hide" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/messages");
   await page.getByRole("button", { name: /Morgan Chen/ }).first().click();
   await expect(page.getByText(denseText.slice(0, 100), { exact: false }).last()).toBeVisible();
