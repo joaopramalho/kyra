@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { test } from "node:test";
-import { PILOT_ADMIN_ROUTES, pilotAdminRoute } from "../../packages/shared/dist/pilot.js";
+import { PILOT_ADMIN_ROUTES, PILOT_AFFILIATE_ADMIN_ROUTES, pilotAdminRoute } from "../../packages/shared/dist/pilot.js";
 
 const root=fileURLToPath(new URL("../../",import.meta.url));
 const admin=join(root,"apps/admin");
@@ -26,6 +26,8 @@ async function files(directory,prefix="") {
 test("production-default pilot auth displays and every published static asset enforce all seven methods",{timeout:180000},async()=>{
   const port=3101,base=`http://127.0.0.1:${port}`;
   const env={...process.env,NODE_ENV:"production",LMC_PROVIDER_MODE:"real",LOBBYSTACK_SKIP_ENV_FILES:"true",OTEL_SDK_DISABLED:"true",APP_BASE_URL:base,AUTH_TRUSTED_ORIGINS:base};
+  const affiliateEnabled=env.NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED==="true";
+  const routeFor=pathname=>pilotAdminRoute(pathname,{affiliateProgramEnabled:affiliateEnabled});
   delete env.LMC_PILOT_MODE;
   delete env.LMC_FAKE_INBOUND_FIXTURE_FILE;
   for(const name of ["BETTER_AUTH_SECRET","INTERNAL_SERVICE_SECRET","INTERNAL_SERVICE_TOKEN","WIDGET_SESSION_SECRET","ENCRYPTION_KEY","OTP_HASH_SECRET","LOCAL_STORAGE_SIGNING_SECRET"])env[name]=randomBytes(32).toString("hex");
@@ -50,13 +52,13 @@ test("production-default pilot auth displays and every published static asset en
     const staticFiles=[
       {path:"/favicon.ico",file:join(admin,"public/brand/lmc-logo.svg")},
       ...["lmc-logo","logo-icon","logo-wordmark"].map(name=>({path:`/brand/${name}.svg`,file:join(admin,`public/brand/${name}.svg`)})),
-      ...["en","fr"].flatMap(locale=>["common","auth","onboarding","lmc","nav","settings","agent","contacts","knowledge","widget"].map(ns=>({path:`/locales/${locale}/${ns}.json`,file:join(admin,`public/locales/${locale}/${ns}.json`)}))),
+      ...["en","fr"].flatMap(locale=>["common","auth","onboarding","lmc","nav","settings","agent","contacts","knowledge","widget",...(affiliateEnabled?["affiliate"]:[])].map(ns=>({path:`/locales/${locale}/${ns}.json`,file:join(admin,`public/locales/${locale}/${ns}.json`)}))),
       ...(await files(join(admin,".next/static"))).map(name=>({path:"/_next/static/"+name,file:join(admin,".next/static",name)})),
     ];
     assert(staticFiles.length>20,"NEXT_BUILD_ASSETS_MISSING");
     for(const path of paths)for(const method of methods){
       const response=await request(path,method),body=await response.text();
-      const route=pilotAdminRoute(path);check(!!route,`AUTH_DISPLAY_NOT_ALLOWLISTED:${path}`);if(route)covered.add(route.pattern);
+      const route=routeFor(path);check(!!route,`AUTH_DISPLAY_NOT_ALLOWLISTED:${path}`);if(route)covered.add(route.pattern);
       if(!["GET","HEAD"].includes(method))check(response.status===405&&response.headers.get("allow")==="GET, HEAD"&&body==="",`AUTH_METHOD:${method}:${path}:${response.status}`);
       else if(!/^\/(en|fr)\//.test(path)){
         const location=response.headers.get("location");
@@ -71,7 +73,7 @@ test("production-default pilot auth displays and every published static asset en
       if(method==="HEAD")check(body==="",`AUTH_HEAD_BODY:${path}`);
     }
     for(const asset of staticFiles){
-      const expected=await readFile(asset.file),route=pilotAdminRoute(asset.path);
+      const expected=await readFile(asset.file),route=routeFor(asset.path);
       check(!!route,`STATIC_NOT_ALLOWLISTED:${asset.path}`);if(route)covered.add(route.pattern);
       for(const method of methods){
         const response=await request(asset.path,method),body=Buffer.from(await response.arrayBuffer());
@@ -96,7 +98,7 @@ test("production-default pilot auth displays and every published static asset en
     const deniedPaths=[...new Set(Object.values(manifest).flatMap(path=>
       path.includes("[locale]")?["en","fr"].map(locale=>path.replace("[locale]",locale)):[path]
     ).map(path=>path.replace(/\[\[?\.\.\.[^\]]+\]\]?/g,"synthetic/path").replace(/\[[^\]]+\]/g,"00000000-0000-4000-8000-000000000001"))
-      .filter(path=>!pilotAdminRoute(path)))].sort();
+      .filter(path=>!routeFor(path)))].sort();
     assert(deniedPaths.length>100,"INHERITED_BUILD_ROUTE_INVENTORY_MISSING");
     for(const path of deniedPaths)for(const method of methods){
       const response=await request(path,method),body=await response.text();
@@ -109,16 +111,18 @@ test("production-default pilot auth displays and every published static asset en
       const body=await response.text();
       check(response.status===404&&body===""&&response.headers.get("cache-control")?.includes("no-store"),`SERVER_ACTION_DENIAL:${method}:${path}:${response.status}`);
     }
-    const authenticatedPagePatterns=new Set([
+    const nonStaticPagePatterns=new Set([
       "/", "/leads", "/contacts", "/contacts/[contactId]", "/agent/knowledge", "/agent/services", "/setup-required", "/settings/email", "/settings/business",
       "/agent", "/agent/basic-settings", "/agent/rules", "/appointments", "/integrations", "/calls", "/calls/[callId]",
       "/internal", "/internal/clients", "/internal/clients/new", "/internal/clients/[tenantId]",
       "/internal/mfa", "/internal/mfa/setup",
       "/healthz", "/readyz",
+      ...(affiliateEnabled?["/affiliate","/affiliate-portal","/affiliate-portal/login","/affiliate-portal/signup","/internal/commercial","/settings/plan","/checkout/affiliate/[code]","/checkout/[token]","/checkout/success"]:[]),
     ]);
-    const expectedPatterns=PILOT_ADMIN_ROUTES.filter(route=>!route.pattern.startsWith("/api/")&&!authenticatedPagePatterns.has(route.pattern)).map(route=>route.pattern).sort();
+    const configuredRoutes=[...PILOT_ADMIN_ROUTES,...(affiliateEnabled?PILOT_AFFILIATE_ADMIN_ROUTES:[])];
+    const expectedPatterns=configuredRoutes.filter(route=>!route.pattern.startsWith("/api/")&&!nonStaticPagePatterns.has(route.pattern)).map(route=>route.pattern).sort();
     check(JSON.stringify([...covered].sort())===JSON.stringify(expectedPatterns),"PUBLIC_PATTERN_COVERAGE");
-    const report={environment:"local production Next build; real provider mode; no provider requests",pilotFlag:"unset; production default",deniedBuildPaths:deniedPaths.length,deniedMethodProbes:deniedPaths.length*methods.length,serverActionControls:actionControls.length,authDisplayPaths:paths.length,staticAssets:staticFiles.length,staticExactByteGet:positiveBytes,probes,methods,coveredPatterns:[...covered].sort(),failures,limitations:"Synthetic token display is SSR coverage only; real auth/token mutation is covered by the separate 238-pair PostgreSQL audit. No browser QA or hosted execution claimed."};
+    const report={environment:"local production Next build; real provider mode; no provider requests",pilotFlag:affiliateEnabled?"enabled by supplied feature flag":"unset; production default",deniedBuildPaths:deniedPaths.length,deniedMethodProbes:deniedPaths.length*methods.length,serverActionControls:actionControls.length,authDisplayPaths:paths.length,staticAssets:staticFiles.length,staticExactByteGet:positiveBytes,probes,methods,coveredPatterns:[...covered].sort(),failures,limitations:"Synthetic token display is SSR coverage only; real auth/token mutation is covered by the separate 238-pair PostgreSQL audit. No browser QA or hosted execution claimed."};
     await writeFile(join(reportDir,"pilot-public-assets.json"),JSON.stringify(report,null,2)+"\n");
     assert.equal(child.exitCode,null,"OWNED_PRODUCTION_SERVER_EXITED");
     assert.deepEqual(failures,[]);

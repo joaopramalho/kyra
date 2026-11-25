@@ -99,7 +99,7 @@ export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   { pattern: "/_next/static/[asset]", match: /^\/_next\/static\/[A-Za-z0-9_./~-]+$/, methods: read },
 ];
 
-const AFFILIATE_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
+export const PILOT_AFFILIATE_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   { pattern: "/affiliate", match: /^\/affiliate$/, methods: read },
   { pattern: "/affiliate-portal", match: /^\/affiliate-portal$/, methods: read },
   { pattern: "/affiliate-portal/login", match: /^\/affiliate-portal\/login$/, methods: read },
@@ -135,5 +135,5 @@ export function pilotAdminRoute(pathname: string, options: { affiliateProgramEna
   // Do not decode ambiguous separators or control characters into allowed segments.
   if (pathname.includes("%") || pathname.includes("\\") || pathname.split("/").some(part => part === "." || part === "..")) return undefined;
   return PILOT_ADMIN_ROUTES.find(route => route.match.test(pathname))
-    ?? (options.affiliateProgramEnabled ? AFFILIATE_ADMIN_ROUTES.find(route => route.match.test(pathname)) : undefined);
+    ?? (options.affiliateProgramEnabled ? PILOT_AFFILIATE_ADMIN_ROUTES.find(route => route.match.test(pathname)) : undefined);
 }
