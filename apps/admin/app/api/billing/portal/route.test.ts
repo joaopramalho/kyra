@@ -18,7 +18,7 @@ vi.mock("@/lib/api-helpers", () => ({
   },
 }));
 vi.mock("@lobbystack/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@lobbystack/db")>();
+  const actual = await importOriginal();
   return {
     ...actual,
     withBusinessTransaction: async (_db: unknown, _scope: unknown, callback: (tx: unknown) => unknown) => callback({
