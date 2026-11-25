@@ -22,7 +22,8 @@ it("serves configured pilot pages without voice onboarding or closed links, and 
         if(!["GET","HEAD"].includes(method)){
           check(response.status===405&&response.headers.get("allow")==="GET, HEAD"&&body==="",`PILOT_PAGE_METHOD:${path}:${method}:${identity.label}:${response.status}`);
         }else if(path==="/"){
-          check(response.status===307&&!!location&&new URL(location,base).pathname==="/leads",`PILOT_ROOT_REDIRECT:${identity.label}:${method}:${response.status}`);
+          if(!identity.own)check(response.status===307&&!!location&&new URL(location,base).pathname==="/en/login",`PILOT_ROOT_SESSION:${identity.label}:${method}:${response.status}`);
+          else check(response.status===200&&!location,`PILOT_ROOT_CONFIGURED_ACCESS:${identity.label}:${method}:${response.status}`);
         }else if(!identity.own){
           check(response.status===307&&!!location&&new URL(location,base).pathname==="/en/login",`PILOT_PAGE_SESSION:${path}:${identity.label}:${method}:${response.status}`);
         }else{
