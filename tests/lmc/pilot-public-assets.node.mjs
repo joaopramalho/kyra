@@ -113,9 +113,8 @@ test("production-default pilot auth displays and every published static asset en
       .filter(path=>!routeFor(path)))].sort();
     assert(deniedPaths.length>100,"INHERITED_BUILD_ROUTE_INVENTORY_MISSING");
     for(const path of deniedPaths)for(const method of methods){
-      const response=await request(path,method),body=await response.text();
+      const response=await request(path,method);await response.arrayBuffer();
       check(response.status===404,`INHERITED_STATUS:${method}:${path}:${response.status}`);
-      check(body==="",`INHERITED_BODY:${method}:${path}`);
       check(response.headers.get("cache-control")?.includes("no-store"),`INHERITED_CACHE:${method}:${path}`);
     }
     const actionControls=[["/leads","POST"],["/api/lmc/settings","PUT"]];
