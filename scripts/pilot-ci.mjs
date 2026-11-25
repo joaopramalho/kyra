@@ -57,9 +57,14 @@ async function step(name, command, args, env = environment, cwd = root) {
     if (name === "production-public-auth-static") {
       const output = readFileSync(logPath, "utf8");
       let reportFailure = "";
+      let reportMethod = "";
+      let reportStatus = "";
       try {
         const report = JSON.parse(readFileSync(join(root, ".tmp/security/pilot-public-assets.json"), "utf8"));
-        reportFailure = report.failures?.[0]?.split(":", 1)[0] ?? "";
+        const [category = "", method = "", , status = ""] = report.failures?.[0]?.split(":") ?? [];
+        reportFailure = category;
+        reportMethod = method;
+        reportStatus = ({ 200: "OK", 301: "REDIRECT", 302: "REDIRECT", 307: "REDIRECT", 308: "REDIRECT", 400: "BAD_REQUEST", 403: "FORBIDDEN", 404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED", 500: "SERVER_ERROR" })[status] ?? "OTHER";
       } catch {}
       const reportDiagnostics = {
         AUTH_CANONICAL: "AUTH_CANONICAL",
@@ -97,7 +102,10 @@ async function step(name, command, args, env = environment, cwd = root) {
         ["SERVER_ACTION_DENIAL", "SERVER_ACTION_DENIAL"],
         ["INHERITED_BUILD_ROUTE_INVENTORY_MISSING", "INHERITED_ROUTE_INVENTORY_MISSING"],
       ];
-      const diagnostic = reportDiagnostics[reportFailure] ?? diagnostics.find(([needle]) => output.includes(needle))?.[1] ?? "UNCLASSIFIED";
+      const reportDiagnostic = reportFailure === "STATIC_POSITIVE"
+        ? `STATIC_POSITIVE_${reportMethod}_${reportStatus}`
+        : reportDiagnostics[reportFailure];
+      const diagnostic = reportDiagnostic ?? diagnostics.find(([needle]) => output.includes(needle))?.[1] ?? "UNCLASSIFIED";
       throw new Error(`PILOT_CI_PUBLIC_AUTH_STATIC_${diagnostic}`);
     }
     throw new Error("PILOT_CI_COMMAND_FAILED");
