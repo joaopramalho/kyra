@@ -56,6 +56,26 @@ async function step(name, command, args, env = environment, cwd = root) {
   if (code !== 0) {
     if (name === "production-public-auth-static") {
       const output = readFileSync(logPath, "utf8");
+      let reportFailure = "";
+      try {
+        const report = JSON.parse(readFileSync(join(root, ".tmp/security/pilot-public-assets.json"), "utf8"));
+        reportFailure = report.failures?.[0]?.split(":", 1)[0] ?? "";
+      } catch {}
+      const reportDiagnostics = {
+        AUTH_CANONICAL: "AUTH_CANONICAL",
+        AUTH_DISPLAY: "AUTH_DISPLAY",
+        AUTH_DOCUMENT: "AUTH_DOCUMENT",
+        AUTH_ICON: "AUTH_ICON",
+        AUTH_HEAD_BODY: "AUTH_HEAD_BODY",
+        STATIC_POSITIVE: "STATIC_POSITIVE",
+        STATIC_BYTES: "STATIC_BYTES",
+        STATIC_HEAD_BODY: "STATIC_HEAD_BODY",
+        FAVICON_SVG_CONTENT_TYPE: "FAVICON_CONTENT_TYPE",
+        CLOSED_ASSET: "CLOSED_ASSET",
+        INHERITED_STATUS: "INHERITED_ROUTE_STATUS",
+        INHERITED_CACHE: "INHERITED_ROUTE_CACHE",
+        SERVER_ACTION_DENIAL: "SERVER_ACTION_DENIAL",
+      };
       const diagnostics = [
         ["EADDRINUSE", "SERVER_PORT_IN_USE"],
         ["DATABASE_URL is required", "DATABASE_URL_MISSING"],
@@ -75,8 +95,9 @@ async function step(name, command, args, env = environment, cwd = root) {
         ["STATIC_CONTENT:", "STATIC_CONTENT_MISMATCH"],
         ["STATIC_NOT_ALLOWLISTED", "STATIC_ALLOWLIST"],
         ["SERVER_ACTION_DENIAL", "SERVER_ACTION_DENIAL"],
+        ["INHERITED_BUILD_ROUTE_INVENTORY_MISSING", "INHERITED_ROUTE_INVENTORY_MISSING"],
       ];
-      const diagnostic = diagnostics.find(([needle]) => output.includes(needle))?.[1] ?? "UNCLASSIFIED";
+      const diagnostic = reportDiagnostics[reportFailure] ?? diagnostics.find(([needle]) => output.includes(needle))?.[1] ?? "UNCLASSIFIED";
       throw new Error(`PILOT_CI_PUBLIC_AUTH_STATIC_${diagnostic}`);
     }
     throw new Error("PILOT_CI_COMMAND_FAILED");
