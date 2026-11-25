@@ -32,6 +32,7 @@
     "luxon": "^3.7.2",
     "nodemailer": "10.0.9",
     "standardwebhooks": "^1.0.0",
+    "stripe": "^23.2.0",
     "twilio": "^5.12.2"
   },
   "devDependencies": {

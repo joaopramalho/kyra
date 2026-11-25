@@ -19,6 +19,7 @@
     "link": "Voir les conditions d'utilisation",
     "reward": "Gagnez {{rate}} par vente pendant {{duration}}",
     "oneYear": "1 an",
+    "subscriptionLife": "tant que l'abonnement est actif",
     "months": "{{count}} mois"
   },
   "stats": {
@@ -26,6 +27,10 @@
     "clicksDescription": "Visites de parrainage suivies.",
     "referrals": "Parrainages",
     "referralsDescription": "Entreprises attribuées à votre lien.",
+    "activeSubscriptions": "Abonnements actifs",
+    "activeSubscriptionsDescription": "Abonnements parrainés actuellement actifs.",
+    "reversalDebt": "Ajustement pour remboursement ou litige",
+    "reversalDebtDescription": "Montant déduit des prochains paiements manuels.",
     "conversions": "Conversions",
     "conversionsDescription": "Transactions payées avec commission.",
     "pending": "En attente",
@@ -90,6 +95,8 @@
     "pending": "En attente",
     "paid": "Payé",
     "voided": "Annulé",
+    "reversed": "Reversé après remboursement ou litige",
+    "recovered": "Déduit d'un paiement ultérieur",
     "draft": "Brouillon",
     "ready": "Prêt",
     "skipped": "Ignoré"

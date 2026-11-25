@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -42,5 +42,12 @@ describe("raw migration manifest", () => {
       .toBe("product_events_business_sent_idx");
     expect(concurrentIndexName("-- lobbystack:concurrent-index product-events;drop table users"))
       .toBeUndefined();
+  });
+
+  it("does not seed or publish commercial prices by default", () => {
+    const migration = readFileSync(new URL("../../migrations/0082_commercial_stripe.sql", import.meta.url), "utf8");
+    expect(migration).toMatch(/publicly_available boolean NOT NULL DEFAULT false/i);
+    expect(migration).toMatch(/accepts_affiliate boolean NOT NULL DEFAULT false/i);
+    expect(migration).not.toMatch(/INSERT INTO public\.commercial_plans/i);
   });
 });

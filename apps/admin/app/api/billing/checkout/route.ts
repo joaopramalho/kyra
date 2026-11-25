@@ -1,10 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { billingAccounts, billingCheckoutRequests } from "@lobbystack/db";
+import { billingAccounts, billingCheckoutRequests, commercialCustomers, commercialOffers, commercialSubscriptions, withBusinessTransaction } from "@lobbystack/db";
 import { createBillingCheckoutRequest, type BillingCheckoutTarget, type BillingInterval } from "@lobbystack/domain";
-import { asApiResponse, businessIdFromRequest, readJson, requireApiSession, withOperatorTransaction } from "@/lib/api-helpers";
+import { asApiResponse, businessIdFromRequest, getAppDatabase, readJson, requireApiSession, withOperatorTransaction } from "@/lib/api-helpers";
 import { createDomainContext } from "@/lib/domain-context";
+import { commercialBillingBlocksPolar } from "@/lib/commercial-billing-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,17 @@ export async function POST(request: Request) {
     if (!businessId) throw new Error("A businessId is required.");
     if (typeof input.target !== "string" || !targets.includes(input.target as BillingCheckoutTarget)) throw new Error("target is invalid.");
     if (typeof input.billingInterval !== "string" || !intervals.includes(input.billingInterval as BillingInterval)) throw new Error("billingInterval is invalid.");
+    const scopedUrl = new URL(request.url);
+    scopedUrl.searchParams.set("businessId", businessId);
+    const authorized = await withOperatorTransaction(new Request(scopedUrl, { headers: request.headers }), async ({ businessId: authorizedBusinessId }) => authorizedBusinessId, { minimumRole: "business_admin" });
+    const stripeConflict = await withBusinessTransaction(getAppDatabase().db, { actorType: "system", userId: session.user.id, businessId: authorized }, async (tx) => {
+      const customer = (await tx.select({ id: commercialCustomers.id, onboardingStatus: commercialCustomers.onboardingStatus }).from(commercialCustomers).where(eq(commercialCustomers.tenantId, authorized)).limit(1))[0];
+      if (!customer) return false;
+      const pendingOffer = (await tx.select({ id: commercialOffers.id }).from(commercialOffers).where(and(eq(commercialOffers.customerId, customer.id), or(eq(commercialOffers.status, "open"), eq(commercialOffers.status, "checkout_pending")), sql`(${commercialOffers.expiresAt} IS NULL OR ${commercialOffers.expiresAt} > now())`)).limit(1))[0];
+      const activeSubscription = (await tx.select({ id: commercialSubscriptions.id }).from(commercialSubscriptions).where(and(eq(commercialSubscriptions.customerId, customer.id), or(eq(commercialSubscriptions.status, "active"), eq(commercialSubscriptions.status, "trialing"), eq(commercialSubscriptions.status, "past_due"), eq(commercialSubscriptions.status, "incomplete")))).limit(1))[0];
+      return commercialBillingBlocksPolar({ onboardingStatus: customer.onboardingStatus, hasOpenOffer: Boolean(pendingOffer), hasChargeableSubscription: Boolean(activeSubscription) });
+    });
+    if (stripeConflict) return NextResponse.json({ error: "Stripe commercial billing is already linked or has an open offer for this tenant. Resolve that billing flow before starting Polar checkout." }, { status: 409 });
     const requestId = await createBillingCheckoutRequest(createDomainContext(), { userId: session.user.id, businessId, target: input.target as BillingCheckoutTarget, billingInterval: input.billingInterval as BillingInterval });
     return NextResponse.json({ requestId }, { status: 202 });
   } catch (error) {
