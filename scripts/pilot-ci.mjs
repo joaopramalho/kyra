@@ -49,10 +49,37 @@ async function step(name, command, args, env = environment, cwd = root) {
   phase = name;
   console.log("Pilot CI phase: " + name);
   const fd = openSync(join(privateRoot, `phase-${index++}.log`), "wx", 0o600);
+  const logPath = join(privateRoot, `phase-${index - 1}.log`);
   const child = spawn(command, args, { cwd, env, stdio: ["ignore", fd, fd] });
   closeSync(fd);
   const [code] = await once(child, "exit");
-  if (code !== 0) throw new Error("PILOT_CI_COMMAND_FAILED");
+  if (code !== 0) {
+    if (name === "production-public-auth-static") {
+      const output = readFileSync(logPath, "utf8");
+      const diagnostics = [
+        ["EADDRINUSE", "SERVER_PORT_IN_USE"],
+        ["DATABASE_URL is required", "DATABASE_URL_MISSING"],
+        ["Database role assertion failed", "DATABASE_ROLE_ASSERTION"],
+        ["PRODUCTION_SERVER_NOT_READY", "SERVER_NOT_READY"],
+        ["PRODUCTION_SERVER_EXITED_PORT_IN_USE", "SERVER_PORT_IN_USE"],
+        ["PRODUCTION_SERVER_EXITED_DATABASE_URL_MISSING", "DATABASE_URL_MISSING"],
+        ["PRODUCTION_SERVER_EXITED_DATABASE_ROLE_ASSERTION", "DATABASE_ROLE_ASSERTION"],
+        ["PRODUCTION_SERVER_EXITED_MODULE_MISSING", "SERVER_MODULE_MISSING"],
+        ["PRODUCTION_SERVER_EXITED", "SERVER_EXITED"],
+        ["INHERITED_DENIAL:", "INHERITED_ROUTE_DENIAL"],
+        ["AUTH_DISPLAY_NOT_ALLOWLISTED", "AUTH_DISPLAY_ALLOWLIST"],
+        ["PUBLIC_PATTERN_COVERAGE", "PUBLIC_PATTERN_COVERAGE"],
+        ["AUTH_METHOD:", "AUTH_METHOD_POLICY"],
+        ["STATIC_METHOD:", "STATIC_METHOD_POLICY"],
+        ["STATIC_CONTENT:", "STATIC_CONTENT_MISMATCH"],
+        ["STATIC_NOT_ALLOWLISTED", "STATIC_ALLOWLIST"],
+        ["SERVER_ACTION_DENIAL", "SERVER_ACTION_DENIAL"],
+      ];
+      const diagnostic = diagnostics.find(([needle]) => output.includes(needle))?.[1] ?? "UNCLASSIFIED";
+      throw new Error(`PILOT_CI_PUBLIC_AUTH_STATIC_${diagnostic}`);
+    }
+    throw new Error("PILOT_CI_COMMAND_FAILED");
+  }
 }
 // Positional inputs retain every independent source test and avoid accidentally
 // executing generated dist copies as a second, stale test inventory.

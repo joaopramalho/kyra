@@ -49,7 +49,11 @@ test("production-default pilot auth displays and every published static asset en
   try{
     let ready=false;
     for(let attempt=0;attempt<60;attempt++){
-      if(child.exitCode!==null)throw new Error("PRODUCTION_SERVER_EXITED: inspect private local log");
+      if(child.exitCode!==null){
+        const serverLog=await readFile(join(reportDir,"pilot-public-assets-server.log"),"utf8");
+        const diagnosis=serverLog.includes("EADDRINUSE")?"PORT_IN_USE":serverLog.includes("DATABASE_URL is required")?"DATABASE_URL_MISSING":serverLog.includes("Database role assertion failed")?"DATABASE_ROLE_ASSERTION":serverLog.includes("Cannot find module")||serverLog.includes("ERR_MODULE_NOT_FOUND")?"MODULE_MISSING":"UNCLASSIFIED";
+        throw new Error(`PRODUCTION_SERVER_EXITED_${diagnosis}`);
+      }
       try{const response=await fetch(base+"/healthz",{signal:AbortSignal.timeout(1000)});ready=response.status===200;await response.arrayBuffer();}catch{}
       if(ready)break;
       await new Promise(resolve=>setTimeout(resolve,500));
