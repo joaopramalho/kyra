@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
-import { readdir, readFile, mkdir, open, writeFile, symlink, rm, lstat } from "node:fs/promises";
+import { readdir, readFile, mkdir, open, writeFile, symlink, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,12 @@ test("production-default pilot auth displays and every published static asset en
   const standaloneApp=join(standalone,"apps/admin");
   const stagedLinks=[];
   for(const [source,destination] of [[join(admin,".next/static"),join(standaloneApp,".next/static")],[join(admin,"public"),join(standaloneApp,"public")]]){
-    try{await lstat(destination);}catch(error){if(error?.code!=="ENOENT")throw error;await symlink(source,destination,"dir");stagedLinks.push(destination);}
+    // Next's standalone trace may leave a partial directory (for example, only
+    // embed.js under public). Replace it with the complete source tree so this
+    // production smoke tests the files that are actually part of the app.
+    await rm(destination,{recursive:true,force:true});
+    await symlink(source,destination,"dir");
+    stagedLinks.push(destination);
   }
   env.PORT=String(port);
   env.HOSTNAME="127.0.0.1";
