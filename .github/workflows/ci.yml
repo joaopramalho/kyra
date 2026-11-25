@@ -24,6 +24,8 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -117,6 +119,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

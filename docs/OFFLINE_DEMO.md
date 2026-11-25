@@ -7,8 +7,8 @@ the repository root:
 pnpm lmc:demo
 ```
 
-It executes a signed initial email, a prompt reply asking ZIP and repair versus
-replacement, a verified qualification reply, a real canonical appointment,
+It executes a signed initial email, a prompt reply asking one configured
+qualification question, a verified qualification reply, a real canonical appointment,
 synchronization through the fake calendar transport, and an owner summary with
 history. A **separate unanswered form lead explicitly consents** to follow-ups.
 The demo advances its fake clock, sends one follow-up, receives STOP, advances seven

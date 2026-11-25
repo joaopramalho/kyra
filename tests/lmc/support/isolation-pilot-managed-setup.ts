@@ -58,9 +58,9 @@ export async function probePilotManagedSetupContext(context: HttpAuditContext) {
     if (validSetupOptions) probed.push("OPTIONS /api/lmc/setup/calendar");
 
     const foreignStart = await request(`/api/calendar/google/start?businessId=${b.tenantId}`, cookieA, "", "GET");
-    check(foreignStart.status === 403, `PILOT_CALENDAR_START_FOREIGN_TENANT:${foreignStart.status}`);
+    check(foreignStart.status === 404, `PILOT_CALENDAR_START_FOREIGN_TENANT:${foreignStart.status}`);
     await foreignStart.arrayBuffer();
-    if (foreignStart.status === 403) probed.push("GET /api/calendar/google/start");
+    if (foreignStart.status === 404) probed.push("GET /api/calendar/google/start");
 
     const startOptions = await request("/api/calendar/google/start", cookieA, "", "OPTIONS");
     const startAllow = (startOptions.headers.get("allow") ?? "").split(/,\s*/);

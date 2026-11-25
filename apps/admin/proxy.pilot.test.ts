@@ -15,7 +15,7 @@ const request = (path: string, method = "GET", headers: Record<string, string> =
 
 it("denies inherited routes for every method before CSRF, locale redirects or maintenance", () => {
   vi.stubEnv("LOBBYSTACK_MAINTENANCE_MODE", "true");
-  for (const path of ["/api/voice/test", "/api/mcp", "/api/auth/oauth2/register", "/api/billing", "/api/widget/lead", "/api/realtime", "/agent", "/en/demo", "/embed.js", "/api/leads/one/unknown", "/api/leads/one/reply/extra", "/api/lmc/capture/opaque/extra", "/locales/en/auth.json/extra", "/brand/future-handler"]) {
+  for (const path of ["/api/voice/test", "/api/mcp", "/api/auth/oauth2/register", "/api/billing", "/api/widget/lead", "/api/realtime", "/en/demo", "/embed.js", "/api/leads/one/unknown", "/api/leads/one/reply/extra", "/api/lmc/capture/opaque/extra", "/locales/en/auth.json/extra", "/brand/future-handler"]) {
     for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
       const response = proxy(request(path, method, { origin: "https://foreign.invalid" }));
       expect(response.status, `${method} ${path}`).toBe(404);
@@ -26,7 +26,7 @@ it("denies inherited routes for every method before CSRF, locale redirects or ma
 
 it("allows concrete pilot actions while refusing other methods on allowed routes", () => {
   const tenant = "11111111-1111-4111-8111-111111111111";
-  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/two-factor/verify-totp", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/setup/calendar", "GET"], ["/api/lmc/setup/calendar", "PATCH"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/start", "GET"], ["/api/calendar/google/callback", "GET"], ["/api/internal/superadmin/overview", "GET"], ["/api/internal/superadmin/clients", "GET"], ["/api/internal/superadmin/clients", "POST"], [`/api/internal/superadmin/clients/${tenant}/draft`, "PUT"], [`/api/internal/superadmin/clients/${tenant}/invite`, "POST"], [`/api/internal/superadmin/clients/${tenant}/activation`, "GET"], [`/api/internal/superadmin/clients/${tenant}/activation`, "POST"], ["/api/team/accept", "POST"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"], ["/internal", "GET"], ["/internal/clients", "GET"], ["/internal/clients/new", "GET"], [`/internal/clients/${tenant}`, "GET"], ["/en/accept-invite", "GET"], ["/internal/mfa", "GET"]] as const) {
+  for (const [path, method] of [["/api/auth/sign-in/email", "POST"], ["/api/auth/two-factor/verify-totp", "POST"], ["/api/auth/get-session", "GET"], ["/api/businesses", "GET"], ["/api/businesses", "PATCH"], ["/api/leads", "GET"], ["/api/leads/lead/reply", "POST"], ["/api/leads/lead/automation", "PATCH"], ["/api/catalog", "GET"], ["/api/catalog", "POST"], [`/api/catalog/${tenant}`, "PATCH"], ["/api/business-hours", "GET"], ["/api/business-hours", "PUT"], ["/api/knowledge", "GET"], ["/api/knowledge", "POST"], [`/api/knowledge/${tenant}`, "GET"], ["/api/knowledge/snippets", "POST"], [`/api/knowledge/snippets/${tenant}`, "DELETE"], ["/api/uploads", "POST"], ["/api/uploads", "PUT"], ["/api/contacts", "GET"], [`/api/contacts/${tenant}`, "GET"], [`/api/contacts/${tenant}`, "PATCH"], ["/api/lmc/settings", "PUT"], ["/api/lmc/setup/calendar", "GET"], ["/api/lmc/setup/calendar", "PATCH"], ["/api/lmc/capture/opaque", "POST"], ["/api/lmc/capture/opaque", "OPTIONS"], ["/api/lmc/unsubscribe/opaque", "POST"], ["/api/webhooks/lmc-email", "POST"], ["/api/calendar/google/start", "GET"], ["/api/calendar/google/callback", "GET"], ["/api/integrations", "GET"], ["/api/integrations", "PATCH"], ["/api/integrations", "POST"], ["/api/integrations", "DELETE"], ["/api/internal/superadmin/overview", "GET"], ["/api/internal/superadmin/clients", "GET"], ["/api/internal/superadmin/clients", "POST"], [`/api/internal/superadmin/clients/${tenant}/draft`, "PUT"], [`/api/internal/superadmin/clients/${tenant}/invite`, "POST"], [`/api/internal/superadmin/clients/${tenant}/activation`, "GET"], [`/api/internal/superadmin/clients/${tenant}/activation`, "POST"], ["/api/team/accept", "POST"], ["/healthz", "HEAD"], ["/leads", "GET"], ["/contacts", "GET"], [`/contacts/${tenant}`, "GET"], ["/agent/knowledge", "GET"], ["/agent/services", "GET"], ["/setup-required", "GET"], ["/settings/email", "GET"], ["/settings/business", "GET"], ["/integrations", "GET"], ["/internal", "GET"], ["/internal/clients", "GET"], ["/internal/clients/new", "GET"], [`/internal/clients/${tenant}`, "GET"], ["/en/accept-invite", "GET"], ["/internal/mfa", "GET"]] as const) {
     expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(200);
   }
   for (const [path, method] of [["/api/businesses", "POST"], ["/leads", "POST"], ["/setup-required", "POST"], ["/api/leads", "DELETE"], ["/api/auth/get-session", "POST"], ["/healthz", "DELETE"]] as const) {
@@ -40,7 +40,20 @@ it("allows concrete pilot actions while refusing other methods on allowed routes
   expect(proxy(request(`/api/internal/superadmin/clients/${tenant}/activation`, "DELETE")).status).toBe(405);
   expect(proxy(request("/api/lmc/setup/calendar", "PATCH", { origin: "https://foreign.invalid" })).status).toBe(403);
   expect(proxy(request(`/api/internal/superadmin/clients/not-a-uuid/draft`, "GET")).status).toBe(404);
+  expect(proxy(request("/api/contacts/not-a-uuid", "GET")).status).toBe(404);
+  expect(proxy(request("/api/knowledge/11111111-1111-1111-1111-111111111111", "GET")).status).toBe(404);
   expect(proxy(request("/internal", "POST", { "next-action": "admin-action" })).status).toBe(404);
+});
+
+it("allows the voice surfaces and only the reviewed call API methods in the pilot", () => {
+  const tenant = "11111111-1111-4111-8111-111111111111";
+  for (const [path, method] of [["/agent", "GET"], ["/agent/basic-settings", "GET"], ["/agent/rules", "GET"], ["/api/lmc/voice/number", "GET"], ["/calls", "GET"], [`/calls/${tenant}`, "GET"], ["/api/agent", "PATCH"], ["/api/rules", "GET"], ["/api/rules", "POST"], ["/api/rules", "PATCH"], ["/api/rules", "DELETE"], ["/api/calls", "GET"], ["/api/calls/active", "GET"], [`/api/calls/${tenant}`, "GET"], [`/api/calls/${tenant}/recording`, "GET"], ["/api/webhooks/openai/live", "POST"], [`/api/internal/superadmin/clients/${tenant}/voice`, "PATCH"]] as const) {
+    expect(proxy(request(path, method)).status, `${method} ${path}`).toBe(200);
+  }
+  expect(proxy(request("/api/calls", "POST")).status).toBe(405);
+  expect(proxy(request(`/api/calls/${tenant}`, "PATCH")).status).toBe(405);
+  expect(proxy(request("/api/billing", "GET")).status).toBe(404);
+  expect(proxy(request("/integrations/webhooks", "GET")).status).toBe(404);
 });
 
 it("blocks Server Actions and malformed dynamic segments even through allowed paths", () => {
@@ -61,8 +74,8 @@ it("covers assets with the proxy and permits only required static reads", () => 
   expect(proxy(request("/_next/image")).status).toBe(404);
 });
 
-it("redirects the post-login root to CRM and enables the gate explicitly outside production", () => {
-  expect(proxy(request("/")).headers.get("location")).toBe("http://localhost:3210/leads");
+it("keeps the pilot dashboard root accessible and enables the gate explicitly outside production", () => {
+  expect(proxy(request("/")).status).toBe(200);
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("LMC_PILOT_MODE", "true");
   expect(proxy(request("/api/billing")).status).toBe(404);

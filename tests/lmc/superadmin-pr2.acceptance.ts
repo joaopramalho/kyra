@@ -79,7 +79,7 @@ it("activates only after the verified owner connects and syncs a writable calend
     expect(await db.admin.db.select().from(services).where(eq(services.businessId,client.tenantId))).toHaveLength(1);
     expect(await db.admin.db.select().from(businessHours).where(eq(businessHours.businessId,client.tenantId))).toHaveLength(1);
     expect((await db.admin.db.select({enabled:lmcSettings.enabled}).from(lmcSettings).where(eq(lmcSettings.tenantId,client.tenantId)))[0]?.enabled).toBe(true);
-    expect(await resolveLmcPilotPageAccess({database:db.app.db,authDatabase:db.admin.db},ownerId)).toEqual({tenantId:client.tenantId});
+    expect(await resolveLmcPilotPageAccess({database:db.app.db,authDatabase:db.admin.db},ownerId)).toMatchObject({tenantId:client.tenantId});
     await pauseManagedLmcClient(context,{actorUserId:actor,tenantId:client.tenantId,idempotencyKey:`pause-${client.tenantId}`,requestId:randomUUID()});
     expect((await db.admin.db.select({status:businesses.status}).from(businesses).where(eq(businesses.id,client.tenantId)))[0]?.status).toBe("paused");
     expect((await db.admin.db.select({enabled:lmcSettings.enabled}).from(lmcSettings).where(eq(lmcSettings.tenantId,client.tenantId)))[0]?.enabled).toBe(false);

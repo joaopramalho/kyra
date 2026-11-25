@@ -19,14 +19,17 @@ describe("pilot worker HTTP boundary", () => {
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
       for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
-        for (const path of ["/internal/live/attach", "/unknown", "/healthz/extra", "/healthz%2fextra"]) {
+        for (const path of ["/unknown", "/healthz/extra", "/healthz%2fextra"]) {
           expect((await fetch(base + path, { method })).status, `${method} ${path}`).toBe(404);
         }
+        if (method !== "POST") expect((await fetch(base + "/internal/live/attach", { method })).status).toBe(404);
         for (const path of ["/healthz", "/readyz", "/health/live", "/health/ready"]) {
           expect((await fetch(base + path, { method })).status, `${method} ${path}`).toBe(["GET", "HEAD"].includes(method) ? 200 : 405);
         }
       }
-      expect(extra).not.toHaveBeenCalled();
+      expect((await fetch(base + "/internal/live/attach", { method: "POST" })).status).toBe(200);
+      expect(extra).toHaveBeenCalledTimes(1);
+      expect(extra.mock.calls[0]?.[0].url).toBe("/internal/live/attach");
     } finally {
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }

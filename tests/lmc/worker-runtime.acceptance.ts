@@ -33,6 +33,22 @@ it("leases only the job it is executing so slow model calls do not expire waitin
   );
 });
 
+it("keeps the active job leased while email reasoning exceeds the original lease window", async () => {
+  const h = (harness = await createLmcHarness({ now: "2030-01-09T03:40:00Z" }));
+  const analyze = h.model.analyze.bind(h.model);
+  h.model.analyze = async (prompt) => {
+    h.advanceMilliseconds(61_000);
+    return analyze(prompt);
+  };
+  await h.capture({
+    email: "slow-reasoning@example.invalid",
+    message: "Roof repair please.",
+  });
+  await h.work();
+  expect(h.jobFailures).toEqual([]);
+  expect(h.mail.to("slow-reasoning@example.invalid")).toHaveLength(1);
+});
+
 it("runs the production email consumer with real PostgreSQL and default fake providers", async () => {
   const { createLmcEmailRuntime } =
     await import("../../apps/worker/src/lmcEmail");

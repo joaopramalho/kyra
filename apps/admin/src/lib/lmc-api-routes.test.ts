@@ -20,6 +20,7 @@ import { POST } from "../../app/api/leads/[leadId]/reply/route";
 describe("LMC operator HTTP boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_LMC_EMAIL_LEADS_ENABLED", "true");
     mocks.auth.mockResolvedValue({
       session: { user: { id: "authenticated-user" } },
       businessId: "selected-business",
@@ -58,6 +59,13 @@ describe("LMC operator HTTP boundary", () => {
         leadId: "lead",
       },
       body,
+    );
+  });
+  it("passes only supported lead filters to the tenant scoped workspace query", async () => {
+    await GET(new Request("http://localhost/api/leads?limit=25&offset=25&search=ana&status=qualifying&view=ai_active"));
+    expect(mocks.list).toHaveBeenCalledWith(
+      { tenantId: "selected-business", userId: "authenticated-user" },
+      { limit: 25, offset: 25, status: "qualifying", view: "ai_active", search: "ana" },
     );
   });
   it("rejects forged actor fields and oversized input before the domain command", async () => {

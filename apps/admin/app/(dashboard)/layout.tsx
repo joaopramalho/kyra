@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
-import { isPilotMode } from "@lobbystack/shared";
+import {
+  hasPilotDashboardCapability,
+  isPilotMode,
+  isLmcEmailLeadsEnabled,
+  pilotDashboardCapabilityForPath,
+  type PilotDashboardCapability,
+} from "@lobbystack/shared";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
@@ -22,6 +28,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await getSession(new Headers(requestHeaders));
   if (!session) redirect(localizePublicPath("/login", locale));
   const pilotMode = isPilotMode(process.env);
+  const pathname = requestHeaders.get(PATHNAME_HEADER) ?? "/";
+  if (!isLmcEmailLeadsEnabled() && (pathname === "/leads" || pathname === "/settings/email")) notFound();
+  let pilotCapabilities: PilotDashboardCapability[] = [];
   if (pilotMode) {
     const access = await resolveLmcPilotPageAccess({database:getAppDatabase().db,authDatabase:getAuthDatabase().db},session.user.id);
     if (!access) {
@@ -32,6 +41,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       // misconfigured workspaces.
       notFound();
     }
+    const requiredCapability = pilotDashboardCapabilityForPath(pathname);
+    if (pathname !== "/" && (!requiredCapability || !hasPilotDashboardCapability(access.capabilities, requiredCapability))) notFound();
+    pilotCapabilities = access.capabilities;
   } else {
     const onboarding = await getActiveOnboardingState(getAppDatabase().db, session.user.id);
     if (onboarding.stage !== "complete") redirect(resolveOnboardingRoute(onboarding.stage));
@@ -40,6 +52,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <RootDocument locale={locale} localeSource={source} namespaces={routeNamespaces(requestHeaders.get(PATHNAME_HEADER) ?? "/")}>
       <DashboardShell
         pilotMode={pilotMode}
+        pilotCapabilities={pilotCapabilities}
         user={{
           email: session.user.email ?? "",
           name: session.user.name ?? session.user.email ?? "",

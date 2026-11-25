@@ -11,7 +11,9 @@ import {
   lmcLeads,
   lmcMessages,
   lmcSettings,
+  appointments,
   services,
+  staff,
   withBusinessTransaction,
   type Database,
   type DatabaseTransaction,
@@ -50,6 +52,8 @@ const statuses = new Set([
   "opted_out",
   "suppressed",
 ]);
+const leadViews = new Set(["all", "needs_attention", "ai_active", "booked"]);
+const aiHandlingStatuses = ["new", "qualifying", "qualified"] as const;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export class LmcWorkspaceError extends Error {
   constructor(
@@ -100,7 +104,7 @@ export class LmcWorkspace {
 
   list(
     actor: Actor,
-    input: { limit: number; offset: number; status?: string; search?: string },
+    input: { limit: number; offset: number; status?: string; search?: string; view?: string },
   ) {
     if (
       !Number.isSafeInteger(input.limit) ||
@@ -110,11 +114,19 @@ export class LmcWorkspace {
       input.offset < 0 ||
       input.offset > 100_000 ||
       (input.search && input.search.length > 200) ||
-      (input.status && !statuses.has(input.status))
+      (input.status && !statuses.has(input.status)) ||
+      (input.view && !leadViews.has(input.view))
     )
       throw new LmcWorkspaceError(400, "INVALID_LEAD_FILTER");
     return this.actor(actor, "viewer", async (tx, role) => {
       const search = input.search?.trim().replace(/[\\%_]/g, "\\$&");
+      const viewFilter = input.view === "needs_attention"
+        ? eq(lmcLeads.status, "human_handoff")
+        : input.view === "booked"
+          ? eq(lmcLeads.status, "booked")
+          : input.view === "ai_active"
+            ? and(eq(lmcLeads.aiPaused, false), inArray(lmcLeads.status, aiHandlingStatuses))
+            : undefined;
       const items = await tx
         .select(leadFields)
         .from(lmcLeads)
@@ -122,6 +134,7 @@ export class LmcWorkspace {
           and(
             eq(lmcLeads.tenantId, actor.tenantId),
             input.status ? eq(lmcLeads.status, input.status) : undefined,
+            viewFilter,
             search
               ? or(
                   ilike(lmcLeads.email, `%${search}%`),
@@ -135,16 +148,24 @@ export class LmcWorkspace {
         .limit(input.limit + 1)
         .offset(input.offset);
       const grouped = await tx
-        .select({ status: lmcLeads.status, count: sql<string>`count(*)` })
+        .select({ status: lmcLeads.status, aiPaused: lmcLeads.aiPaused, count: sql<string>`count(*)` })
         .from(lmcLeads)
         .where(eq(lmcLeads.tenantId, actor.tenantId))
-        .groupBy(lmcLeads.status);
+        .groupBy(lmcLeads.status, lmcLeads.aiPaused);
+      const summary: Record<string, number> = {};
+      let aiActiveCount = 0;
+      for (const row of grouped) {
+        const count = Number(row.count);
+        summary[row.status] = (summary[row.status] ?? 0) + count;
+        if (!row.aiPaused && (aiHandlingStatuses as readonly string[]).includes(row.status)) {
+          aiActiveCount += count;
+        }
+      }
       return {
         items: redactLmcReadValue(items.slice(0, input.limit)),
         hasNext: items.length > input.limit,
-        summary: Object.fromEntries(
-          grouped.map((row) => [row.status, Number(row.count)]),
-        ),
+        summary,
+        aiActiveCount,
         role,
       };
     });
@@ -171,6 +192,41 @@ export class LmcWorkspace {
         .where(and(eq(lmcLeads.tenantId, actor.tenantId), eq(lmcLeads.id, id)))
         .limit(1);
       if (!lead) throw new LmcWorkspaceError(404, "LEAD_NOT_FOUND");
+      const [appointment] = lead.appointmentId
+        ? await tx
+            .select({
+              id: appointments.id,
+              startsAt: appointments.startsAt,
+              endsAt: appointments.endsAt,
+              timezone: appointments.timezone,
+              status: appointments.status,
+              calendarSyncState: appointments.calendarSyncState,
+              serviceName: services.name,
+              staffName: staff.name,
+            })
+            .from(appointments)
+            .innerJoin(
+              services,
+              and(
+                eq(services.id, appointments.serviceId),
+                eq(services.businessId, actor.tenantId),
+              ),
+            )
+            .innerJoin(
+              staff,
+              and(
+                eq(staff.id, appointments.staffId),
+                eq(staff.businessId, actor.tenantId),
+              ),
+            )
+            .where(
+              and(
+                eq(appointments.businessId, actor.tenantId),
+                eq(appointments.id, lead.appointmentId),
+              ),
+            )
+            .limit(1)
+        : [];
       const [cursor] = input.before
         ? await tx
             .select({ createdAt: lmcMessages.createdAt, id: lmcMessages.id })
@@ -243,6 +299,7 @@ export class LmcWorkspace {
         .limit(100);
       return {
         lead: redactLmcReadValue(lead),
+        appointment: appointment ?? null,
         messages,
         events: redactLmcReadValue(events),
         nextBefore: rows.length > limit ? (messages[0]?.id ?? null) : null,

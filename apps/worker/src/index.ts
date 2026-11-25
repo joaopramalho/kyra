@@ -127,7 +127,8 @@ async function main(): Promise<void> {
   const database = createDatabaseClient("lobbystack_worker");
   const dispatcherDatabase = createDatabaseClient("lobbystack_dispatcher");
   await Promise.all([assertDatabaseRole(database), assertDatabaseRole(dispatcherDatabase)]);
-  const emailRuntime = emailWorkerEnabled() ? createLmcEmailRuntime({ database: database.db, dispatcher: dispatcherDatabase.db }) : undefined;
+  const emailDomain = { db: database.db, snapshotCache: getWorkerSnapshotCache() };
+  const emailRuntime = emailWorkerEnabled() ? createLmcEmailRuntime({ database: database.db, dispatcher: dispatcherDatabase.db, domain: emailDomain }) : undefined;
   let emailReady = true;
   console.info(emailRuntime ? `LMC email consumer configured (${emailRuntime.mode}).` : "LMC email consumer disabled.");
   const realtime = createRedisConnection({ prefix: process.env.REDIS_PREFIX ?? "lobbystack" });

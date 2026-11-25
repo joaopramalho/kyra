@@ -34,9 +34,14 @@ beforeEach(() => {
 
 describe("startLivePhoneCall", () => {
   it("records the call against the OpenAI session so retries stay idempotent", async () => {
-    mocks.startCall.mockResolvedValue({ callId: "call_1", conversationId: "conv_1", contactId: "contact_1", duplicate: false, blocked: false });
-    await expect(startLivePhoneCall(context, { businessId: "biz_1", sessionId: "live_1", from: "+14165550100", to: "+15815020392" })).resolves.toMatchObject({ callId: "call_1", blocked: false });
+    mocks.startCall.mockResolvedValue({ callId: "call_1", conversationId: "conv_1", contactId: "contact_1", duplicate: false, blocked: false, ended: false });
+    await expect(startLivePhoneCall(context, { businessId: "biz_1", sessionId: "live_1", from: "+14165550100", to: "+15815020392" })).resolves.toMatchObject({ callId: "call_1", blocked: false, duplicate: false, ended: false });
     expect(mocks.startCall).toHaveBeenCalledWith(context, expect.objectContaining({ provider: LIVE_CALL_PROVIDER, providerCallId: "live_1", transport: "voice" }));
+  });
+
+  it("preserves ended state for a duplicate so webhook retries cannot revive a finished call", async () => {
+    mocks.startCall.mockResolvedValue({ callId: "call_1", conversationId: "conv_1", contactId: "contact_1", duplicate: true, blocked: false, ended: true });
+    await expect(startLivePhoneCall(context, { businessId: "biz_1", sessionId: "live_1", from: "unknown", to: "+15815020392" })).resolves.toMatchObject({ duplicate: true, ended: true });
   });
 });
 

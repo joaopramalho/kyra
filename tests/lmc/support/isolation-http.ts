@@ -9,7 +9,7 @@ import { createLmcHarness } from "./harness";
 type Harness = Awaited<ReturnType<typeof createLmcHarness>>;
 // The exhaustive audit intentionally cold-compiles every allowlisted Next.js
 // route. Hosted runners can spend more than 15 seconds compiling a route even
-// when the request itself is healthy; keep the enclosing 120-second audit cap
+// when the request itself is healthy; keep the enclosing 180-second audit cap
 // while allowing an individual cold compile to finish deterministically.
 const HTTP_AUDIT_REQUEST_TIMEOUT_MS = 30_000;
 type AuditRequest = (

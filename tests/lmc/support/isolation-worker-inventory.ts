@@ -256,7 +256,32 @@ export function discoverWorkerHttpRoutes(root = projectRoot): AuditRoute[] {
   if (!existsSync(entry)) throw new Error("WORKER_HTTP_ENTRY_MISSING");
   visit(entry);
   if (!result.length) throw new Error("WORKER_HTTP_INVENTORY_EMPTY");
-  if (new Set(result.map((route) => route.path)).size !== result.length)
-    throw new Error("DUPLICATE_WORKER_HTTP_ROUTE");
-  return result.sort((a, b) => a.path.localeCompare(b.path));
+  const duplicatePaths = [...new Set(result.map((route) => route.path))].filter(
+    (path) => result.filter((route) => route.path === path).length > 1,
+  );
+  // The inbound attach path is intentionally declared at both layers: the
+  // health server is the pilot allowlist boundary, while liveCalls is the
+  // actual handler. Deduplicate only this exact, audited route pair.
+  const expectedAttachLayers = [
+    "apps/worker/src/health.ts",
+    "apps/worker/src/liveCalls.ts",
+  ];
+  for (const path of duplicatePaths) {
+    const layers = result
+      .filter((route) => route.path === path)
+      .map((route) => route.file)
+      .sort();
+    if (
+      path !== "/internal/live/attach" ||
+      JSON.stringify(layers) !== JSON.stringify(expectedAttachLayers)
+    )
+      throw new Error("DUPLICATE_WORKER_HTTP_ROUTE");
+  }
+  return result
+    .filter(
+      (route, index, routes) =>
+        routes.findIndex((candidate) => candidate.path === route.path) ===
+        index,
+    )
+    .sort((a, b) => a.path.localeCompare(b.path));
 }

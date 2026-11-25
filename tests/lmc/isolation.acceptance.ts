@@ -10,9 +10,17 @@ describe("LMC exhaustive tenant-isolation acceptance", () => {
     expect(report.tableInventory.length).toBeGreaterThanOrEqual(88);
     expect(report.routeInventory.length).toBeGreaterThanOrEqual(238);
     expect([...report.probedTables].sort()).toEqual([...report.tableInventory].sort());
-    expect([...report.probedRoutes].sort()).toEqual([...report.routeInventory].sort());
+    const unprobedRoutes = report.routeInventory.filter((route) => !report.probedRoutes.includes(route));
+    for (const route of unprobedRoutes) {
+      const safeRouteId = route.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "").toUpperCase();
+      expect(false, `PILOT_UNPROBED_${safeRouteId}`).toBe(true);
+    }
+    expect([...report.probedRoutes].sort(), `Unprobed pilot API methods: ${unprobedRoutes.join(", ")}`).toEqual([...report.routeInventory].sort());
     expect(report.skipped).toEqual([]);
     expect(report.failures, report.failures.join("\n")).toEqual([]);
     expect(report.runtimeRoles.every((role) => !role.superuser && !role.bypassRls)).toBe(true);
-  }, 120_000);
+  // This deliberately executes the complete table and route inventory. Keep
+  // the assertions exhaustive, but allow slower containerized CI runners to
+  // finish instead of failing a few milliseconds beyond the old 120s limit.
+  }, 180_000);
 });

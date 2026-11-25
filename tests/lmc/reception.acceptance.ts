@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { businesses, lmcJobs, lmcLeads, lmcMessages, lmcSettings, withBusinessTransaction } from "@lobbystack/db";
+import { businesses, lmcEvents, lmcJobs, lmcLeads, lmcMessages, lmcSettings, withBusinessTransaction } from "@lobbystack/db";
 import { FakeLmcEmailModel, FakeLmcEmailProvider } from "@lobbystack/providers";
 import { EmailChannel } from "../../packages/agent-core/src/channels";
 import { createReplyToken } from "../../packages/domain/src/server/lmc/capabilities";
@@ -22,11 +22,42 @@ describe("authenticated replies preserve conversation capabilities and suppressi
     expect(await h.scoped(tx=>tx.select().from(lmcMessages).where(eq(lmcMessages.providerId,event.id)))).toHaveLength(1);
     expect(await h.lead()).toMatchObject({verifiedAt:expect.any(Date),followupGeneration:1});
   });
-  it.each(["sender","token","thread","authentication"])("rejects a mismatched %s without changing the conversation",async mismatch=>{
+  it.each(["resend","ses","sendgrid"]) ("routes authenticated replies independently of %s thread identifiers",async provider=>{
+    const event=h.event("ZIP 33101, roof repair, residential homeowner");
+    event.email.headers["Message-ID"]=`<reply-${provider}@${provider}.example>`;
+    delete event.email.headers["In-Reply-To"];
+    delete event.email.headers.References;
+    expect(await h.reception.receive(event)).toEqual({accepted:true});
+    await h.worker.drain();
+    expect(h.mail.to(h.email)).toHaveLength(2);
+    expect(await h.scoped(tx=>tx.select().from(lmcMessages).where(eq(lmcMessages.providerId,event.id)))).toHaveLength(1);
+  });
+  it("accepts forwarded replies with a valid capability even when thread headers reference another conversation",async()=>{
+    const event=h.event("Forwarded: ZIP 33101");
+    event.email.headers["In-Reply-To"]="<foreign-thread@example.invalid>";
+    event.email.headers.References="<foreign-thread@example.invalid>";
+    expect(await h.reception.receive(event)).toEqual({accepted:true});
+    expect(await h.lead()).toMatchObject({verifiedAt:expect.any(Date)});
+  });
+  it("records a bounded rejection for an invalid capability without exposing its value",async()=>{
+    const event=h.event("private reply body");
+    const invalidToken=createReplyToken(h.tenantId).value;
+    event.email.to=`reply+${invalidToken}@inbound.example.invalid`;
+    expect(await h.reception.receive(event)).toEqual({accepted:false,reason:"conversation_not_verified"});
+    const rows=await h.scoped(tx=>tx.select({type:lmcEvents.type,metadata:lmcEvents.metadata}).from(lmcEvents).where(eq(lmcEvents.type,"email_rejected")));
+    expect(rows).toEqual([{type:"email_rejected",metadata:{reason:"conversation_not_verified",referenceCount:0}}]);
+    const serialized=JSON.stringify(rows);
+    expect(serialized).not.toContain("private reply body");
+    expect(serialized).not.toContain(h.email);
+    expect(serialized).not.toContain(invalidToken);
+    await h.worker.drain();
+    expect(h.mail.to(h.email)).toHaveLength(1);
+    expect(await h.lead()).toMatchObject({verifiedAt:null,followupGeneration:0});
+  });
+  it.each(["sender","token","authentication"])("rejects a mismatched %s without changing the conversation",async mismatch=>{
     const event=h.event("ZIP 33101");
     if(mismatch==="sender")event.email.from="intruder@example.invalid";
-    if(mismatch==="token")event.email.to=createReplyToken(h.tenantId).value+"@inbound.example.invalid";
-    if(mismatch==="thread")event.email.headers["In-Reply-To"]="<another@example.invalid>";
+    if(mismatch==="token")event.email.to=`reply+${createReplyToken(h.tenantId).value}@inbound.example.invalid`;
     if(mismatch==="authentication")event.email.authentication.dkim="fail";
     expect(await h.reception.receive(event)).toMatchObject({accepted:false});
     await h.worker.drain();

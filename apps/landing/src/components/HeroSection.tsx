@@ -2,7 +2,7 @@ import { brand } from "@lobbystack/shared/brand"
 import { buttonVariants } from "@/components/ui/button"
 import { APP_SIGNUP_URL } from "@/lib/app-links"
 import { cn } from "@/lib/utils"
-import { getCopy, type Locale } from "@/i18n"
+import { getCopy, localizePath, type Locale } from "@/i18n"
 import { ArrowRight } from "lucide-react"
 import type { ReactNode } from "react"
 
@@ -65,12 +65,12 @@ export function HeroSection({ children, locale = "en" }: HeroSectionProps) {
               {localCopy.body}
             </p>
 
-            <div className="animate-fade-up mt-8 flex items-center gap-4 stagger-3">
+            <div className="animate-fade-up mt-8 flex flex-col items-stretch gap-3 stagger-3 sm:flex-row sm:items-center">
               <a
                 href={APP_SIGNUP_URL}
                 className={cn(
                   buttonVariants({ size: "lg" }),
-                  "h-11 w-full max-w-80 rounded-full px-16 text-sm md:w-96 md:max-w-none"
+                  "h-11 w-full rounded-full px-6 text-sm sm:w-auto sm:px-8"
                 )}
                 data-ph-signup-cta
                 data-ph-capture-attribute-section="hero"
@@ -79,6 +79,12 @@ export function HeroSection({ children, locale = "en" }: HeroSectionProps) {
               >
                 {copy.common.tryFree}
                 <ArrowRight className="ml-1 size-4 transition-transform duration-200 ease-(--ease-out) group-hover/button:translate-x-0.5" />
+              </a>
+              <a
+                href={localizePath(locale, "/pricing/")}
+                className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-11 w-full rounded-full px-6 text-sm sm:w-auto")}
+              >
+                {copy.common.viewPricing}
               </a>
             </div>
 

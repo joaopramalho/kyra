@@ -36,4 +36,4 @@ Admin operations require the existing superadmin session and MFA gate. Offer, pr
 
 Plans and offers are USD. Tax treatment, invoicing policy, dunning, chargeback response, and the actual payout transfer remain operator responsibilities. Tenant provisioning and association are manual. This MVP does not provision services, deploy Railway resources, provision Twilio, automate payouts, or suspend services. Subscription MRR is a current active-subscription snapshot, not revenue recognition.
 
-Migration `0082_commercial_stripe.sql` is additive and registered in the raw migration list. This audit did not apply it. A rollout still requires a separately planned deployment and migration. Keep the tables and records on application rollback; dropping them would erase billing, webhook-idempotency, audit, and commission history.
+Migration `0085_commercial_stripe.sql` is additive and registered in the raw migration list. This audit did not apply it. A rollout still requires a separately planned deployment and migration. Keep the tables and records on application rollback; dropping them would erase billing, webhook-idempotency, audit, and commission history.

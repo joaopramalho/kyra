@@ -62,19 +62,16 @@ export function createVerifiedLiveAttachHandler(input: {
 }): ExtraRouteHandler {
   return async (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    // Preserve existing flag, method and authentication behavior without a database read.
-    if (
-      path !== LIVE_ATTACH_PATH ||
-      !isLivePrototypeEnabled() ||
-      request.method !== "POST" ||
-      !authorized(request)
-    )
-      return input.handle(request, response);
     const reply = (status: number, error: string) => {
       response.writeHead(status, { "content-type": "application/json" });
       response.end(JSON.stringify({ error }));
       return true;
     };
+    // Preserve legacy handling for unrelated routes and the disabled feature,
+    // but make the sole pilot exception fail closed before reaching it.
+    if (path !== LIVE_ATTACH_PATH || !isLivePrototypeEnabled()) return input.handle(request, response);
+    if (request.method !== "POST") return reply(405, "Method not allowed.");
+    if (!authorized(request)) return reply(401, "Unauthorized.");
     let raw: Buffer | undefined;
     try {
       raw = await bodyBytes(request);

@@ -34,7 +34,7 @@ export const lmcQualificationSchema = z.object({
 export type LmcQualification = z.infer<typeof lmcQualificationSchema>;
 
 export const lmcEmailDecisionSchema = z.object({
-  intent: z.enum(["qualification", "price", "availability", "book", "reschedule", "cancel", "complaint", "complex", "wait", "unknown"]),
+  intent: z.enum(["qualification", "question", "price", "availability", "book", "reschedule", "cancel", "complaint", "complex", "wait", "unknown"]),
   confidence: z.number().min(0).max(1),
   qualification: lmcQualificationSchema,
   requestedSlot: z.string().datetime().optional(),
@@ -78,11 +78,20 @@ export type LmcChannelRequest = {
 export type LmcStructuredAction =
   | { type: "qualify"; fields: LmcQualification; confidence: number }
   | { type: "intent"; intent: LmcEmailDecision["intent"]; requestedSlot?: string }
+  | { type: "clarify"; reason: "ambiguous_request" | "missing_information" }
   | { type: "handoff"; reason: string };
+
+export type LmcChannelResult = {
+  actions: LmcStructuredAction[];
+  /** Bounded model decision metadata for telemetry; never contains message content. */
+  decision?: Pick<LmcEmailDecision, "intent" | "confidence">;
+  /** Optional prose from the shared receptionist agent. The domain layer decides whether it is safe to send. */
+  suggestedReply?: string;
+};
 
 export interface LmcChannel {
   readonly kind: "email" | "voice";
-  run(request: LmcChannelRequest): Promise<{ actions: LmcStructuredAction[] }>;
+  run(request: LmcChannelRequest): Promise<LmcChannelResult>;
 }
 
 export type LmcModelPrompt = {

@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS public.lmc_messages (
   subject text NOT NULL,
   body text NOT NULL CHECK (octet_length(body) <= 65536),
   headers jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(headers) = 'object'),
-  status varchar(16) NOT NULL DEFAULT 'queued' CHECK (status IN ('received','queued','sent','failed','cancelled')),
+  status varchar(16) NOT NULL DEFAULT 'queued' CHECK (status IN ('received','queued','sending','sent','failed','cancelled')),
   created_at timestamptz NOT NULL DEFAULT now(),
   sent_at timestamptz,
   UNIQUE (tenant_id,id),

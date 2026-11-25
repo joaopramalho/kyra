@@ -22,7 +22,45 @@
     "connectedApps": "Applications connectées",
     "kyra": "Lead My Company",
     "backOffice": "Back Office",
-    "email": "Automatisation e-mail"
+    "email": "Automatisation e-mail",
+    "businessProfile": "Entreprise"
+  },
+  "businessProfile": {
+    "title": "Profil de l’entreprise",
+    "description": "Gardez à jour l’identité utilisée par Kyra et dans les communications avec les clients.",
+    "unavailable": "Aucun espace d’entreprise actif n’est disponible.",
+    "saved": "Profil de l’entreprise enregistré.",
+    "save": "Enregistrer le profil",
+    "saving": "Enregistrement…",
+    "readOnly": "Seuls un propriétaire ou un administrateur peuvent modifier ce profil.",
+    "fields": {
+      "name": "Nom de l’entreprise",
+      "timezone": "Fuseau horaire IANA",
+      "type": "Catégorie d’entreprise",
+      "website": "Site Web"
+    }
+  },
+  "businessHours": {
+    "title": "Heures d’ouverture",
+    "description": "Ces heures déterminent les disponibilités et les réponses que Kyra donne aux clients.",
+    "saved": "Heures d’ouverture enregistrées.",
+    "save": "Enregistrer les heures",
+    "saving": "Enregistrement…",
+    "open": "Ouvert",
+    "closed": "Fermé",
+    "to": "à",
+    "enabled": "Ouvert le {{day}}",
+    "opens": "Heure d’ouverture le {{day}}",
+    "closes": "Heure de fermeture le {{day}}",
+    "days": {
+      "0": "Dimanche",
+      "1": "Lundi",
+      "2": "Mardi",
+      "3": "Mercredi",
+      "4": "Jeudi",
+      "5": "Vendredi",
+      "6": "Samedi"
+    }
   },
   "widget": {
     "title": "Widget de site web",
@@ -440,6 +478,9 @@
       "privacyPolicyLinkText": "Politique de confidentialité",
       "calendarSectionTitle": "Réglages du calendrier",
       "calendarSectionDescription": "Choisissez le calendrier à synchroniser et consultez l'état de synchronisation.",
+      "addressSharingLabel": "Inclure les adresses de service dans Google Calendar",
+      "addressSharingDescription": "Lorsque cette option est activée, les adresses apparaissent dans le lieu de l'événement du calendrier sélectionné et peuvent être visibles par toute personne ayant accès à ce calendrier. Les futurs rendez-vous existants sont mis à jour. Désactivez-la pour supprimer les adresses ajoutées par Kyra.",
+      "addressSharingSaved": "Préférence de partage des adresses enregistrée.",
       "staffLabel": "Membre de l'équipe",
       "selectStaff": "Choisir un membre",
       "chooseStaffFirst": "Choisissez le membre de l'équipe dont vous voulez connecter le Google Calendar.",
@@ -466,6 +507,8 @@
       "chooseCalendarFirst": "Choisissez un calendrier Google avant d'enregistrer.",
       "loadingCalendars": "Chargement des calendriers...",
       "refreshCalendars": "Actualiser",
+      "syncNow": "Synchroniser maintenant",
+      "syncStarted": "La synchronisation Google Calendar a commencé.",
       "saveCalendar": "Enregistrer le calendrier",
       "savingCalendar": "Enregistrement...",
       "calendarSaved": "Le calendrier Google sélectionné a été enregistré.",
@@ -1220,6 +1263,30 @@
         "remove": "Supprimer la ligne",
         "addLine": "Ajouter une ligne"
       }
+    }
+  },
+  "navigation": {
+    "selectSection": "Choisir une section des réglages",
+    "groups": {
+      "workspace": "Espace de travail",
+      "agent": "Agent",
+      "channels": "Canaux clients",
+      "account": "Compte"
+    },
+    "descriptions": {
+      "businessProfile": "Définissez l’identité et les horaires utilisés par votre réceptionniste.",
+      "business": "Invitez des collègues et gérez leur accès à cet espace.",
+      "phoneNumber": "Choisissez et gérez le numéro utilisé par vos clients pour joindre votre réceptionniste.",
+      "kyra": "Gérez le compte Lead My Company et ses automatisations.",
+      "backOffice": "Configurez les processus internes et les préférences opérationnelles.",
+      "email": "Gérez la collecte et l’envoi des prospects reçus par e-mail.",
+      "widget": "Personnalisez le chat intégré à votre site web.",
+      "connectedApps": "Consultez les applications et services connectés à cet espace.",
+      "apiKeys": "Gérez les identifiants utilisés par les outils et services externes.",
+      "usage": "Suivez votre utilisation et les limites de votre offre.",
+      "billing": "Consultez votre offre, vos factures et vos moyens de paiement.",
+      "appearance": "Choisissez la langue et l’apparence du tableau de bord.",
+      "notifications": "Choisissez les notifications reçues par votre équipe et leur destination."
     }
   }
 }

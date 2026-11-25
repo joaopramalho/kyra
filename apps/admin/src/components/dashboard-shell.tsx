@@ -3,17 +3,27 @@
 import Link from "next/link";
 import posthog from "posthog-js";
 import { createBrowserTelemetry } from "@lobbystack/telemetry/browser";
+import { isLmcEmailLeadsEnabled, type PilotDashboardCapability } from "@lobbystack/shared";
 import { requestJson } from "@/lib/request-json";
 import { selectActiveBusiness } from "@/lib/active-business";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { BookTextIcon } from "@/components/ui/book-text";
 import { BlocksIcon } from "@/components/ui/blocks";
 import { ChartColumnIncreasingIcon } from "@/components/ui/chart-column-increasing";
+import { AudioLines, CalendarDaysIcon } from "lucide-react";
 import { ClipboardCheckIcon } from "@/components/ui/clipboard-check";
-import { HomeIcon } from "@/components/ui/home";
+import { HomeIcon, type HomeIconHandle } from "@/components/ui/home";
 import { MessageSquareMoreIcon } from "@/components/ui/message-square-more";
 import { PhoneAnimatedIcon } from "@/components/ui/phone-animated";
 import { SettingsIcon } from "@/components/ui/settings";
@@ -54,6 +64,7 @@ type Business = {
 
 type DashboardShellProps = {
   pilotMode?: boolean;
+  pilotCapabilities?: readonly PilotDashboardCapability[];
   children: React.ReactNode;
   user: {
     email: string;
@@ -67,6 +78,23 @@ type NavigationItem = {
   icon: typeof HomeIcon;
 };
 
+const AppointmentsIcon = forwardRef<
+  HomeIconHandle,
+  HTMLAttributes<HTMLDivElement> & { size?: number }
+>(({ className, size = 16, ...props }, ref) => {
+  useImperativeHandle(
+    ref,
+    () => ({ startAnimation: () => undefined, stopAnimation: () => undefined }),
+    [],
+  );
+  return (
+    <div className={className} {...props}>
+      <CalendarDaysIcon size={size} />
+    </div>
+  );
+});
+AppointmentsIcon.displayName = "AppointmentsIcon";
+
 async function getBusinesses(): Promise<{ businesses: Business[] }> {
   const response = await fetch("/api/businesses", { credentials: "include" });
   if (!response.ok) throw new Error("Unable to load workspaces.");
@@ -79,7 +107,7 @@ function getSidebarDefaultOpen(): boolean {
   return value?.split("=")[1] !== "false";
 }
 
-export function DashboardShell({ children, user, pilotMode = false }: DashboardShellProps) {
+export function DashboardShell({ children, user, pilotMode = false, pilotCapabilities = [] }: DashboardShellProps) {
   const { t } = useTranslation("common");
   const pathname = usePathname();
   const contentScrollRef = useRef<HTMLElement>(null);
@@ -100,7 +128,7 @@ export function DashboardShell({ children, user, pilotMode = false }: DashboardS
         defaultOpen={getSidebarDefaultOpen()}
         style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
       >
-        <ReplacementSidebar user={user} pilotMode={pilotMode} />
+        <ReplacementSidebar user={user} pilotMode={pilotMode} pilotCapabilities={pilotCapabilities} />
         <SidebarInset
           ref={contentScrollRef}
           className="@container/content min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain has-data-[layout=fixed]:h-full peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100%-(var(--spacing)*4))]"
@@ -132,42 +160,56 @@ function BillingBanner() {
   return <BillingPastDueBanner businessId={business.businessId} plan={billing.data.account.plan} subscriptionState={billing.data.account.subscriptionState} permissions={billing.data.permissions} />;
 }
 
-function ReplacementSidebar({ user, pilotMode = false }: Pick<DashboardShellProps, "user" | "pilotMode">) {
+function ReplacementSidebar({ user, pilotMode = false, pilotCapabilities = [] }: Pick<DashboardShellProps, "user" | "pilotMode" | "pilotCapabilities">) {
   const pathname = usePathname();
-  const { t } = useTranslation(["nav", "settings", "agent"]);
+  const { t } = useTranslation(["nav", "settings", "agent", "common"]);
+  const pilotHas = (capability: PilotDashboardCapability) => pilotCapabilities.includes(capability);
   const general: NavigationItem[] = pilotMode ? [
-    { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
+    ...(isLmcEmailLeadsEnabled() && pilotHas("leads") ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
+    ...(pilotHas("voice") ? [{ label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon }] : []),
+    ...(pilotHas("voice") ? [{ label: t("nav:items.appointments"), href: "/appointments", icon: AppointmentsIcon }] : []),
+    ...(pilotHas("contacts") ? [{ label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon }] : []),
   ] : [
     { label: t("nav:items.home"), href: "/", icon: HomeIcon },
-    { label: t("nav:items.leads"), href: "/leads", icon: UsersIcon },
+    ...(isLmcEmailLeadsEnabled() ? [{ label: t("nav:items.leads"), href: "/leads", icon: UsersIcon }] : []),
     { label: t("nav:items.calls"), href: "/calls", icon: PhoneAnimatedIcon },
-    ...(["/messages", "/settings/widget"].some(route => pathname === route || pathname.startsWith(`${route}/`)) ? [{ label: t("nav:items.messages"), href: "/messages", icon: MessageSquareMoreIcon }] : []),
+    { label: t("nav:items.appointments"), href: "/appointments", icon: AppointmentsIcon },
+    { label: t("nav:items.messages"), href: "/messages", icon: MessageSquareMoreIcon },
     { label: t("nav:items.contacts"), href: "/contacts", icon: UsersIcon },
   ];
-  const receptionist: NavigationItem[] = [
+  const receptionist: NavigationItem[] = pilotMode ? [
+    ...(pilotHas("voice") ? [{ label: t("agent:sections.basicSettings.title"), href: "/agent", icon: ClipboardCheckIcon }] : []),
+    ...(pilotHas("voice") ? [{ label: t("agent:sections.rules.title"), href: "/agent/rules", icon: WorkflowIcon }] : []),
+    ...(pilotHas("knowledge") ? [{ label: t("agent:sections.knowledge.title"), href: "/agent/knowledge", icon: BookTextIcon }] : []),
+    ...(pilotHas("services") ? [{ label: t("agent:sections.services.title"), href: "/agent/services", icon: BlocksIcon }] : []),
+  ] : [
     { label: t("agent:sections.basicSettings.title"), href: "/agent", icon: ClipboardCheckIcon },
     { label: t("agent:sections.knowledge.title"), href: "/agent/knowledge", icon: BookTextIcon },
     { label: t("agent:sections.services.title"), href: "/agent/services", icon: BlocksIcon },
     { label: t("agent:sections.rules.title"), href: "/agent/rules", icon: WorkflowIcon },
   ];
   const other: NavigationItem[] = pilotMode ? [
-    { label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon },
+    ...(pilotHas("business_profile") ? [{ label: t("settings:sections.businessProfile"), href: "/settings/business", icon: SettingsIcon }] : []),
+    ...(pilotHas("integrations") ? [{ label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon }] : []),
+    ...(isLmcEmailLeadsEnabled() && pilotHas("email_settings") ? [{ label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon }] : []),
   ] : [
     { label: t("nav:items.analytics"), href: "/analytics", icon: ChartColumnIncreasingIcon },
     { label: t("settings:sections.integrations"), href: "/integrations", icon: BlocksIcon },
-    { label: t("nav:items.emailSettings"), href: "/settings/email", icon: SettingsIcon },
     { label: t("nav:items.settings"), href: "/settings/usage", icon: SettingsIcon },
-    ...(["/messages", "/settings/widget"].some(route => pathname === route || pathname.startsWith(`${route}/`)) ? [{ label: t("settings:sections.widget"), href: "/settings/widget", icon: SettingsIcon }] : []),
   ];
 
   return (
     <Sidebar className="absolute inset-y-0 h-full" collapsible="icon" variant="sidebar">
       <SidebarHeader>
+        <div className="flex h-11 items-center gap-2.5 px-2">
+          <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"><AudioLines className="size-[18px]" /></span>
+          <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">{t("common:appName")}</span>
+        </div>
         <WorkspaceSwitcher allowCreate={!pilotMode} />
       </SidebarHeader>
       <SidebarContent>
         <NavigationGroup items={general} pathname={pathname} title={t("nav:sidebar.general")} />
-        {!pilotMode && <NavigationGroup items={receptionist} pathname={pathname} title={t("nav:sidebar.agent")} />}
+        {receptionist.length > 0 && <NavigationGroup items={receptionist} pathname={pathname} title={t("nav:sidebar.agent")} />}
         <NavigationGroup items={other} pathname={pathname} title={t("nav:sidebar.other")} />
       </SidebarContent>
       <SidebarFooter>
@@ -192,16 +234,20 @@ function NavigationGroup({ items, pathname, title }: { items: NavigationItem[]; 
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const activeHref = items
+    .filter((item) => item.href !== "/" && (
+      pathname === item.href
+      || pathname.startsWith(`${item.href}/`)
+      || (item.href === "/settings/usage" && pathname.startsWith("/settings/"))
+    ))
+    .sort((left, right) => right.href.length - left.href.length)[0]?.href
+    ?? (pathname === "/" && items.some((item) => item.href === "/") ? "/" : null);
   return (
     <SidebarGroup>
       <SidebarGroupLabel>{title}</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => {
-          const active = item.href === "/"
-            ? pathname === "/"
-            : item.href === "/settings/usage"
-              ? pathname.startsWith("/settings")
-              : pathname === item.href;
+          const active = activeHref === item.href;
           return (
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton

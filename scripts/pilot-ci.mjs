@@ -6,7 +6,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { verifyVitestReport } from "./pilot-ci-report.mjs";
+import { summarizeVitestFailures, verifyVitestReport } from "./pilot-ci-report.mjs";
 import { pilotAcceptanceContexts } from "./pilot-ci-contexts.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -58,7 +58,18 @@ async function step(name, command, args, env = environment, cwd = root) {
 // executing generated dist copies as a second, stale test inventory.
 async function vitest(name, cwd, expectedFiles, args, env = environment) {
   const report = join(privateRoot, `report-${index}.json`);
-  await step(name, "pnpm", ["exec", "vitest", "run", ...args, ...expectedFiles.map(file => resolve(root, file)), "--fileParallelism=false", "--maxWorkers=1", "--reporter=default", "--reporter=json", "--outputFile=" + report, ...(expectedFiles.length ? [] : ["--passWithNoTests"])], env, cwd);
+  try {
+    await step(name, "pnpm", ["exec", "vitest", "run", ...args, ...expectedFiles.map(file => resolve(root, file)), "--fileParallelism=false", "--maxWorkers=1", "--reporter=default", "--reporter=json", "--outputFile=" + report, ...(expectedFiles.length ? [] : ["--passWithNoTests"])], env, cwd);
+  } catch (error) {
+    try {
+      const failed = summarizeVitestFailures(JSON.parse(readFileSync(report, "utf8")), { root });
+      if (failed.length) {
+        const failedTests = failed.reduce((count, file) => count + file.tests.length, 0);
+        summary.results.push({ phase: name, tests: failedTests, passed: 0, skipped: 0, failed: failedTests, failures: failed });
+      }
+    } catch {}
+    throw error;
+  }
   const result = verifyVitestReport(JSON.parse(readFileSync(report, "utf8")), { root, expectedFiles, allowEmpty: expectedFiles.length === 0 });
   summary.results.push({ phase: name, ...result });
   console.log(`${name}: ${result.passed} passed; ${result.skipped} skipped.`);
