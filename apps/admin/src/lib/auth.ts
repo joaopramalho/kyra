@@ -51,6 +51,19 @@ export function isDisabledAuthEmailEndpoint(path?: string): boolean {
   return (path.startsWith("/email-otp/") || path.endsWith("/email-otp")) && !enabledEmailOtpPaths.has(path);
 }
 
+export function configuredAuthTrustedOrigins(env: Record<string, string | undefined> = process.env): string[] {
+  const origins = new Set((env.AUTH_TRUSTED_ORIGINS ?? env.APP_BASE_URL ?? "http://localhost:3000").split(",").map((value) => value.trim()).filter(Boolean));
+  if (env.NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED === "true") {
+    try {
+      const portalUrl = new URL(env.AFFILIATE_PORTAL_URL ?? "https://affiliates.leadmycompany.com");
+      if (portalUrl.protocol === "https:" && portalUrl.origin === (env.AFFILIATE_PORTAL_URL ?? "https://affiliates.leadmycompany.com").replace(/\/$/, "")) origins.add(portalUrl.origin);
+    } catch {
+      // An invalid optional portal URL must not broaden Better Auth's origin policy.
+    }
+  }
+  return [...origins];
+}
+
 export function getAuthDatabase() {
   return getDatabase("lobbystack_auth");
 }
@@ -245,7 +258,7 @@ function createAuth(adapterDatabase?: Parameters<typeof drizzleAdapter>[0]) {
       schema: { user: users, session: sessions, account: accounts, verification: verifications, twoFactor: twoFactors, ...oauthProviderSchema },
     }),
     baseURL: process.env.APP_BASE_URL ?? "http://localhost:3000",
-    trustedOrigins: (process.env.AUTH_TRUSTED_ORIGINS ?? process.env.APP_BASE_URL ?? "http://localhost:3000").split(",").map((value) => value.trim()).filter(Boolean),
+    trustedOrigins: configuredAuthTrustedOrigins(),
     secret: process.env.BETTER_AUTH_SECRET ?? process.env.SESSION_ENCRYPTION_KEY ?? "development-only-change-me",
     ...(secondaryStorage ? { secondaryStorage } : {}),
     advanced: {

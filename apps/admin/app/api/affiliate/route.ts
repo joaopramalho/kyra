@@ -64,6 +64,7 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  if (!affiliateProgramEnabled()) return NextResponse.json({ error: "Not found." }, { status: 404 });
   try {
     const session = await requireApiSession(request);
     const body = await request.json() as { payoutEmail?: unknown };

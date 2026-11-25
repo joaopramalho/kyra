@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { getSafeReturnTo } from "@/lib/auth-return-to";
 
 function safeReturnTo(value: string | null): string {
-  return value?.startsWith("/") && !value.startsWith("//") ? value : "/";
+  return getSafeReturnTo(value) ?? "/";
 }
 
 export function SuperAdminMfaChallenge() {

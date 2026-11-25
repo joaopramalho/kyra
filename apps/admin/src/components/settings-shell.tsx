@@ -24,7 +24,7 @@ export function SettingsShell({ children, pilotMode = false }: { children: React
     { label: t("sections.apiKeys"), href: "/settings/api-keys" },
     { label: t("sections.connectedApps"), href: "/settings/connected-apps" },
     ...(pathname === "/settings/widget" || pathname.startsWith("/settings/widget/") ? [{ label: t("sections.widget"), href: "/settings/widget" }] : []),
-  ].filter(item => !pilotMode || item.href === "/settings/email");
+  ].filter(item => !pilotMode || item.href === "/settings/email" || (process.env.NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED === "true" && item.href === "/settings/plan"));
   return (
     <section className="flex flex-1 flex-col gap-6">
       <PageHeader title={t("header.title")} />

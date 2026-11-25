@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isMaintenanceMode, isPilotMode, pilotAdminRoute } from "@lobbystack/shared";
+import { affiliateProgramEnabled } from "@/lib/affiliate-program";
+import { affiliatePortalHostPath } from "@/lib/affiliate-portal-host";
 
 import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE_SECONDS, normalizeLocale } from "@/lib/locale";
 import {
@@ -38,6 +40,13 @@ function maintenanceResponse(headers: Record<string, string>): NextResponse {
   return new NextResponse("Service temporarily unavailable.", {
     status: 503,
     headers: { ...headers, "Cache-Control": "no-store", "Retry-After": "60" },
+  });
+}
+
+function notFoundHtml(headers: Record<string, string>): NextResponse {
+  return new NextResponse("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Page not found</title></head><body><main><h1>Page not found</h1><p>This page is unavailable.</p></main></body></html>", {
+    status: 404,
+    headers: { ...headers, "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" },
   });
 }
 
@@ -108,11 +117,30 @@ function hasValidCsrfOrigin(request: NextRequest): boolean {
 }
 
 export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const originalPathname = request.nextUrl.pathname;
+  const affiliateEnabled = affiliateProgramEnabled();
+  const portalUrl = process.env.AFFILIATE_PORTAL_URL ?? "https://affiliates.leadmycompany.com";
+  let portalHost = process.env.AFFILIATE_PORTAL_HOST;
+  if (!portalHost) {
+    try { portalHost = new URL(portalUrl).hostname; } catch { portalHost = "affiliates.leadmycompany.com"; }
+  }
+  const affiliatePath = affiliatePortalHostPath({
+    hostname: request.nextUrl.hostname,
+    pathname: originalPathname,
+    enabled: affiliateEnabled,
+    configuredHost: portalHost,
+  });
+  const isAffiliateHost = affiliatePath !== null;
+  if (affiliatePath === false) {
+    return notFoundHtml(securityHeaders());
+  }
+  const pathname = typeof affiliatePath === "string" ? affiliatePath : originalPathname;
   const headers = isEmbeddablePath(pathname) ? embeddableSecurityHeaders() : securityHeaders();
 
+  if (!affiliateEnabled && pathname === "/affiliate" && (request.method === "GET" || request.method === "HEAD")) return notFoundHtml(headers);
+
   if (isPilotMode(process.env)) {
-    const route = pilotAdminRoute(pathname);
+    const route = pilotAdminRoute(pathname, { affiliateProgramEnabled: affiliateEnabled });
     if (!route || request.headers.has("next-action")) {
       return new NextResponse(null, { status: 404, headers: { ...headers, "Cache-Control": "no-store" } });
     }
@@ -136,7 +164,7 @@ export function proxy(request: NextRequest) {
     cookie: localeFromCookieHeader(request.headers.get("cookie")),
     acceptLanguage: request.headers.get("accept-language"),
   });
-  const pathLocale = localeFromPathname(pathname);
+  const pathLocale = localeFromPathname(originalPathname) ?? localeFromPathname(pathname);
   const queryLocale = normalizeLocale(request.nextUrl.searchParams.get("lng"));
 
   if (isLegacyPublicRoutePath(pathname)) {
@@ -168,7 +196,9 @@ export function proxy(request: NextRequest) {
 
   // Dynamic application roots read these headers. Locale-prefixed public roots
   // derive their first paint directly from the path and remain prerenderable.
-  const locale: NegotiatedLocale = pathLocale && isPublicRoutePath(pathname)
+  const locale: NegotiatedLocale = affiliatePath !== null && localeFromPathname(originalPathname)
+    ? { locale: localeFromPathname(originalPathname)!, source: "path" }
+    : pathLocale && isPublicRoutePath(pathname)
     ? { locale: pathLocale, source: "path" }
     : negotiatedLocale;
   const requestHeaders = new Headers(request.headers);
@@ -176,7 +206,9 @@ export function proxy(request: NextRequest) {
   requestHeaders.set(LOCALE_SOURCE_HEADER, locale.source);
   requestHeaders.set(PATHNAME_HEADER, pathname);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const response = isAffiliateHost && pathname !== originalPathname
+    ? NextResponse.rewrite(new URL(pathname, request.url), { request: { headers: requestHeaders } })
+    : NextResponse.next({ request: { headers: requestHeaders } });
   applyResponsePolicy(response, request, headers, locale, cacheControlForRequest(pathname, request.nextUrl.searchParams));
 
   if (stateChangingMethods.has(request.method) && pathname.startsWith("/api/") && !csrfExemptPrefixes.some((prefix) => pathname.startsWith(prefix)) && !hasValidCsrfOrigin(request)) {

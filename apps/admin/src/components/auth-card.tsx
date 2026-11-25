@@ -21,19 +21,23 @@ import { captureAffiliateReferralFromUrl, getAffiliateVisitorId } from "@/lib/af
 
 import { buildAuthPathWithReturnTo, getSafeReturnTo } from "@/lib/auth-return-to";
 
-export function AuthCard({ mode }: { mode: "login" | "signup" }) {
+export function AuthCard({ mode, affiliatePortal = false }: { mode: "login" | "signup"; affiliatePortal?: boolean }) {
   const router = useRouter();
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const { t, i18n } = useTranslation("auth");
   const authLocale = resolveLocale(i18n.resolvedLanguage, i18n.language);
-  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [returnTo, setReturnTo] = useState<string | null>(affiliatePortal ? "/affiliate-portal" : null);
   const [signupSource, setSignupSource] = useState<"calculator" | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setReturnTo(getSafeReturnTo(params.get("returnTo")));
+    setReturnTo(getSafeReturnTo(params.get("returnTo")) ?? (affiliatePortal ? "/affiliate-portal" : null));
     setSignupSource(params.get("source") === "calculator" ? "calculator" : null);
-  }, []);
+  }, [affiliatePortal]);
   function authPath(path: "/login" | "/signup") {
+    if (affiliatePortal) {
+      const safeReturnTo = getSafeReturnTo(returnTo) ?? "/affiliate-portal";
+      return `${path}?returnTo=${encodeURIComponent(safeReturnTo)}`;
+    }
     const target = buildAuthPathWithReturnTo(path, returnTo, authLocale);
     return signupSource ? `${target}${target.includes("?") ? "&" : "?"}source=${signupSource}` : target;
   }
@@ -112,7 +116,7 @@ export function AuthCard({ mode }: { mode: "login" | "signup" }) {
       }
       const result = await response.json() as { token?: string | null; twoFactorRedirect?: boolean };
       if (result.twoFactorRedirect) {
-        const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? "/";
+        const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? (affiliatePortal ? "/affiliate-portal" : "/");
         router.push(`/internal/mfa?returnTo=${encodeURIComponent(returnTo)}`);
         return;
       }
@@ -133,7 +137,7 @@ export function AuthCard({ mode }: { mode: "login" | "signup" }) {
     const event = login ? "web.auth.login_succeeded" : "web.auth.signup_succeeded";
     if (signupSource) recordAuthSuccess(event, { source: signupSource });
     else recordAuthSuccess(event);
-    const safeReturnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? "/";
+    const safeReturnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? (affiliatePortal ? "/affiliate-portal" : "/");
     const target = new URL(safeReturnTo, window.location.origin);
     window.location.assign(target.origin === window.location.origin ? `${target.pathname}${target.search}${target.hash}` : "/");
   }
@@ -184,7 +188,7 @@ export function AuthCard({ mode }: { mode: "login" | "signup" }) {
       if (!signInResponse.ok) throw new Error(t("errors.verificationSignInFailed"));
       const signInResult = await signInResponse.json() as { twoFactorRedirect?: boolean };
       if (signInResult.twoFactorRedirect) {
-        const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? "/";
+        const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? (affiliatePortal ? "/affiliate-portal" : "/");
         router.push(`/internal/mfa?returnTo=${encodeURIComponent(returnTo)}`);
         return;
       }
@@ -262,7 +266,7 @@ export function AuthCard({ mode }: { mode: "login" | "signup" }) {
             <Button className="h-11 w-full" disabled={verificationLoading || Boolean(resendChallengeRequired && turnstileSiteKey && !resendTurnstileToken)} loading={resendLoading} loadingLabel={t("verifyEmail.resending")} onClick={() => void resendVerificationCode()} type="button" variant="outline">{t("verifyEmail.resend")}</Button>
           </FieldGroup>
         </form>
-        {!login ? <p className="text-center text-sm text-muted-foreground">{t("verifyEmail.existingAccountHelp")} <Link className="font-medium text-foreground underline-offset-4 hover:underline" href={authPath("/login")}>{t("signup.signIn")}</Link> {t("verifyEmail.or")} <Link className="font-medium text-foreground underline-offset-4 hover:underline" href={localizePublicPath("/forgot-password", authLocale)}>{t("verifyEmail.resetPassword")}</Link>.</p> : null}
+        {!login ? <p className="text-center text-sm text-muted-foreground">{t("verifyEmail.existingAccountHelp")} <Link className="font-medium text-foreground underline-offset-4 hover:underline" href={authPath("/login")}>{t("signup.signIn")}</Link> {t("verifyEmail.or")} <Link className="font-medium text-foreground underline-offset-4 hover:underline" href={affiliatePortal ? "/forgot-password" : localizePublicPath("/forgot-password", authLocale)}>{t("verifyEmail.resetPassword")}</Link>.</p> : null}
         <button disabled={verificationLoading} className="text-center text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => { setVerificationPending(false); setVerificationCode(""); setVerificationError(null); setResendStatus(null); }} type="button">{t("verifyEmail.useDifferentEmail")}</button>
       </div>
     </ReplacementOnboardingShell>
@@ -285,13 +289,13 @@ export function AuthCard({ mode }: { mode: "login" | "signup" }) {
     </p>
   ) : undefined;
   return (
-    <ReplacementOnboardingShell legalFooter={legalFooter} progress={login ? null : { current: 1, total: 8 }} title={login ? t("login.title") : t("signup.title")} width="sm">
+    <ReplacementOnboardingShell {...(affiliatePortal ? { eyebrow: "Affiliate portal" } : {})} legalFooter={legalFooter} progress={login || affiliatePortal ? null : { current: 1, total: 8 }} title={login ? t("login.title") : t("signup.title")} width="sm">
       <div className="flex w-full flex-col gap-6">
         <form onSubmit={submit}>
           <FieldGroup className="gap-4">
             <Field data-invalid={hasBlurredEmail && email.length > 0 && !isEmailValid ? true : undefined}><FieldLabel htmlFor="auth-email">{login ? t("login.email") : t("signup.email")}</FieldLabel><Input aria-invalid={hasBlurredEmail && email.length > 0 && !isEmailValid} autoComplete="email" className={cn("h-11", hasBlurredEmail && email.length > 0 && !isEmailValid && "border-destructive text-destructive focus-visible:border-destructive focus-visible:ring-destructive/20")} id="auth-email" onBlur={() => setHasBlurredEmail(true)} onChange={(event) => { setHasBlurredEmail(false); setEmail(event.target.value); }} placeholder={login ? t("login.emailPlaceholder") : t("signup.emailPlaceholder")} required type="email" value={email} />{hasBlurredEmail && email.length > 0 && !isEmailValid ? <FieldError className="flex items-center gap-2 font-medium"><TriangleAlert className="size-4 shrink-0" aria-hidden="true" /><span>{t(login ? "login.emailInvalid" : "signup.emailInvalid")}</span></FieldError> : null}</Field>
             <Field>
-              <div className="flex items-center justify-between gap-3"><FieldLabel htmlFor="auth-password">{login ? t("login.password") : t("signup.password")}</FieldLabel>{login ? <Link className="text-xs font-medium text-muted-foreground hover:text-foreground" href={localizePublicPath("/forgot-password", authLocale)}>{t("login.forgotPassword")}</Link> : null}</div>
+              <div className="flex items-center justify-between gap-3"><FieldLabel htmlFor="auth-password">{login ? t("login.password") : t("signup.password")}</FieldLabel>{login ? <Link className="text-xs font-medium text-muted-foreground hover:text-foreground" href={affiliatePortal ? "/forgot-password" : localizePublicPath("/forgot-password", authLocale)}>{t("login.forgotPassword")}</Link> : null}</div>
               <Input autoComplete={login ? "current-password" : "new-password"} className="h-11" id="auth-password" minLength={8} onChange={(event) => setPassword(event.target.value)} onFocus={() => setHasFocusedPassword(true)} placeholder={login ? t("login.passwordPlaceholder") : t("signup.passwordPlaceholder")} required type="password" value={password} />
               {!login && hasFocusedPassword ? <ul aria-live="polite" className="flex flex-col gap-1 pt-0.5 text-sm font-medium">{passwordCriteria.map((criterion) => <li className={cn("flex items-center gap-2", criterion.isMet ? "text-emerald-700" : "text-muted-foreground")} key={criterion.label}><span aria-hidden="true" className="w-3 text-center">{criterion.isMet ? "✓" : "×"}</span><span>{criterion.label}</span></li>)}</ul> : null}
             </Field>

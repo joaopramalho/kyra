@@ -8,7 +8,7 @@ import { AuthCard } from "./auth-card";
 import { getSafeReturnTo } from "@/lib/auth-return-to";
 import { stripLocalePrefix } from "@/lib/locale-path";
 
-export function GuestAuthCard({ mode }: { mode: "login" | "signup" }) {
+export function GuestAuthCard({ mode, affiliatePortal = false }: { mode: "login" | "signup"; affiliatePortal?: boolean }) {
   const router = useRouter();
   const { t } = useTranslation("auth");
   const [checking, setChecking] = useState(true);
@@ -23,7 +23,7 @@ export function GuestAuthCard({ mode }: { mode: "login" | "signup" }) {
         const session = await response.json() as { user?: { id?: string }; session?: { id?: string } } | null;
         if (!active) return;
         if (session?.user?.id && session.session?.id) {
-          const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? "/";
+          const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo")) ?? (affiliatePortal ? "/affiliate-portal" : "/");
           const path = stripLocalePrefix(new URL(returnTo, window.location.origin).pathname).replace(/\/$/, "");
           router.replace(path === "/login" || path === "/signup" ? "/" : returnTo);
           return;
@@ -36,8 +36,8 @@ export function GuestAuthCard({ mode }: { mode: "login" | "signup" }) {
       if (active) setChecking(false);
     })();
     return () => { active = false; clearTimeout(timeout); controller.abort(); };
-  }, [router]);
+  }, [affiliatePortal, router]);
 
   if (checking) return <div className="flex min-h-svh items-center justify-center" role="status"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" /><span className="sr-only">{t("checkingSession")}</span></div>;
-  return <AuthCard mode={mode} />;
+  return <AuthCard affiliatePortal={affiliatePortal} mode={mode} />;
 }
