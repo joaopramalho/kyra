@@ -99,8 +99,41 @@ export const PILOT_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
   { pattern: "/_next/static/[asset]", match: /^\/_next\/static\/[A-Za-z0-9_./~-]+$/, methods: read },
 ];
 
-export function pilotAdminRoute(pathname: string): PilotAdminRoute | undefined {
+export const PILOT_AFFILIATE_ADMIN_ROUTES: readonly PilotAdminRoute[] = [
+  { pattern: "/affiliate", match: /^\/affiliate$/, methods: read },
+  { pattern: "/affiliate-portal", match: /^\/affiliate-portal$/, methods: read },
+  { pattern: "/affiliate-portal/login", match: /^\/affiliate-portal\/login$/, methods: read },
+  { pattern: "/affiliate-portal/signup", match: /^\/affiliate-portal\/signup$/, methods: read },
+  { pattern: "/locales/[locale]/affiliate.json", match: /^\/locales\/(?:en|fr)\/affiliate\.json$/, methods: read },
+  { pattern: "/internal/commercial", match: /^\/internal\/commercial$/, methods: read },
+  { pattern: "/settings/plan", match: /^\/settings\/plan$/, methods: read },
+  { pattern: "/api/affiliate", match: /^\/api\/affiliate$/, methods: [...apiRead, "PATCH"] },
+  { pattern: "/api/affiliate/click", match: /^\/api\/affiliate\/click$/, methods: post },
+  { pattern: "/checkout/affiliate/[code]", match: /^\/checkout\/affiliate\/[a-z0-9-]{1,64}$/i, methods: read },
+  { pattern: "/api/checkout/affiliate/[code]", match: /^\/api\/checkout\/affiliate\/[a-z0-9-]{1,64}$/i, methods: [...apiRead, "POST"] },
+  { pattern: "/checkout/[token]", match: /^\/checkout\/[A-Za-z0-9_-]{20,128}$/, methods: read },
+  { pattern: "/checkout/success", match: /^\/checkout\/success$/, methods: read },
+  { pattern: "/api/checkout/offers/[token]", match: /^\/api\/checkout\/offers\/[A-Za-z0-9_-]{20,128}$/, methods: [...apiRead, "POST"] },
+  { pattern: "/api/billing/commercial", match: /^\/api\/billing\/commercial$/, methods: apiRead },
+  { pattern: "/api/billing", match: /^\/api\/billing$/, methods: apiRead },
+  { pattern: "/api/billing/commercial/portal", match: /^\/api\/billing\/commercial\/portal$/, methods: post },
+  { pattern: "/api/billing/checkout", match: /^\/api\/billing\/checkout$/, methods: [...apiRead, "POST"] },
+  { pattern: "/api/billing/portal", match: /^\/api\/billing\/portal$/, methods: post },
+  { pattern: "/api/webhooks/stripe", match: /^\/api\/webhooks\/stripe$/, methods: post },
+  { pattern: "/api/internal/superadmin/commercial/offers", match: /^\/api\/internal\/superadmin\/commercial\/offers$/, methods: [...apiRead, "POST"] },
+  { pattern: "/api/internal/superadmin/commercial/offers/[offerId]", match: /^\/api\/internal\/superadmin\/commercial\/offers\/[0-9a-f-]{36}$/i, methods: ["DELETE", "OPTIONS"] },
+  { pattern: "/api/internal/superadmin/commercial/offers/[offerId]/link", match: /^\/api\/internal\/superadmin\/commercial\/offers\/[0-9a-f-]{36}\/link$/i, methods: post },
+  { pattern: "/api/internal/superadmin/commercial/plans", match: /^\/api\/internal\/superadmin\/commercial\/plans$/, methods: [...apiRead, "POST"] },
+  { pattern: "/api/internal/superadmin/commercial/plans/[slug]", match: /^\/api\/internal\/superadmin\/commercial\/plans\/[a-z0-9-]{1,64}$/i, methods: ["PATCH", "OPTIONS"] },
+  { pattern: "/api/internal/superadmin/commercial/customers", match: /^\/api\/internal\/superadmin\/commercial\/customers$/, methods: apiRead },
+  { pattern: "/api/internal/superadmin/commercial/customers/[customerId]/associate", match: /^\/api\/internal\/superadmin\/commercial\/customers\/[0-9a-f-]{36}\/associate$/i, methods: post },
+  { pattern: "/api/internal/superadmin/commercial/affiliates", match: /^\/api\/internal\/superadmin\/commercial\/affiliates$/, methods: [...apiRead, "POST"] },
+  { pattern: "/api/internal/superadmin/commercial/affiliates/[affiliateProfileId]/payout", match: /^\/api\/internal\/superadmin\/commercial\/affiliates\/[0-9a-f-]{36}\/payout$/i, methods: post },
+];
+
+export function pilotAdminRoute(pathname: string, options: { affiliateProgramEnabled?: boolean } = {}): PilotAdminRoute | undefined {
   // Do not decode ambiguous separators or control characters into allowed segments.
   if (pathname.includes("%") || pathname.includes("\\") || pathname.split("/").some(part => part === "." || part === "..")) return undefined;
-  return PILOT_ADMIN_ROUTES.find(route => route.match.test(pathname));
+  return PILOT_ADMIN_ROUTES.find(route => route.match.test(pathname))
+    ?? (options.affiliateProgramEnabled ? PILOT_AFFILIATE_ADMIN_ROUTES.find(route => route.match.test(pathname)) : undefined);
 }

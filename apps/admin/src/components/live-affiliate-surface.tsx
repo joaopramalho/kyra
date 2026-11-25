@@ -23,11 +23,11 @@ import { Table, TableBody, TableCard, TableCell, TableHead, TableHeader, TableRo
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 type AffiliateData = {
-  profile: { id: string; referralCode: string; status: string; payoutEmail: string | null; referralLink: string } | null;
-  stats: { clickCount: number; referralCount: number; conversionCount: number; pendingCommissionCents: number; paidCommissionCents: number } | null;
+  profile: { id: string; referralCode: string; status: string; commissionRateBps: number; payoutEmail: string | null; referralLink: string } | null;
+  stats: { clickCount: number; referralCount: number; conversionCount: number; activeSubscriptions: number; pendingCommissionCents: number; availableCommissionCents: number; paidCommissionCents: number; reversalDebtCents: number } | null;
   clicks: Array<{ clickedAt: string; sourceUrl: string | null }>;
   attributions: Array<{ businessId: string; referralCode: string; source: string; attributedAt: string }>;
-  commissions: Array<{ sourceKey: string; amountCents: number; commissionCents: number; currency: string; status: string; payoutState: string; occurredAt: string; clearsAt: string }>;
+  commissions: Array<{ sourceKey: string; amountCents: number; commissionCents: number; currency: string; status: string; payoutState: string; provider?: string; occurredAt: string; clearsAt: string }>;
   payouts: Array<{ periodKey: string; status: string; amountCents: number; currency: string; paidAt: string | null; externalReference: string | null }>;
 };
 
@@ -72,8 +72,11 @@ export function LiveAffiliateSurface() {
   const summary = useMemo(() => {
     if (!affiliate.data?.stats) return null;
     const now = Date.now();
-    const eligibleCents = affiliate.data.commissions.filter((commission) => commission.status === "pending" && commission.payoutState !== "voided" && new Date(commission.clearsAt).getTime() <= now).reduce((total, commission) => total + commission.commissionCents, 0);
-    return { ...affiliate.data.stats, eligibleCents, pendingCents: Math.max(0, affiliate.data.stats.pendingCommissionCents - eligibleCents) };
+    const legacyEligibleCents = affiliate.data.commissions.filter((commission) => commission.provider !== "stripe" && commission.status === "pending" && commission.payoutState !== "voided" && new Date(commission.clearsAt).getTime() <= now).reduce((total, commission) => total + commission.commissionCents, 0);
+    const grossEligibleCents = legacyEligibleCents + (affiliate.data.stats.availableCommissionCents ?? 0);
+    const reversalDebtCents = affiliate.data.stats.reversalDebtCents ?? 0;
+    const eligibleCents = Math.max(0, grossEligibleCents - reversalDebtCents);
+    return { ...affiliate.data.stats, reversalDebtCents, eligibleCents, pendingCents: Math.max(0, affiliate.data.stats.pendingCommissionCents - grossEligibleCents) };
   }, [affiliate.data]);
 
   if (affiliate.isLoading) return <LoadingAffiliatePage />;
@@ -93,11 +96,11 @@ export function LiveAffiliateSurface() {
     <PageSurface description="" title={t("title")}>
       <Card><CardContent className="flex flex-col gap-8">
         <div className="flex flex-col gap-4"><CardTitle>{t("referral.title")}</CardTitle>{profile ? <div className="flex flex-col gap-2 sm:flex-row"><Input readOnly value={profile.referralLink} /><Button onClick={() => void handleCopy()} type="button"><CopyIcon data-icon="inline-start" />{t("referral.copy")}</Button></div> : <p className="text-sm text-muted-foreground">{t("toast.profileFailed")}</p>}</div>
-        <div className="flex flex-col gap-4"><div className="flex items-center justify-between gap-4"><CardTitle>{t("terms.title")}</CardTitle><a className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" href={localizeMarketingHref(locale, "/terms/#affiliate-program")} rel="noreferrer" target="_blank">{t("terms.link")}<ExternalLinkIcon aria-hidden="true" className="size-4" /></a></div><div className="flex flex-col gap-4"><div className="flex items-center gap-3"><GiftIcon aria-hidden="true" className="size-4 shrink-0" /><p className="text-base font-medium text-foreground">{t("terms.reward", { rate: "20%", duration: t("terms.oneYear") })}</p></div><Separator /><div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span><span className="font-medium text-foreground">{formatCurrency(locale, 10_000, currency)}</span>{" "}<span className="lowercase">{t("terms.minimum")}</span></span><span aria-hidden="true">/</span><span><span className="font-medium text-foreground">{t("terms.days", { count: 30 })}</span>{" "}<span className="lowercase">{t("terms.hold")}</span></span></div></div></div>
+        <div className="flex flex-col gap-4"><div className="flex items-center justify-between gap-4"><CardTitle>{t("terms.title")}</CardTitle><a className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" href={localizeMarketingHref(locale, "/terms/#affiliate-program")} rel="noreferrer" target="_blank">{t("terms.link")}<ExternalLinkIcon aria-hidden="true" className="size-4" /></a></div><div className="flex flex-col gap-4"><div className="flex items-center gap-3"><GiftIcon aria-hidden="true" className="size-4 shrink-0" /><p className="text-base font-medium text-foreground">{t("terms.reward", { rate: `${((profile?.commissionRateBps ?? 2000) / 100).toFixed(2)}%`, duration: t("terms.subscriptionLife") })}</p></div><Separator /><div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span><span className="font-medium text-foreground">{formatCurrency(locale, 10_000, currency)}</span>{" "}<span className="lowercase">{t("terms.minimum")}</span></span><span aria-hidden="true">/</span><span><span className="font-medium text-foreground">{t("terms.days", { count: 30 })}</span>{" "}<span className="lowercase">{t("terms.hold")}</span></span></div></div></div>
       </CardContent></Card>
 
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <StatCard description={t("stats.clicksDescription")} label={t("stats.clicks")} value={String(summary?.clickCount ?? 0)} /><StatCard description={t("stats.referralsDescription")} label={t("stats.referrals")} value={String(summary?.referralCount ?? 0)} /><StatCard description={t("stats.conversionsDescription")} label={t("stats.conversions")} value={String(summary?.conversionCount ?? 0)} /><StatCard description={t("stats.pendingDescription")} label={t("stats.pending")} value={formatCurrency(locale, summary?.pendingCents ?? 0, currency)} /><StatCard description={(summary?.eligibleCents ?? 0) >= 10_000 ? t("stats.eligibleReady") : t("stats.eligibleWaiting")} label={t("stats.eligible")} value={formatCurrency(locale, summary?.eligibleCents ?? 0, currency)} /><StatCard description={t("stats.paidDescription")} label={t("stats.paid")} value={formatCurrency(locale, summary?.paidCommissionCents ?? 0, currency)} />
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
+        <StatCard description={t("stats.clicksDescription")} label={t("stats.clicks")} value={String(summary?.clickCount ?? 0)} /><StatCard description={t("stats.referralsDescription")} label={t("stats.referrals")} value={String(summary?.referralCount ?? 0)} /><StatCard description={t("stats.activeSubscriptionsDescription")} label={t("stats.activeSubscriptions")} value={String(summary?.activeSubscriptions ?? 0)} /><StatCard description={t("stats.conversionsDescription")} label={t("stats.conversions")} value={String(summary?.conversionCount ?? 0)} /><StatCard description={t("stats.pendingDescription")} label={t("stats.pending")} value={formatCurrency(locale, summary?.pendingCents ?? 0, currency)} /><StatCard description={(summary?.eligibleCents ?? 0) >= 10_000 ? t("stats.eligibleReady") : t("stats.eligibleWaiting")} label={t("stats.eligible")} value={formatCurrency(locale, summary?.eligibleCents ?? 0, currency)} /><StatCard description={t("stats.reversalDebtDescription")} label={t("stats.reversalDebt")} value={formatCurrency(locale, summary?.reversalDebtCents ?? 0, currency)} /><StatCard description={t("stats.paidDescription")} label={t("stats.paid")} value={formatCurrency(locale, summary?.paidCommissionCents ?? 0, currency)} />
       </div>
 
       <Tabs defaultValue="quickstart">

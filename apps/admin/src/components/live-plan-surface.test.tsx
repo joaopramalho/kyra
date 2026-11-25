@@ -13,7 +13,7 @@ beforeEach(() => { route.search = new URLSearchParams(); });
 afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
 function setup({ synced = false, checkoutFails = false, billingFails = false, plan = "pro", admin = true, configured = false, transactions = false, accountMissing = false } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); clients.push(client);
-  client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true }] });
+  client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: admin ? "business_admin" : "business_member" }] });
   const billing = { permissions: { hasBillingManagementAccess: admin, hasCheckoutAccess: admin, hasCustomerPortalAccess: admin }, account: accountMissing ? null : { plan, billingInterval: "monthly", subscriptionState: "active", overageSpendingCapCents: null }, availableCheckoutPlans: configured ? ["pro"] : [], availableCheckoutIntervals: { starter: [], pro: configured ? ["monthly"] : [] }, transactions: transactions ? [{ kind: "refund", sourceId: "refund", status: "succeeded", amountCents: 1250, currency: "usd", description: "Usage credit", invoiceUrl: "https://example.invalid/invoice", occurredAt: "2026-09-04T12:00:00Z" }] : [] };
   if (!billingFails) client.setQueryData(["billing", "business"], billing);
   const fetchMock = vi.fn(async (url: string) => url.includes("/checkout?") ? checkoutFails ? Response.json({ error: "Provider unavailable" }, { status: 503 }) : Response.json({ synced }) : Response.json(billing));
@@ -35,10 +35,10 @@ describe("original billing overview behavior", () => {
     await userEvent.click(screen.getByRole("button", { name: "billing.actions.retry" }));
     expect(await screen.findByText("billing.planLabels.proCard")).toBeTruthy();
   });
-  it("renders the free plan when the tenant has no billing account yet", () => {
+  it("renders the free plan when the tenant has no billing account yet", async () => {
     setup({ accountMissing: true, admin: false });
-    expect(screen.getByText("billing.planLabels.freeCloudCard")).toBeTruthy();
-    expect(screen.getByText("$0")).toBeTruthy();
+    expect(await screen.findByText("billing.planLabels.freeCloudCard")).toBeTruthy();
+    expect(screen.getByText("billing.commercial.providerUnresolved")).toBeTruthy();
     expect(screen.queryByText("billing.spendingCap.title")).toBeNull();
   });
   it("shows paid plan PAYG copy and hides empty transaction history", () => {
@@ -59,9 +59,9 @@ describe("original billing overview behavior", () => {
     setup({ plan: "starter" });
     expect(screen.queryByRole("button", { name: "billing.actions.upgradeToPro" })).toBeNull();
   });
-  it("offers configured upgrades to administrators", () => {
+  it("offers configured upgrades to administrators", async () => {
     setup({ plan: "starter", configured: true });
-    expect(screen.getByRole("button", { name: "billing.actions.upgradeToPro" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "billing.actions.upgradeToPro" })).toBeTruthy();
   });
   it("keeps billing management read-only for members", () => {
     setup({ admin: false, configured: true });

@@ -74,11 +74,38 @@ it("covers assets with the proxy and permits only required static reads", () => 
   expect(proxy(request("/_next/image")).status).toBe(404);
 });
 
-it("redirects the post-login root to CRM and enables the gate explicitly outside production", () => {
-  expect(proxy(request("/")).headers.get("location")).toBe("http://localhost:3210/leads");
+it("keeps the pilot dashboard root accessible and enables the gate explicitly outside production", () => {
+  expect(proxy(request("/")).status).toBe(200);
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("LMC_PILOT_MODE", "true");
   expect(proxy(request("/api/billing")).status).toBe(404);
+});
+
+it("serves the standalone affiliate portal only on its configured host and feature flag", () => {
+  const portalRequest = (path: string, method = "GET", origin = "https://affiliates.leadmycompany.com") => new NextRequest(`https://affiliates.leadmycompany.com${path}`, { method, headers: { origin } });
+  vi.stubEnv("NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED", "true");
+  const root = proxy(portalRequest("/"));
+  expect(root.status).toBe(200);
+  expect(root.headers.get("x-middleware-rewrite")).toBe("https://affiliates.leadmycompany.com/affiliate-portal");
+  expect(proxy(portalRequest("/affiliate-portal/signup")).status).toBe(200);
+  expect(proxy(portalRequest("/api/affiliate")).status).toBe(200);
+  expect(proxy(portalRequest("/api/affiliate", "PATCH", "https://evil.invalid")).status).toBe(403);
+  expect(proxy(portalRequest("/leads")).status).toBe(404);
+  expect(proxy(portalRequest("/api/businesses")).status).toBe(404);
+  expect(proxy(portalRequest("/api/auth/oauth2/register", "POST")).status).toBe(404);
+  expect(proxy(request("/settings/plan")).status).toBe(200);
+  expect(proxy(request("/api/billing", "POST")).status).toBe(405);
+});
+
+it("returns an HTML 404 rather than an empty response for a disabled affiliate page", async () => {
+  const response = proxy(request("/affiliate"));
+  expect(response.status).toBe(404);
+  expect(response.headers.get("content-type")).toContain("text/html");
+  expect(await response.text()).toContain("Page not found");
+  const disabledSubdomain = proxy(new NextRequest("https://affiliates.leadmycompany.com/"));
+  expect(disabledSubdomain.status).toBe(404);
+  expect(disabledSubdomain.headers.get("content-type")).toContain("text/html");
+  expect(await disabledSubdomain.text()).toContain("Page not found");
 });
 
 it("passes real signed unsubscribe capabilities through the pilot boundary", () => {

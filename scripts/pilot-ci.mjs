@@ -49,10 +49,67 @@ async function step(name, command, args, env = environment, cwd = root) {
   phase = name;
   console.log("Pilot CI phase: " + name);
   const fd = openSync(join(privateRoot, `phase-${index++}.log`), "wx", 0o600);
+  const logPath = join(privateRoot, `phase-${index - 1}.log`);
   const child = spawn(command, args, { cwd, env, stdio: ["ignore", fd, fd] });
   closeSync(fd);
   const [code] = await once(child, "exit");
-  if (code !== 0) throw new Error("PILOT_CI_COMMAND_FAILED");
+  if (code !== 0) {
+    if (name === "production-public-auth-static") {
+      const output = readFileSync(logPath, "utf8");
+      let reportFailure = "";
+      let reportMethod = "";
+      let reportStatus = "";
+      try {
+        const report = JSON.parse(readFileSync(join(root, ".tmp/security/pilot-public-assets.json"), "utf8"));
+        const [category = "", method = "", , status = ""] = report.failures?.[0]?.split(":") ?? [];
+        reportFailure = category;
+        reportMethod = method;
+        reportStatus = ({ 200: "OK", 301: "REDIRECT", 302: "REDIRECT", 307: "REDIRECT", 308: "REDIRECT", 400: "BAD_REQUEST", 403: "FORBIDDEN", 404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED", 500: "SERVER_ERROR" })[status] ?? "OTHER";
+      } catch {}
+      const reportDiagnostics = {
+        AUTH_CANONICAL: "AUTH_CANONICAL",
+        AUTH_DISPLAY: "AUTH_DISPLAY",
+        AUTH_DOCUMENT: "AUTH_DOCUMENT",
+        AUTH_ICON: "AUTH_ICON",
+        AUTH_HEAD_BODY: "AUTH_HEAD_BODY",
+        STATIC_POSITIVE: "STATIC_POSITIVE",
+        STATIC_BYTES: "STATIC_BYTES",
+        STATIC_HEAD_BODY: "STATIC_HEAD_BODY",
+        FAVICON_SVG_CONTENT_TYPE: "FAVICON_CONTENT_TYPE",
+        CLOSED_ASSET: "CLOSED_ASSET",
+        INHERITED_STATUS: "INHERITED_ROUTE_STATUS",
+        INHERITED_CACHE: "INHERITED_ROUTE_CACHE",
+        SERVER_ACTION_DENIAL: "SERVER_ACTION_DENIAL",
+      };
+      const diagnostics = [
+        ["EADDRINUSE", "SERVER_PORT_IN_USE"],
+        ["DATABASE_URL is required", "DATABASE_URL_MISSING"],
+        ["Database role assertion failed", "DATABASE_ROLE_ASSERTION"],
+        ["PRODUCTION_SERVER_NOT_READY", "SERVER_NOT_READY"],
+        ["PRODUCTION_SERVER_EXITED_PORT_IN_USE", "SERVER_PORT_IN_USE"],
+        ["PRODUCTION_SERVER_EXITED_DATABASE_URL_MISSING", "DATABASE_URL_MISSING"],
+        ["PRODUCTION_SERVER_EXITED_DATABASE_ROLE_ASSERTION", "DATABASE_ROLE_ASSERTION"],
+        ["PRODUCTION_SERVER_EXITED_MODULE_MISSING", "SERVER_MODULE_MISSING"],
+        ["PRODUCTION_SERVER_EXITED", "SERVER_EXITED"],
+        ["INHERITED_STATUS:", "INHERITED_ROUTE_STATUS"],
+        ["INHERITED_CACHE:", "INHERITED_ROUTE_CACHE"],
+        ["AUTH_DISPLAY_NOT_ALLOWLISTED", "AUTH_DISPLAY_ALLOWLIST"],
+        ["PUBLIC_PATTERN_COVERAGE", "PUBLIC_PATTERN_COVERAGE"],
+        ["AUTH_METHOD:", "AUTH_METHOD_POLICY"],
+        ["STATIC_METHOD:", "STATIC_METHOD_POLICY"],
+        ["STATIC_CONTENT:", "STATIC_CONTENT_MISMATCH"],
+        ["STATIC_NOT_ALLOWLISTED", "STATIC_ALLOWLIST"],
+        ["SERVER_ACTION_DENIAL", "SERVER_ACTION_DENIAL"],
+        ["INHERITED_BUILD_ROUTE_INVENTORY_MISSING", "INHERITED_ROUTE_INVENTORY_MISSING"],
+      ];
+      const reportDiagnostic = reportFailure === "STATIC_POSITIVE"
+        ? `STATIC_POSITIVE_${reportMethod}_${reportStatus}`
+        : reportDiagnostics[reportFailure];
+      const diagnostic = reportDiagnostic ?? diagnostics.find(([needle]) => output.includes(needle))?.[1] ?? "UNCLASSIFIED";
+      throw new Error(`PILOT_CI_PUBLIC_AUTH_STATIC_${diagnostic}`);
+    }
+    throw new Error("PILOT_CI_COMMAND_FAILED");
+  }
 }
 // Positional inputs retain every independent source test and avoid accidentally
 // executing generated dist copies as a second, stale test inventory.

@@ -5,6 +5,7 @@ export const PUBLIC_ROUTE_NAMESPACES = ["common", "auth", "onboarding", "demos",
 export function routeNamespaces(pathname: string): string[] {
   const section = stripLocalePrefix(pathname).split("/")[1] ?? "";
   if (["login", "signup", "forgot-password", "reset-password", "verify-email", "confirm-email-change", "accept-invite"].includes(section)) return ["common", "auth", "onboarding"];
+  if (section === "affiliate-portal") return ["common", "auth", "onboarding", "affiliate", "nav"];
   if (section === "embed") return ["common", "widget"];
   if (["demo", "claim-demo"].includes(section)) return ["common", "auth", "demos", "widget"];
   if (section === "onboarding") return ["common", "onboarding", "auth", "settings", "nav"];

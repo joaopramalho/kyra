@@ -215,6 +215,17 @@
       "includedOutboundCustom": "Custom transfer allowance",
       "includedStorage": "{{amount}} {{unit}} storage"
     },
+    "commercial": {
+      "title": "Stripe subscription",
+      "description": "Subscription and invoice details for this tenant.",
+      "noSubscription": "No active subscription details are available yet.",
+      "priceShownBelow": "Commercial contract price shown below",
+      "providerUnresolved": "Billing provider is being checked",
+      "perMonth": " / month",
+      "renewsAt": "Renews {{date}}",
+      "cancelsAt": "Ends {{date}}",
+      "manageOnStripe": "Manage subscription"
+    },
     "upgradeDialog": {
       "title": "Upgrade plan",
       "description": "Choose the plan that works best for your team.",

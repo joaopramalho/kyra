@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { Building2, LayoutDashboard, ShieldCheck } from "lucide-react";
+import { Banknote, Building2, LayoutDashboard, ShieldCheck } from "lucide-react";
 
 import { PATHNAME_HEADER } from "@/lib/locale-request";
 import { requireSuperAdminEnrollmentSession, requireSuperAdminSession, SuperAdminAccessError } from "@/lib/superadmin";
@@ -30,6 +30,7 @@ export default async function InternalLayout({ children }: { children: React.Rea
   const navigation = [
     { href: "/internal", label: "Overview", icon: LayoutDashboard, active: pathname === "/internal" },
     { href: "/internal/clients", label: "Clients", icon: Building2, active: pathname.startsWith("/internal/clients") },
+    { href: "/internal/commercial", label: "Billing", icon: Banknote, active: pathname.startsWith("/internal/commercial") },
   ];
 
   return (

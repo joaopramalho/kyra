@@ -135,6 +135,7 @@ export default defineRailway((ctx) => {
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: preserve(),
       NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: preserve(),
       NEXT_PUBLIC_POSTHOG_HOST: preserve(),
+      ...(production ? { NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED: preserve() } : {}),
       // The landing page's demo call starts at /api/voice/live/session with no
       // signed token; the admin only accepts it for this business, from these sites.
       WEB_CALL_PUBLIC_BUSINESS_SLUG: production ? "lobbystack-mp35s9y1" : "lobbystack",

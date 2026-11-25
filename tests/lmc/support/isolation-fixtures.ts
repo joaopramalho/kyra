@@ -16,6 +16,27 @@ const owner = new Set([
   "referred_business_id",
   "reference_id",
 ]);
+
+export function checkArrayLiteral(
+  checks: AuditTable["checks"],
+  columnName: string,
+): string | undefined {
+  const escaped = columnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const directComparison = new RegExp(
+    `(?:\\(${escaped}\\)(?:::[\\w ]+)?|\\b${escaped}\\b)\\s*=\\s*$`,
+    "i",
+  );
+  const check = checks.find((candidate) => {
+    const anyIndex = candidate.expression.indexOf("ANY");
+    return (
+      anyIndex >= 0 &&
+      candidate.expression.includes("ARRAY[") &&
+      directComparison.test(candidate.expression.slice(0, anyIndex).trim())
+    );
+  });
+  return check?.expression.match(/ARRAY\['((?:[^']|'')*)'/)?.[1]?.replace(/''/g, "'");
+}
+
 function context(): FixtureTenant {
   return {
     tenantId: randomUUID(),
@@ -63,14 +84,8 @@ function valueFor(
   if (name === "purpose") return "call_recording";
   if (column.enumValues.length) return column.enumValues[0];
   // CHECK enum literals are catalog data, not guessed application values.
-  const check = table.checks.find(
-    (check) =>
-      check.expression.includes(`(${name})`) &&
-      check.expression.includes("ANY") &&
-      check.expression.includes("ARRAY["),
-  );
-  const literal = check?.expression.match(/ARRAY\['((?:[^']|'')*)'/)?.[1];
-  if (literal !== undefined) return literal.replace(/''/g, "'");
+  const literal = checkArrayLiteral(table.checks, name);
+  if (literal !== undefined) return literal;
   if (column.type === "uuid") return randomUUID();
   if (column.type === "boolean") return false;
   if (

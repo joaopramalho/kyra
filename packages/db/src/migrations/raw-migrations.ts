@@ -90,6 +90,7 @@ export const SCHEMA_MIGRATIONS = [
   "0082_appointment_lookup_name_search.sql",
   "0083_contacts_name_search_index.sql",
   "0084_contacts_phone_digits_index.sql",
+  "0085_commercial_stripe.sql",
 ] as const;
 
 const CONCURRENT_INDEX_DIRECTIVE = /^-- lobbystack:concurrent-index ([a-z][a-z0-9_]*)$/m;

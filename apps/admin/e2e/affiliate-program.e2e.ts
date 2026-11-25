@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Browser, type Page, type TestInfo } from "@playwright/test";
 import { eq, like, sql } from "drizzle-orm";
 
-import { affiliateAttributions, affiliateCommissions, affiliatePayoutItems, affiliateProfiles, businesses, createDatabaseClient, providerEvents, users, type Database } from "@lobbystack/db";
+import { affiliateAttributions, affiliateCommissions, affiliatePayoutItems, affiliateProfiles, businesses, businessMemberships, createDatabaseClient, providerEvents, users, type Database } from "@lobbystack/db";
 import { createBusiness, generateAffiliatePayoutRun, markAffiliatePayoutItemPaid, reconcileBillingProviderEvent } from "@lobbystack/domain";
 import { brand } from "@lobbystack/shared/brand";
 
@@ -50,7 +50,7 @@ async function cleanupFixtures(): Promise<void> {
   }
 }
 
-async function signUp(page: Page, path: string, label: string, testInfo: TestInfo): Promise<string> {
+async function signUp(page: Page, path: string, label: string, testInfo: TestInfo, expectedPath = "/onboarding/business"): Promise<string> {
   const email = `${prefix}-${label}-${randomUUID()}@example.invalid`;
   await isolateAuthRateLimit(page, email, testInfo);
   await page.goto(path);
@@ -60,7 +60,7 @@ async function signUp(page: Page, path: string, label: string, testInfo: TestInf
   await page.locator('button[type="submit"]').click();
   expect((await submitted).ok()).toBe(true);
   await completeSignupEmailVerification(page, email, password);
-  await expect(page).toHaveURL(/\/onboarding\/business$/);
+  await expect(page).toHaveURL(new RegExp(`${expectedPath.replaceAll("/", "\\/")}$`));
   return email;
 }
 
@@ -114,6 +114,32 @@ async function referredSignup(browser: Browser, referralLink: string, testInfo: 
 test.beforeAll(cleanupFixtures);
 test.afterAll(cleanupFixtures);
 
+test("affiliate portal signup works without creating or requiring a tenant", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const migrator = createDatabaseClient("lobbystack_migrator", { DATABASE_URL: databaseUrl() });
+  const context = await browser.newContext({ locale: "en-US" });
+  try {
+    const page = await context.newPage();
+    await page.goto("/affiliate-portal");
+    await expect(page).toHaveURL(/\/en\/login\?returnTo=%2Faffiliate-portal$/);
+
+    const email = await signUp(page, "/affiliate-portal/signup", "portal", testInfo, "/affiliate-portal");
+    await expect(page.locator("input[readonly]")).toBeVisible();
+    await expect(page.getByRole("button", { name: enNav.sidebar?.signOut ?? "Sign out" })).toBeVisible();
+    const response = await page.request.get("/api/affiliate");
+    expect(response.ok()).toBe(true);
+
+    const user = (await migrator.db.select({ id: users.id }).from(users).where(eq(users.normalizedEmail, email)))[0]!;
+    const memberships = await migrator.db.select({ businessId: businessMemberships.businessId }).from(businessMemberships).where(eq(businessMemberships.userId, user.id)).limit(1);
+    expect(memberships).toEqual([]);
+    await page.reload();
+    await expect(page).toHaveURL(/\/affiliate-portal$/);
+  } finally {
+    await context.close();
+    await migrator.pool.end();
+  }
+});
+
 test("the affiliate program works from referral link to payout", async ({ browser }, testInfo) => {
   test.setTimeout(240_000);
   const migrator = createDatabaseClient("lobbystack_migrator", { DATABASE_URL: databaseUrl() });
@@ -157,12 +183,15 @@ test("the affiliate program works from referral link to payout", async ({ browse
 
     await page.goto("/affiliate?lng=en");
     const referralLink = await page.locator("input[readonly]").inputValue();
-    expect(referralLink).toMatch(/\/signup\?via=[a-z0-9-]+$/);
-    const referralCode = new URL(referralLink).searchParams.get("via")!;
+    const commercialReferral = new URL(referralLink);
+    expect(commercialReferral.pathname).toMatch(/^\/checkout\/affiliate\/[a-z0-9-]+$/);
+    const referralCode = commercialReferral.pathname.split("/").at(-1)!;
     expect(await affiliateStats(page)).toMatchObject({ clickCount: 0, referralCount: 0 });
 
-    // A new visitor follows the link in a separate session and signs up.
-    const referred = await referredSignup(browser, referralLink, testInfo);
+    // This legacy attribution/payout scenario uses the same code on the signup
+    // route; the dashboard link itself now points to the commercial checkout.
+    const legacySignupLink = `${brand.url}/signup?via=${encodeURIComponent(referralCode)}`;
+    const referred = await referredSignup(browser, legacySignupLink, testInfo);
     expect(await affiliateStats(page)).toMatchObject({ clickCount: 1, referralCount: 1 });
     const attribution = (await migrator.db.select().from(affiliateAttributions).where(eq(affiliateAttributions.businessId, referred.businessId)))[0];
     expect(attribution).toMatchObject({ referralCode, source: "referral_link" });

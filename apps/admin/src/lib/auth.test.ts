@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isDisabledAuthEmailEndpoint } from "./auth";
+import { configuredAuthTrustedOrigins, isDisabledAuthEmailEndpoint } from "./auth";
 
 describe("auth email endpoint policy", () => {
   it("blocks public OTP send and passwordless endpoints", () => {
@@ -17,5 +17,21 @@ describe("auth email endpoint policy", () => {
 
   it("allows server-only OTP methods that have no route path", () => {
     expect(isDisabledAuthEmailEndpoint(undefined)).toBe(false);
+  });
+});
+
+describe("affiliate portal auth origins", () => {
+  it("trusts only the configured HTTPS affiliate portal origin when the feature is enabled", () => {
+    expect(configuredAuthTrustedOrigins({
+      NODE_ENV: "production",
+      APP_BASE_URL: "https://app.leadmycompany.com",
+      AFFILIATE_PORTAL_URL: "https://affiliates.leadmycompany.com",
+      NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED: "true",
+    })).toEqual(["https://app.leadmycompany.com", "https://affiliates.leadmycompany.com"]);
+  });
+
+  it("does not trust affiliate origins while disabled or for non-HTTPS production URLs", () => {
+    expect(configuredAuthTrustedOrigins({ APP_BASE_URL: "https://app.leadmycompany.com", AFFILIATE_PORTAL_URL: "https://affiliates.leadmycompany.com" })).toEqual(["https://app.leadmycompany.com"]);
+    expect(configuredAuthTrustedOrigins({ NODE_ENV: "production", APP_BASE_URL: "https://app.leadmycompany.com", AFFILIATE_PORTAL_URL: "http://affiliates.leadmycompany.com", NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED: "true" })).toEqual(["https://app.leadmycompany.com"]);
   });
 });

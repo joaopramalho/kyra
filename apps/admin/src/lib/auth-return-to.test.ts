@@ -22,6 +22,7 @@ describe("auth-return-to", () => {
       "/login",
     );
     expect(getSafeReturnTo("//evil.example")).toBeNull();
+    expect(getSafeReturnTo("/\\\\evil.example")).toBeNull();
     expect(getSafeReturnTo("/claim-demo?token=tok_123")).toBe(
       "/claim-demo?token=tok_123",
     );

@@ -43,12 +43,12 @@ export function SettingsShell({ children, pilotMode = false }: { children: React
   const { t } = useTranslation("settings");
   const groups = settingsGroups.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !pilotMode || ["email", "businessProfile"].includes(item.id)),
+    items: group.items.filter((item) => !pilotMode || ["email", "businessProfile"].includes(item.id) ||
+      (process.env.NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED === "true" && item.id === "billing")),
   })).filter((group) => group.items.length > 0);
   const allItems = groups.flatMap((group) => group.items);
   const activeItem = [...allItems].sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)) ?? allItems[0]!;
-
   return (
     <section className="flex flex-1 flex-col gap-6">
       <PageHeader
