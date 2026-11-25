@@ -33,7 +33,10 @@ test("production-default pilot auth displays and every published static asset en
   for(const name of ["BETTER_AUTH_SECRET","INTERNAL_SERVICE_SECRET","INTERNAL_SERVICE_TOKEN","WIDGET_SESSION_SECRET","ENCRYPTION_KEY","OTP_HASH_SECRET","LOCAL_STORAGE_SIGNING_SECRET"])env[name]=randomBytes(32).toString("hex");
   const reportDir=join(root,".tmp/security");await mkdir(reportDir,{recursive:true});
   const log=await open(join(reportDir,"pilot-public-assets-server.log"),"w",0o600);
-  const child=spawn(process.execPath,[join(admin,"node_modules/next/dist/bin/next"),"start","--hostname","127.0.0.1","--port",String(port)],{cwd:admin,env,stdio:["ignore",log.fd,log.fd]});
+  const standalone=join(admin,".next/standalone");
+  env.PORT=String(port);
+  env.HOSTNAME="127.0.0.1";
+  const child=spawn(process.execPath,[join(standalone,"apps/admin/server.js")],{cwd:standalone,env,stdio:["ignore",log.fd,log.fd]});
   await log.close();
   const failures=[],covered=new Set();let probes=0,positiveBytes=0;
   function check(value,code){if(!value)failures.push(code);}
