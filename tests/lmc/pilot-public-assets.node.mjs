@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
-import { readdir, readFile, mkdir, open, writeFile } from "node:fs/promises";
+import { readdir, readFile, mkdir, open, writeFile, symlink, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
@@ -34,9 +34,12 @@ test("production-default pilot auth displays and every published static asset en
   const reportDir=join(root,".tmp/security");await mkdir(reportDir,{recursive:true});
   const log=await open(join(reportDir,"pilot-public-assets-server.log"),"w",0o600);
   const standalone=join(admin,".next/standalone");
+  const standaloneApp=join(standalone,"apps/admin");
+  await symlink(join(admin,".next/static"),join(standaloneApp,".next/static"),"dir");
+  await symlink(join(admin,"public"),join(standaloneApp,"public"),"dir");
   env.PORT=String(port);
   env.HOSTNAME="127.0.0.1";
-  const child=spawn(process.execPath,[join(standalone,"apps/admin/server.js")],{cwd:standalone,env,stdio:["ignore",log.fd,log.fd]});
+  const child=spawn(process.execPath,[join(standaloneApp,"server.js")],{cwd:standalone,env,stdio:["ignore",log.fd,log.fd]});
   await log.close();
   const failures=[],covered=new Set();let probes=0,positiveBytes=0;
   function check(value,code){if(!value)failures.push(code);}
@@ -132,5 +135,6 @@ test("production-default pilot auth displays and every published static asset en
     console.log(JSON.stringify({deniedBuildPaths:deniedPaths.length,deniedMethodProbes:deniedPaths.length*methods.length,serverActionControls:actionControls.length,authDisplayPaths:paths.length,staticAssets:staticFiles.length,probes,failures:0}));
   }finally{
     if(child.exitCode===null){const ended=once(child,"exit");child.kill("SIGTERM");await ended;}
+    await Promise.all([rm(join(standaloneApp,".next/static"),{force:true}),rm(join(standaloneApp,"public"),{force:true})]);
   }
 });
