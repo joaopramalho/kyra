@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isMaintenanceMode, isPilotMode, pilotAdminRoute } from "@lobbystack/shared";
 import { affiliateProgramEnabled } from "@/lib/affiliate-program";
-import { affiliatePortalHostPath } from "@/lib/affiliate-portal-host";
+import { affiliatePortalHostPath, isAffiliatePortalHostname } from "@/lib/affiliate-portal-host";
 
 import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE_SECONDS, normalizeLocale } from "@/lib/locale";
 import {
@@ -94,8 +94,9 @@ function cacheControlForRequest(pathname: string, searchParams: URLSearchParams)
   return undefined;
 }
 
-function configuredOrigins(request: NextRequest): Set<string> {
+function configuredOrigins(request: NextRequest, affiliateOrigin?: string): Set<string> {
   const origins = new Set<string>([request.nextUrl.origin]);
+  if (affiliateOrigin) origins.add(affiliateOrigin);
   for (const value of (process.env.AUTH_TRUSTED_ORIGINS ?? process.env.APP_BASE_URL ?? "").split(",")) {
     const origin = value.trim().replace(/\/$/, "");
     if (origin) origins.add(origin);
@@ -103,7 +104,7 @@ function configuredOrigins(request: NextRequest): Set<string> {
   return origins;
 }
 
-function hasValidCsrfOrigin(request: NextRequest): boolean {
+function hasValidCsrfOrigin(request: NextRequest, affiliateOrigin?: string): boolean {
   const origin = request.headers.get("origin") ?? (() => {
     const referer = request.headers.get("referer");
     if (!referer) return null;
@@ -113,7 +114,7 @@ function hasValidCsrfOrigin(request: NextRequest): boolean {
       return null;
     }
   })();
-  return origin !== null && configuredOrigins(request).has(origin.replace(/\/$/, ""));
+  return origin !== null && configuredOrigins(request, affiliateOrigin).has(origin.replace(/\/$/, ""));
 }
 
 export function proxy(request: NextRequest) {
@@ -124,8 +125,20 @@ export function proxy(request: NextRequest) {
   if (!portalHost) {
     try { portalHost = new URL(portalUrl).hostname; } catch { portalHost = "affiliates.leadmycompany.com"; }
   }
+  // Standalone Next.js can construct nextUrl with the container's listening
+  // hostname rather than the public hostname. Match the configured affiliate
+  // host against the request authority as well. A matching header may only
+  // select the more restrictive affiliate boundary, never bypass it.
+  const matchesAffiliateHost = [
+    request.nextUrl.hostname,
+    request.headers.get("host"),
+    request.headers.get("x-forwarded-host"),
+  ].some((authority) => {
+    if (!authority || !/^[a-z0-9.-]+(?::[0-9]+)?$/i.test(authority.trim())) return false;
+    return isAffiliatePortalHostname(authority.trim().replace(/:[0-9]+$/, ""), portalHost);
+  });
   const affiliatePath = affiliatePortalHostPath({
-    hostname: request.nextUrl.hostname,
+    hostname: matchesAffiliateHost ? portalHost : request.nextUrl.hostname,
     pathname: originalPathname,
     enabled: affiliateEnabled,
     configuredHost: portalHost,
@@ -135,6 +148,13 @@ export function proxy(request: NextRequest) {
     return notFoundHtml(securityHeaders());
   }
   const pathname = typeof affiliatePath === "string" ? affiliatePath : originalPathname;
+  let affiliateOrigin: string | undefined;
+  if (isAffiliateHost) {
+    try {
+      const url = new URL(portalUrl);
+      if (url.protocol === "https:" && isAffiliatePortalHostname(url.hostname, portalHost)) affiliateOrigin = url.origin;
+    } catch { /* Invalid configuration must not grant additional CSRF origins. */ }
+  }
   const headers = isEmbeddablePath(pathname) ? embeddableSecurityHeaders() : securityHeaders();
 
   if (!affiliateEnabled && pathname === "/affiliate" && (request.method === "GET" || request.method === "HEAD")) return notFoundHtml(headers);
@@ -205,12 +225,14 @@ export function proxy(request: NextRequest) {
   requestHeaders.set(LOCALE_SOURCE_HEADER, locale.source);
   requestHeaders.set(PATHNAME_HEADER, pathname);
 
+  const rewriteTarget = request.nextUrl.clone();
+  rewriteTarget.pathname = pathname;
   const response = isAffiliateHost && pathname !== originalPathname
-    ? NextResponse.rewrite(new URL(pathname, request.url), { request: { headers: requestHeaders } })
+    ? NextResponse.rewrite(rewriteTarget, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
   applyResponsePolicy(response, request, headers, locale, cacheControlForRequest(pathname, request.nextUrl.searchParams));
 
-  if (stateChangingMethods.has(request.method) && pathname.startsWith("/api/") && !csrfExemptPrefixes.some((prefix) => pathname.startsWith(prefix)) && !hasValidCsrfOrigin(request)) {
+  if (stateChangingMethods.has(request.method) && pathname.startsWith("/api/") && !csrfExemptPrefixes.some((prefix) => pathname.startsWith(prefix)) && !hasValidCsrfOrigin(request, affiliateOrigin)) {
     return applyResponsePolicy(
       NextResponse.json({ error: "CSRF origin validation failed." }, { status: 403 }),
       request,
