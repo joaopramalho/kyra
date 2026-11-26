@@ -97,6 +97,28 @@ it("serves the standalone affiliate portal only on its configured host and featu
   expect(proxy(request("/api/billing", "POST")).status).toBe(405);
 });
 
+it("recognizes the affiliate public authority behind a standalone reverse proxy", () => {
+  vi.stubEnv("NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED", "true");
+  const host = "affiliates.leadmycompany.com";
+  const origin = `https://${host}`;
+  for (const headers of [{ host }, { host: "0.0.0.0:3000", "x-forwarded-host": host }, { host: `${host}:443`, "x-forwarded-host": "app.leadmycompany.com" }]) {
+    const root = proxy(request("/?lng=en", "GET", headers));
+    expect(root.status).toBe(200);
+    const target = new URL(root.headers.get("x-middleware-rewrite")!);
+    expect(target.pathname).toBe("/affiliate-portal");
+    expect(target.searchParams.get("lng")).toBe("en");
+    expect(proxy(request("/api/businesses", "GET", headers)).status).toBe(404);
+    expect(proxy(request("/appointments", "GET", headers)).status).toBe(404);
+    expect(proxy(request("/api/affiliate", "PATCH", { ...headers, origin })).status).toBe(200);
+    expect(proxy(request("/api/affiliate", "PATCH", { ...headers, origin: "https://evil.invalid" })).status).toBe(403);
+  }
+  const app = proxy(request("/", "GET", { host: "app.leadmycompany.com" }));
+  expect(app.status).toBe(200);
+  expect(app.headers.get("x-middleware-rewrite")).toBeNull();
+  vi.stubEnv("NEXT_PUBLIC_AFFILIATE_PROGRAM_ENABLED", "false");
+  expect(proxy(request("/", "GET", { host })).status).toBe(404);
+});
+
 it("returns an HTML 404 rather than an empty response for a disabled affiliate page", async () => {
   const response = proxy(request("/affiliate"));
   expect(response.status).toBe(404);
